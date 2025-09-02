@@ -1,2 +1,2 @@
 # CEMBIO-EURAC
-Data automatization workflow for lipid annotation using a public library
+Automated data workflow for lipid annotation using a public library
