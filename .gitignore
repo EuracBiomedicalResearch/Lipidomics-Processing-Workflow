@@ -6,3 +6,15 @@
 *.mzML
 *.MGF
 *.mgf
+.DS_Store
+*.json
+/mse_pos/chrom_peaks
+/mse_pos/experiment_files
+/mse_pos/feature_definitions
+/mse_pos/metadata
+/mse_pos/other_data
+/mse_pos/sample_data
+/mse_pos/sample_data_links
+/mse_pos
+/objects
+/SummarizedExperiemnt_mse_pos
