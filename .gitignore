@@ -18,3 +18,5 @@
 /mse_pos
 /objects
 /SummarizedExperiemnt_mse_pos
+POS_data/*
+NEG_data/*
