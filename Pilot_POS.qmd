@@ -30,6 +30,8 @@ library(dbplyr)
 library(AnnotationHub) 
 library(CompoundDb)    
 library(MetaboAnnotation)
+library(ggVennDiagram)
+library(UpSetR)
 ```
 
 ## Import the sample data for the analysis
@@ -41,10 +43,6 @@ Load raw mzML data of the pilot study, this includes data of venous blood of 10 
 seq_pos <- read_xlsx(paste0("seq_pos.xlsx"), 
                  col_names = TRUE) |> as.data.frame()
 seq_pos$polarity <- "pos"    # create a column named polarity
-# load neg data
-#seq_neg <- read_xlsx(paste0("/seq_neg.xlsx"), 
-#                 col_names = TRUE) |> as.data.frame()
-#seq_neg$polarity <- "neg"
 
 spectra_files_pos <- file.path("POS_data", seq_pos$`file_name`)
 
@@ -58,7 +56,7 @@ Define the number of cores you want to work with
 
 ```{r, eval=TRUE}
 # Requires library(BiocParallel)
-cores_nb <- 3           # Adjust the number of cores based on your machine
+cores_nb <- 4  # Adjust the number of cores based on your machine. Suggested to use 1 or 2 below your higher capacity.
 if (.Platform$OS.type == "unix") {
     register(MulticoreParam(cores_nb))
 } else {
@@ -100,8 +98,9 @@ legend("topright", col = col_sample_type,
 
 #dev.off()
 ```
+Figure 1. BPC of all samples colored by phenotype
 
-Filter the data based on the RT observed on the BPC.
+Filter the data based on the RT observed on the BPC.In this data set we filter from 10 to 950 sec.
 
 ```{r, eval=TRUE}
 #' Filter the data based on retention time
@@ -117,11 +116,12 @@ legend("topright", col = col_sample_type,
        legend = names(col_sample_type), lty = 1, lwd = 2, cex=0.6,horiz = TRUE, bty = "n")
 
 ```
+Figure 2. BPC after filtering retention time.
 
 ```{r, eval=TRUE}
 #' Total ion chromatogram
 tic <- chromatogram(mse_pos, aggregationFun = "sum") |>
-  bin(binSize = 2) #increase to 8
+  bin(binSize = 8) #increase to 8
 
 #' Calculate similarity (Pearson correlation) between BPCs
 ticmap <- do.call(cbind, lapply(tic, intensity)) |>
@@ -141,19 +141,18 @@ pheatmap(ticmap, annotation_col = ann,
 
 #dev.off()
 ```
-
-Heatmap of TIC similarities. All plasma samples are group together.
+Figure 3. Heatmap of TIC similarities. All plasma samples are group together.
 
 ## EICs
 
-Upload the list of the internal standards and also some endogenous compounds that will be used to make RT shift correction.
+Upload the list of the internal standards and also some endogenous compounds that will be used to make RT shift correction. RT must be in seconds.
 
 ```{r, eval=TRUE}
 #' Load list of Internal standard SPLASH LIPIDOMIX
 intern_standard <- read_xlsx("splashlipidomix_list.xlsx")
 intern_standard$rtmin <- intern_standard$RT - 30 
 intern_standard$rtmax <- intern_standard$RT + 20
-intern_standard$mzmin <- intern_standard$mz - 0.008 #0.01 was suggested
+intern_standard$mzmin <- intern_standard$mz - 0.008 #0.01 was suggested but 0.008 is good enough
 intern_standard$mzmax <- intern_standard$mz + 0.008
 rownames(intern_standard) <- intern_standard$short_name
 
@@ -183,8 +182,9 @@ fData(eic_is)[c("CAR", "LysoPC", "dLysoPC", "dLysoPE", "LPC", "SM",
               c("short_name", "mz", "rt", "rtmin", "rtmax")] |>
     kable(format = "pipe")
 ```
+Table 1. set of reference lipids, including deuterated lipids from SPLASH LIPIDOMIX and some deuterated compounds that are in high abundance in plasma.
 
-We loop below plot the EICs for reference lipids (17 in total): isotope labeled lipids from splash lipidomix and some endogenous lipids.
+We below plot the EICs for reference lipids (17 in total): isotope labeled lipids from splash lipidomix and some endogenous lipids.
 
 ```{r, eval=TRUE}
 # Loop to go through all rows of the eic_is object and plot independent  
@@ -202,6 +202,7 @@ for (i in seq_len(nrow(eic_is))) {
  #abline(v = median(rtime(eic)), col = "red", lty = 3)
 }
 ```
+Figure 4.EIC of all reference lipids 
 
 ```{r, eval=TRUE}
 # Chromatogram example of three lipids from the list that was imported before
@@ -238,6 +239,7 @@ legend("topright", col = col_sample_type, legend = names(col_sample_type),
  
 #dev.off()
 ```
+Figure X. EIC of three selected deuterated lipids.
 
 ## **Data preprocessing**
 
@@ -299,7 +301,7 @@ We can now perform the chromatographic peak detection with the adapted settings 
 
 ```{r, eval=TRUE}
 #' Parameters adapted for chromatographic peak detection on EICs.
-param_pd <- CentWaveParam(peakwidth = c(1, 8), ppm = 10, integrate = 2,
+param_pd <- CentWaveParam(peakwidth = c(4, 8), ppm = 10, integrate = 2,
                        snthresh = 2)
 
 #' Evaluate on the dLysoPC ion
@@ -344,14 +346,14 @@ grid()
 legend("topright", col = col_sample_type,
        legend = names(col_sample_type), lty = 1, bty = "n")
 ```
-
-Chromatographic peak detection on EICs.
+Figure X. EIC of the 3 selected lipids after apply the optimized param selection.
+Chromatographic peak detection on 3 EICs.
 
 We can see a peak seems to be detected in each sample for both ions. This indicates that our custom settings are suitable for our dataset. We now proceed and apply them to the entire dataset, extracting EICs again for the same ions to evaluate and confirm that chromatographic peak detection worked as expected.
 
-```{r, eval=FALSE}
+```{r, eval=TRUE}
 #' Using the same settings, but with default snthresh
-param_pd <- CentWaveParam(peakwidth = c(1, 8), ppm = 10, integrate = 2, snthresh = 2) ## lowered the sntresth super low and still no detection of the carnitine peaks. 
+param_pd <- CentWaveParam(peakwidth = c(4, 8), ppm = 10, integrate = 2, snthresh = 2) ## lowered the sntresth super low and still no detection of the carnitine peaks. 
 mse_pos <- findChromPeaks(mse_pos, param = param_pd, chunkSize = 2)
 
 #' Update EIC internal standard object
@@ -371,14 +373,17 @@ eic_is <- chromatogram(mse_pos,
 fData(eic_is) <- fData(eics_is_noprocess)
 ```
 
-```{r, eval=FALSE}
+```{r}
 # Plot to evaluate the chromatographic peak detection results.
 rownames(fData(eic_is)) <- intern_standard$short_name
 
 eic_deuteratedLysoPC <- eic_is["dLysoPC"]
 eic_deuteratedSM <- eic_is["dSM"]
 eic_CAR <- eic_is["CAR"]
+```
 
+
+```{r, eval=FALSE}
 par(mfrow = c(1, 3))
 plot(eic_deuteratedLysoPC, main = fData(dLysoPC_test)$short_name,
      col = paste0(col_sample, 80),
@@ -400,6 +405,7 @@ grid()
 legend("topright", col = col_sample_type,
        legend = names(col_sample_type), lty = 1, bty = "n")
 ```
+Figure X. 
 
 After applying the cinematographic peak detection over the entire dataset, only the first two peaks have been detected properly in all sample, but this does not happen with the Carnitine (not even after changing the signal to noise ratio, or opening the window for the m/z or rt)
 
@@ -435,6 +441,7 @@ eic_deuteratedLysoPC <- eic_is["dLysoPC", ]
 eic_deuteratedSM <- eic_is["dSM", ]
 eic_CAR <- eic_is["CAR"]
 ```
+
 ```{r, eval=FALSE}
 
 # Define output directory (create if it doesn't exist)
@@ -469,7 +476,7 @@ for (i in seq_len(nrow(eic_is))) {
 cat("All chromatograms saved in:", outdir, "\n")
 ```
 
-All the compound plots in eic_is are saved locally 
+All the compound plots in eic_is are saved locally
 
 and also run `eic_is` in the console again to ensure that all the eic that have 2 peak are properly separated. Discuss with Johannes to see how to prevent merge.
 
@@ -499,6 +506,7 @@ mse_pos[QC_samples] |>
     plot(col = col_sample_type["QC"], main = "BPC of QC samples") |>
     grid()
 ```
+Figure X. BPC of QC samples.
 
 Initial correspondence analysis. Parameters do not need to be fully optimized.
 
@@ -511,7 +519,7 @@ param_c <- PeakDensityParam(sampleGroups = sampleData(mse_pos)$sample_type == "Q
 mse_pos <- groupChromPeaks(mse_pos, param = param_c)
 
 plotChromPeakDensity(
-    eic_deuteratedLysoPC, param = param_c,
+    eic_deuteratedLysoPC, param = param_c, 
     col = paste0(col_sample, "80"),
     peakCol = col_sample[chromPeaks(eic_deuteratedLysoPC)[, "sample"]],
     peakBg = paste0(col_sample[chromPeaks(eic_deuteratedLysoPC)[, "sample"]], 20),
@@ -540,6 +548,7 @@ grid()
 legend("topright", col = col_sample_type,
        legend = names(col_sample_type), lty = 1, bty = "n")
 ```
+Figure X. Retention time aligment results.
 
 Only little adjustments needed to be performed (shifts of at maximum 1.5 second as can be seen in the plot above).
 
@@ -550,7 +559,7 @@ We can also compare the BPC before and after alignment.
 mse_pos_raw <- dropAdjustedRtime(mse_pos)
 
 #' Apply the adjusted retention time to our dataset
-mse_pos_raw <- applyAdjustedRtime(mse_pos)
+mse_pos <- applyAdjustedRtime(mse_pos)
 ```
 
 ```{r, eval= TRUE}
@@ -569,6 +578,7 @@ grid()
 legend("topright", col = col_sample_type,
        legend = names(col_sample_type), lty = 1, bty = "n", horiz = TRUE)
 ```
+Figure X. BPC before and after alignment.
 
 There is no shift observed.
 
@@ -689,6 +699,7 @@ list(all_raw = rowSds(rt_raw, na.rm = TRUE),
     vioplot()
 grid()
 ```
+Figure X. Retetion time variation of internal standards before and after alignment.
 
 ### **Correspondence**
 
@@ -869,17 +880,22 @@ plot(log2(avg_detect), log2(avg_filled),
 grid()
 abline(0, 1)
 ```
+Figure X. Detected vs. filled-in signal.
 
-## Library correction
+
+## Library correction.
 
 ```{r, eval=FALSE}
 #' Default parameter for the grouping and apply them to the test ions BPC
 group <- eic_is$sample_type
 group[group =="QC"] <- NA 
-param1 <- PeakDensityParam(sampleGroups = group , bw = 2)
+param1 <- PeakDensityParam(sampleGroups = group , minFraction = 0.5, 
+                           binSize = 0.01, ppm = 10,
+                          bw = 2)
+
 eic_is_corr <- groupChromPeaks(eic_is, param = param1)
-featureDefinitions(eic_is_corr[6,]) ## to be removed
-fData(eic_is_corr) <- fData(eic_is)
+featureDefinitions(eic_is_corr[3, ]) ## Show johannes, why do we have a 
+## third peak, we can't even see on the plot. has no intensity. 
 
 exp_rt <- vector("numeric", length = nrow(eic_is_corr))
 dr <- "./ref_lipid_image/"
@@ -892,13 +908,21 @@ for (i in seq_len(nrow(eic_is_corr))) {
     next
   }
   png(filename = paste0(dr, "feature_compound_", i, ".png"))
-  plot(eic_is_corr[i,]) # improve code here
+  plot(eic_is_corr[i,],
+       main = rownames(fData(eic_is_corr))[i],
+       cex.axis = 0.8,
+       cex.main = 0.8)  
+  #abline(v = median(rtime(eic_is_corr)), col = "red", lty = 3) #ADD abline
   dev.off()
-  if (nrow(table) > 1)
-    rt <- table[which.max(table$rtmed), "rtmed"]
-  else rt <- table$rtmed
+  if (nrow(table) > 1) {
+    idx_max <- which.max(rowSums(featureValues(eic_is_corr[i, ])))
+    rt <- table[idx_max, ]$rtmed 
+  } else rt <- table$rtmed
   exp_rt[i] <- rt
-}
+} 
+
+
+## before going on, check the plots. the line should overlap what we expect. 
 
 # below is the reference lipid table 
 ref_rt <- intern_standard$RT # is the ref RT 
@@ -910,62 +934,108 @@ diff_rt <- intern_standard$RT - intern_standard$exp_rt
 mean(diff_rt, na.rm = TRUE)
 
 ## Fit the model 
-## Not doing loess because we need to do extrapolation later on.
-# fit <- loess(exp_rt ~ ref_rt, span = 0.5)
-
-fit <- lm(exp_rt ~ poly(ref_rt, 2, raw = TRUE) ) ## limma ?, number of degrees ? 
+fit <- lm(exp_rt ~ poly(ref_rt, 6, raw = TRUE) ) 
 summary(fit)
 plot(fit)
 ```
 
-Sara will check if the shift see m to be similar to what she has or not.
+Sara will check if the shift see m to be similar to what she has or not.I did not apply any RT shift correction, because my data had not to much shift on the RT and we were able to do the match against the library. The average difference is 9.6 seconds
 
 Library fix
 
 ```{r}
 lipid_database <- read_xlsx("LipidDatabase_R.xlsx", sheet = 4L)
-rt_sd <- as.numeric(lipid_database$`RT ESI(+) (min)`) * 60
-corrected_rt <- predict(fit, newdata = data.frame(ref_rt = rt_sd))
-## is the warning a problem ? maybe i'm missing something.
-# why is corrected the length of the fit points ? 
+lipid_database$rt_sd <- as.numeric(lipid_database$`RT ESI(+) (min)`) * 60
+lipid_database <- lipid_database[order(lipid_database$rt_sd), ]
+
+is.unsorted(lipid_database$rt_sd) # check rtime are properly sorted. we want FALSE
+
+rt_sd <- lipid_database$rt_sd
+
+## finding values that need to be extrapolated.
+in_range_idx <- which(rt_sd >= min(fit$fitted.values) & rt_sd <= max(fit$fitted.values))
+
+nrow(lipid_database) - length(in_range_idx)
+corrected_rt <- rep(NA, length = nrow(lipid_database))
+corrected_rt[in_range_idx] <- predict(fit, newdata = data.frame(ref_rt = rt_sd[in_range_idx]))
+idx <- which(rt_sd < min(fit$fitted.values))
+
+lidx <- length(idx)
+if (lidx)
+    corrected_rt[idx] <- rt_sd[idx] - (rt_sd[lidx + 1L] - corrected_rt[lidx + 1L])
+idx <- which(rt_sd > max(fit$fitted.values))
+if (length(idx))
+    corrected_rt[idx] <- rt_sd[idx] - (rt_sd[idx[1L] - 1L] - corrected_rt[idx[1L] - 1L])
+corrected_rt
+
 
 lipid_database$rt_adjusted <- corrected_rt 
 
 rt_sd - corrected_rt
 
-mean(rt_sd - corrected_rt)
+mean(abs(rt_sd - corrected_rt))
+
+# plot library 500 compounds rt  raw vs adj. then (on top) add the ref_rt vs exp_rt (20compounds) 
 ```
 
-## missing steps ?? 
-These steps could be done after annotation, as we are in a semi-targeted workflow
-
-- plot some PCA
-- normalization
-  - per volume 
-  - per internal standard
-- filtering (not sure we need that) 
-
-## Annotate/ match 
-
-First we need to create a summarizedExperiement()
-
-- maybe separate the QCs into another object or do that later. 
 
 ```{r}
+# scatterplot lipid_name and rt(seconds)
+lipid_database$mz <- as.numeric(lipid_database$mz)
+
+#lipid_database <- lipid_database %>% mutate(`LIPID CATEGORY [ABBREV]`= as.factor(`LIPID CATEGORY [ABBREV]`))
+
+#ggplot(lipid_database, aes(x=rt_sec, y=mz, group=`LIPID CATEGORY [ABBREV]`)) +
+#  geom_point(aes(color=`LIPID CATEGORY [ABBREV]`))+
+#  ggtitle("rt_database") 
+
+plot(y = lipid_database$rt_sd, x =lipid_database$rt_adjusted, type = "l")
+points(intern_standard$RT ~ intern_standard$exp_rt, col = "red", pch = 16, cex = 1)
+abline(v = min(fit$fitted.values), col = "blue", lwd = 1, lty = 2)
+abline(v = max(fit$fitted.values), col = "blue", lwd = 1, lty =2)
+
+```
+Figure X. lipid database rt vs. rt adjusted base on the model 
+
+## missing steps ??
+
+These steps could be done after annotation, as we are in a semi-targeted workflow
+
+-   plot some pCA
+-   normalization
+
+    -   per volume
+    -   per internal standard
+
+-   filtering (not sure we need that)
+
+## Annotate/ match
+-   maybe separate the QCs into another object or do that later.
+
+```{r}
+#' extract results as a SummarizedExperiment
 res <- quantify(mse_pos, method = "sum", filled = FALSE)
 res
-save(res, "")
 
 assays(res)$raw_filled <- featureValues(mse_pos, method = "sum",
                                         filled = TRUE)
 ```
+## Save mse_object and res
+```{r}
+# save the mse_pos preprocessed object
+saveMsObject(mse_pos, AlabasterParam(path = file.path("objects/preprocessed_mse_pos")))
 
+# save the SummarizedExperiemnt
+saveObject(res, file.path("objects/preprocessed_res")) # check if is saving it proprerly
+```
 
 ```{r}
+# Extract the required information to build a new dataframe with the matching features
 query <- as.data.frame(rowData(res))
+query$feature_id <- rownames(rowData(res))
 target <- as.data.frame(lipid_database)
 target$mz <- as.numeric(target$mz)
-param_match <- MzRtParam(tolerance = 0.001, ppm = 10, toleranceRt = 4) ## to be refined
+param_match <- MzRtParam(tolerance = 0.001, ppm = 20, toleranceRt = 5) ## to be refined
 mtch <- matchValues(query, target, param = param_match, mzColname = c("mzmed", "mz"), rtColname = c("rtmed", "rt_adjusted"))
 
 mtch
@@ -974,20 +1044,501 @@ mtch
 mtch <- mtch[whichQuery(mtch)]
 mtched_data <- matchedData(mtch) ## can do some stuff with that table 
 
-length(unique(mtched_data$`target_lipid name`)) ## number of lipid matched
+## find features IDs of ambiguous matches
+tmp <- table(mtch$feature_id)
+tmp <- tmp[tmp > 1]
+fids <- names(tmp)
 
-length(unique(mtched_data$`target_LIPID SUBCLASS [ABBREV]`)) 
+## Check the first one
+tmp1 <- mtched_data[mtched_data$feature_id == fids[1], 
+                   c("feature_id", "rtmed", "mzmed", "target_lipid name", 
+                     "ppm_error", "score_rt", "target_rt_adjusted",
+                     "target_rt_sd")] |> 
+  as.data.frame()
+tmp_eic1 <- featureChromatograms(mse_pos, features = fids[1L])
+plot(tmp_eic1)
+
+tmp2 <- mtched_data[mtched_data$feature_id == fids[2], 
+                     c("feature_id", "rtmed", "mzmed", "target_lipid name", 
+                       "ppm_error", "score_rt", "target_rt_adjusted",
+                       "target_rt_sd")] |> 
+  as.data.frame()
+tmp_eic2 <- featureChromatograms(mse_pos, features = fids[2L])
+plot(tmp_eic2)
+
+par(mfrow = c(2, 1))
+plot(tmp_eic1)
+plot(tmp_eic2)
+
+tmp <- mtched_data[mtched_data$feature_id %in% fids, 
+                     c("feature_id", "rtmed", "mzmed", "target_lipid name", 
+                       "ppm_error", "score_rt", "target_rt_adjusted",
+                       "target_rt_sd")] |> 
+  as.data.frame()
+tmp_eic <- featureChromatograms(mse_pos, features = fids[5])
+plot(tmp_eic)
+
+
+#subset the ISTD
+df_subset <- subset(mtched_data, grepl("ISTD", target_ORIGIN, ignore.case = TRUE))
+# check the feautrea that match 2 compounds. check score, plotSpectraMirror. 
+# plot using the mtch object. 
+# scoring and othe rinfo check the mtch_data
+plotFeatureGroups(mse_pos, featureGroups = "FT01293")
+## need tofilter them out somehow. 
+
+
+
+
+
+
+
+## import information from mtch_data dataframe to res object using the feature ID present in both table. 
+mtched_data$`target_lipid name`
+rownames(mtched_data)
+
 ```
 
-List of plots that would be nice
-- 
-- 
+## Plots with the annotated compounds
+
+```{r}
+## remove duplicated form the 
+length(unique(mtched_data$`target_lipid name`)) ## number of lipid matched, ONLY 248 
+
+length(unique(mtched_data$`target_LIPID SUBCLASS [ABBREV]`)) 
+
+# Lipid Distribution barplot
+# Count data
+counts <- table(mtched_data$`target_LIPID CATEGORY [ABBREV]`)
+bar_colors <- c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854")
+
+# Rename categories for readability
+names(counts) <- c("Fatty Acyls [FA]", 
+                   "Glycerolipids [GL]", 
+                   "Glycerophospholipids [GP]", 
+                   "Sphingolipids [SP]", 
+                   "Sterol Lipids [ST]")
+
+# Adjust plot margins and font size
+par(mar = c(5, 7, 4, 2))  # increase left margin for labels
+
+bp <- barplot(counts,
+              horiz = TRUE,
+              col = bar_colors,
+              main = "Lipid Distribution",
+              xlab = "Number of Lipids",
+              las = 1,
+              cex.names = 0.9,
+              border = NA)
+
+text(counts, bp, labels = counts, pos = 4, cex = 0.8, col = "black")
+legend("topright",
+       legend = names(counts),
+       fill = bar_colors,
+       title = "Lipid Category",
+       cex = 0.6,
+       border = NA,
+       bty = "n")
+```
+
+-   Donut chart showing the lipid class with the total quantity of lipids detected
+
+```{r}
+# Donnut chart of lipid distribution
+counts <- table(mtched_data$`target_LIPID CATEGORY [ABBREV]`)
+
+names(counts) <- c("Fatty Acyls [FA]", 
+                   "Glycerolipids [GL]", 
+                   "Glycerophospholipids [GP]", 
+                   "Sphingolipids [SP]", 
+                   "Sterol Lipids [ST]")
+
+bar_colors <- c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854")
+labels <- counts
+par(mar = c(1, 1, 2, 1))
+
+# Plot
+pie(counts,
+    col = bar_colors,
+    labels = labels,     # solo los números
+    border = "white",
+    main = "Lipid Distribution",
+    cex = 0.9)
+
+symbols(0, 0, circles = 0.5, inches = FALSE, add = TRUE, bg = "white")
+
+# Leyend
+legend("topright",
+       legend = names(counts),
+       fill = bar_colors,
+       border = NA,
+       bty = "n",
+       title = "Lipid Category",
+       cex = 0.8)
+```
+
+```{r}
+# pie chart for lipid subclass. HERE ADD A NEW COLUMN WITH THE SHORT NAME
+counts1 <- table(mtched_data$`target_LIPID SUBCLASS [ABBREV]`)
+
+n_cat <- length(counts1)
+base_colors <- brewer.pal(9, "Set1")
+bar_colors <- rep(base_colors, length.out = n_cat)
+
+# Labels: only counts
+labels <- counts1
+
+# Adjust margins
+par(mar = c(1, 1, 2, 1))
+
+# Create pie (donut) chart
+pie(counts1,
+    col = bar_colors,
+    labels = labels,      # show only counts
+    border = "white",
+    main = paste("Category Distribution (n =", sum(counts), ")"),
+    cex = 0.9)
+
+# Add white circle in center for donut effect
+symbols(0, 0, circles = 0.5, inches = FALSE, add = TRUE, bg = "white")
+
+legend("topright",
+       legend = names(counts1),
+       fill = bar_colors,
+       border = NA,
+       bty = "n",
+       title = "Categories",
+       cex = 0.4)
+
+```
+
+-   heatmap with the significant metabolites found
+
+-   
+
+later on discuss how to deal with features that matches multiple compound.
+
+we could concatenate the annotation to the summarized experiment object. Do the normalization, quantitation, plotting after,..
+
+## Statistical analysis
+
+## Data normalization
+
+Here before we imput the missing values we have to normalize per volume as follows: The abundance of all W-DBS samples should be multiply per 2.5 and Plasma samples per 1.08
+
+```{r}
+#' Impute missing values using an uniform distribution
+na_unidis <- function(z) {
+    na <- is.na(z)
+    if (any(na)) {
+        min = min(z, na.rm = TRUE)
+        z[na] <- runif(sum(na), min = min/2, max = min)
+    }
+    z
+}
+
+#' Row-wise impute missing values and add the data as a new assay
+tmp <- apply(assay(res, "raw_filled"), MARGIN = 1, na_unidis)
+assays(res)$raw_filled_imputed <- t(tmp)
+```
+
+### **Initial quality assessment**
+
+-   plot also just the annotated data
+-   calcualte the missing values Principal Component Analysis
+
+```{r}
+#' Log2 transform and scale data
+vals <- assay(res, "raw_filled_imputed") |>
+    log2() |>
+    t() |>
+    scale(center = TRUE, scale = TRUE)
+
+#' Perform the PCA
+pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
+
+#' Plot the results
+vals_st <- cbind(vals, sample_type = res$sample_type)
+pca_12 <- autoplot(pca_res, data = vals_st , colour = 'sample_type', scale = 0) +
+    scale_color_manual(values = col_sample_type)
+pca_34 <- autoplot(pca_res, data = vals_st, colour = 'sample_type',
+                   x = 3, y = 4, scale = 0) +
+    scale_color_manual(values = col_sample_type)
+grid.arrange(pca_12, pca_34, ncol = 1)
+```
+
+Figure X. PCA of the data colored by sample_type.Volumetric devices profiles are clearly different from W-DBS and plasma.
+
+Intensity evaluation
+
+```{r}
+layout(mat = matrix(1:3, ncol = 1), height = c(0.2, 0.2, 0.8))
+
+par(mar = c(0.2, 4.5, 0.2, 3))
+barplot(apply(assay(res, "raw"), MARGIN = 2, function(x) sum(!is.na(x))),
+        col = paste0(col_sample, 80), border = col_sample,
+        ylab = "# detected peaks", xaxt = "n", space = 0.012)
+grid(nx = NA, ny = NULL)
+barplot(apply(assay(res, "raw_filled"), MARGIN = 2, function(x) sum(!is.na(x))),
+        col = paste0(col_sample, 80), border = col_sample,
+        ylab = "# detected + filled peaks", xaxt = "n",
+        space = 0.012)
+grid(nx = NA, ny = NULL)
+vioplot(log2(assay(res, "raw_filled")), xaxt = "n",
+        ylab = expression(log[2]~feature~abundance),
+        col = paste0(col_sample, 80), border = col_sample)
+points(colMedians(log2(assay(res, "raw_filled")), na.rm = TRUE), type = "b",
+       pch = 1)
+grid(nx = NA, ny = NULL)
+legend("topright", col = col_sample_type,
+       legend = names(col_sample_type), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
+       cex = 0.8,  bty = "n")
+```
+
+replot this after normalisation too Number of detected peaks and feature abundances.
+
+```{r}
+par(mfrow = c(1, 1), mar = c(3.5, 4.5, 2.5, 1))
+boxplot(MsCoreUtils::rowRla(assay(res, "raw_filled"),
+                            f = res$sample_type, transform = "log2"),
+        cex = 0.5, pch = 16,
+        col = paste0(col_sample, 80), ylab = "RLA",
+        border = col_sample, boxwex = 1,
+        outline = FALSE, xaxt = "n", main = "Relative log abundance",
+        cex.main = 1)
+axis(side = 1, at = seq_len(ncol(res)), labels = colData(res)$sample_name)
+grid(nx = NA, ny = NULL)
+abline(h = 0, lty=3, lwd = 1, col = "black")
+legend("topright", col = col_sample_type,
+       legend = names(col_sample_type), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
+       cex = 0.8,  bty = "n")
+```
+
+RLA plot for the raw data and filled data.
+
+### **Between sample normalisation**
+
+Media scaling, Here should I apply the volume and IS normalization???
+
+```{r}
+#' Compute median and generate normalization factor
+mdns <- apply(assay(res, "raw_filled"), MARGIN = 2,
+              median, na.rm = TRUE )
+nf_mdn <- mdns / median(mdns)
+
+#' divide dataset by median of median and create a new assay.
+assays(res)$norm <- sweep(assay(res, "raw_filled"), MARGIN = 2, nf_mdn, '/')
+assays(res)$norm_imputed <- sweep(assay(res, "raw_filled_imputed"), MARGIN = 2,
+                                  nf_mdn, '/')
+```
+
+### **Assessing overall effectiveness of the normalization approach**
+
+Principal component analysis
+
+```{r}
+#' Data before normalization
+vals_st <- cbind(vals, sample_type = res$sample_type)
+pca_raw <- autoplot(pca_res, data = vals_st,
+                    colour = 'sample_type', scale = 0) +
+    scale_color_manual(values = col_sample_type)
+
+#' Data after normalization
+vals_norm <- apply(assay(res, "norm"), MARGIN = 1, na_unidis) |>
+    log2() |>
+    scale(center = TRUE, scale = TRUE)
+
+pca_res_norm <- prcomp(vals_norm, scale = FALSE, center = FALSE)
+vals_st_norm <- cbind(vals_norm, sample_type = res$sample_type)
+pca_adj <- autoplot(pca_res_norm, data = vals_st_norm,
+                    colour = 'sample_type', scale = 0) +
+    scale_color_manual(values = col_sample_type)
+
+grid.arrange(pca_raw, pca_adj, ncol = 1)
+```
+
+write PC1 PC2 interpretation
+
+PC1 and PC2 of the data before and after normalization
+
+```{r}
+pca_raw <- autoplot(pca_res, data = vals_st ,
+                    colour = 'sample_type', x = 3, y = 4, scale = 0) +
+    scale_color_manual(values = col_sample_type)
+pca_adj <- autoplot(pca_res_norm, data = vals_st_norm,
+                    colour = 'sample_type', x = 3, y = 4, scale = 0) +
+    scale_color_manual(values = col_sample_type)
+
+grid.arrange(pca_raw, pca_adj, ncol = 1)
+```
+
+PC3 and PC4 of the data before and after normalization
+
+Intensity evaluation
+
+```{r}
+par(mfrow = c(2, 1), mar = c(3.5, 4.5, 2.5, 1))
+
+boxplot(rowRla(assay(res, "raw_filled"), group = res$sample_type),
+        cex = 0.5, pch = 16, ylab = "RLA", border = col_sample,
+        col = paste0(col_sample, 80), cex.main = 1, outline = FALSE,
+        xaxt = "n", main = "Raw data", boxwex = 1)
+grid(nx = NA, ny = NULL)
+legend("topright", inset = c(0, -0.2), col = col_sample_type,
+       legend = names(col_sample_type), lty=1, lwd = 2, xpd = TRUE,
+       ncol = 3, cex = 0.7, bty = "n")
+abline(h = 0, lty=3, lwd = 1, col = "black")
+
+boxplot(rowRla(assay(res, "norm"), group = res$sample_type),
+        cex = 0.5, pch = 16, ylab = "RLA", border = col_sample,
+        col = paste0(col_sample, 80), boxwex = 1, outline = FALSE,
+        xaxt = "n", main = "Normallized data", cex.main = 1)
+axis(side = 1, at = seq_len(ncol(res)), labels = res$sample_name)
+grid(nx = NA, ny = NULL)
+abline(h = 0, lty = 3, lwd = 1, col = "black")
+```
+
+fix RLA plot before and after normalization - plot also intensity of IS before and after normalization (log 2)
+
+Coefficient of variation
+
+```{r}
+#' Calculate the CV values
+index_study <- res$sample_type %in% c("M-VAMS", "W-DBS", "C-qDBS", "Plasma")
+index_QC <- res$sample_type == "QC"
+
+sample_res <- cbind(
+    QC_raw = rowRsd(assay(res, "raw_filled")[, index_QC],
+                    na.rm = TRUE, mad = TRUE),
+    QC_norm = rowRsd(assay(res, "norm")[, index_QC],
+                     na.rm = TRUE, mad = TRUE),
+    Study_raw = rowRsd(assay(res, "raw_filled")[, index_study],
+                       na.rm = TRUE, mad = TRUE),
+    Study_norm = rowRsd(assay(res, "norm")[, index_study],
+                        na.rm = TRUE, mad = TRUE)
+)
+
+#' Summarize the values across features
+res_df <- data.frame(
+    QC_raw = quantile(sample_res[, "QC_raw"], na.rm = TRUE),
+    QC_norm = quantile(sample_res[, "QC_norm"], na.rm = TRUE),
+    Study_raw = quantile(sample_res[, "Study_raw"], na.rm = TRUE),
+    Study_norm = quantile(sample_res[, "Study_norm"], na.rm = TRUE)
+)
+
+kable(res_df, format = "pipe")
+```
+
+Distribution of cv values across samples for the raw and normalized data
+
+the Cv in study sample decrease, usually that's not ideal but here might be driven by the whatman intensity correction (check this)
+
+## Quality control: Feature prefiltering
+
+```{r}
+#' Number of features before filtering
+nrow(res)
+```
+
+```{r}
+ #' keep unfiltered object
+res_unfilt <- res
+```
+
+```{r}
+#' Compute and filter based on the Dratio
+filter_dratio <- DratioFilter(threshold = 0.3,
+                              qcIndex = res$sample_type == "QC",
+                              studyIndex = res$sample_type != "QC",
+                              mad = TRUE)
+res <- filterFeatures(res, filter = filter_dratio, assay = "norm_imputed")
+```
+
+no Dratio: because Qc is baased on different matrices. instead rsd, check ?RsdFilter
+
+```{r}
+#' Number of features after analysis
+nrow(res)
+```
+
+```{r}
+#' Percentage left: end/beginning
+nrow(res)/nrow(res_unfilt) * 100
+```
+
+```{r}
+res_qc <- res[, res$sample_type == "QC"]
+res <- res[, res$sample_type != "QC"]
+```
+
+```{r}
+#' Calculate the QC's CV and add as feature variable to the data set
+rowData(res)$qc_cv <- assay(res_qc, "norm") |>
+               rowRsd()
+```
+
+## Overlaping features
+
+```{r}
+#create a logical matrix to be able to make the upsetplot
+df_logical <- !is.na(assay(res, "raw_filled"))
+
+# Extract group code (letter before "_pos.mzML")
+code <- sub(".*([MWCP])_pos\\.mzML$", "\\1", colnames(df_logical))
+
+# Map codes to descriptive names
+code_map <- c(
+  M = "M-VAMS",
+  C = "C-qDBS",
+  W = "W-DBS",
+  P = "Plasma"
+)
+groups <- code_map[code]
+
+# Collapse by group using 70% threshold
+result <- sapply(unique(groups), function(g) {
+  # number of samples in this group
+  n <- sum(groups == g)
+  # proportion of TRUEs across samples in this group
+  rowMeans(df_logical[, groups == g, drop = FALSE]) >= 0.7
+})
+
+# Result: logical matrix compounds x groups
+result[1:5, ]
+
+#make the upsetplot
+binary_data <-apply(result, MARGIN = 2, as.integer)
+upset(as.data.frame(binary_data), nset = 6, sets = colnames(result), keep.order = TRUE)
+```
+
+Number of Features in common between the devices.
+
+## Differential abundance analysis
+
+```{r}
+#' Define the colors for the plot
+col_sample <- col_sample_type[res$sample_type]
+
+#' Log transform and scale the data for PCA analysis
+vals <- assay(res, "norm_imputed") |>
+    t() |>
+    log2() |>
+    scale(center = TRUE, scale = TRUE)
+pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
+
+vals_st <- cbind(vals, sample_type = res$sample_type)
+autoplot(pca_res, data = vals_st , colour = 'sample_type', scale = 0) +
+    scale_color_manual(values = col_sample_type)
 
 
-later on discuss how to deal with features tha tmatches multiple compound.
+```
 
-we could concatenate the annotation to the summarized experiment object. 
-Do the normalization, quantitation, plotting after,.. 
+PCA of the data after normalization and quality control
+
+The samples clearly separate by study group on PCA indicating that there are differences in the metabolite profiles between the groups, speacially Plasma and de BuS devices are separated by the first component.
 
 
-## Statistical analysis 
+```{r}
+s_mse <- file.path(".", "mse_pos")
+saveMsObject(mse_pos, AlabasterParam(path = s_mse))
+```
