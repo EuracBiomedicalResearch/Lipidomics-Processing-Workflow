@@ -1017,8 +1017,6 @@ These steps could be done after annotation, as we are in a semi-targeted workflo
 res <- quantify(mse_pos, method = "sum", filled = FALSE)
 res
 
-
-
 assays(res)$raw_filled <- featureValues(mse_pos, method = "sum",
                                         filled = TRUE)
 ```
