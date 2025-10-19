@@ -3,6 +3,24 @@ title: "R_lipidomicsOptimization"
 format: html
 ---
 
+# TODOS 
+
+So we organise a bit  what is left to do. Also `!!!` can be found in the text
+for mroe context or issues. 
+
+- Write intro
+- Test peak picking and refinement parameters to improve peak detection
+  - find problem areas [Sara], add them to peakpicking code chunks
+  - test param
+  - Rerun preprocessing
+- Implement MetaboLights use properly. 
+- Fix abline in all the plotting code [Phili]
+
+
+# Introduction 
+
+[insert study info, setup info,goals,...]
+
 ## Load needed libraries
 
 ```{r, eval=TRUE}
@@ -34,9 +52,11 @@ library(ggVennDiagram)
 library(UpSetR)
 ```
 
-## Import the sample data for the analysis
+## Data Import
 
-Load raw mzML data of the pilot study, this includes data of venous blood of 10 healthy individuals loaded in the following BuS devices: M-VAMS, C-qDBS, W-DBS, also plasma samples.
+Load raw mzML data of the pilot study, this includes data of venous blood of 
+10 healthy individuals loaded in the following BuS devices: M-VAMS, C-qDBS,
+W-DBS, also plasma samples.
 
 ```{r, eval=TRUE}
 # Load pos data
@@ -52,12 +72,58 @@ mse_pos <- readMsExperiment(spectraFiles = spectra_files_pos,
 sampleData(mse_pos)
 ```
 
-Define the number of cores you want to work with
+Below we show how to load from MetaboLights as an alternative to mzml files. 
+
+```{r, eval=FALSE}
+param <- MetaboLightsParam(mtblsId = "MTBLS10722",
+                           assayName = "a_MTBLS10722_LC-MS_positive_reverse-phase_metabolite_profiling.txt",
+                           filePattern = ".mzML")
+
+mse_pos <- readMsObject(MsExperiment(),
+                        param,
+                        keepOntology = FALSE,
+                        keepProtocol = FALSE,
+                        simplify = TRUE)
+```
+
+Some variable mapping needs to be done when importing from MetaboLights 
+
+TODO !!!
+
+```{r, eval=FALSE}
+# Let's rename the column for easier access
+colnames(sampleData(mse_pos)) <- c("sample_name", "derived_spectra_data_file",
+                                "metabolite_asssignment_file",
+                                "source_name",
+                                "organism",
+                                "blood_sample_type",
+                                "sample_type", "age", "unit", "phenotype")
+
+# Add "QC" to the phenotype of the QC samples
+sampleData(mse_pos)$phenotype[sampleData(mse_pos)$sample_name == "POOL"] <- "QC"
+sampleData(mse_pos)$sample_name[sampleData(mse_pos)$sample_name == "POOL" ] <- c("POOL1", "POOL2", "POOL3", "POOL4")
+
+#  Add injection index column
+sampleData(mse_pos)$injection_index <- seq_len(nrow(sampleData(mse_pos)))
+
+#let's look at the updated sample data
+sampleData(mse_pos)[, c("derived_spectra_data_file",
+                     "phenotype", "sample_name", "age",
+                     "injection_index")] |>
+    kable(format = "pipe")
+```
+
+
+[Phili: Here i would explain maybe some column names so that other people understand 
+what is in them]
+
+
+
+Adjust the number of cores based on your machine. Suggested to use 1 or 2 
+below your higher capacity.
 
 ```{r, eval=TRUE}
-# Requires library(BiocParallel)
-cores_nb <- 4  # Adjust the number of cores based on your machine. Suggested
-               # to use 1 or 2 below your higher capacity.
+cores_nb <- 4  # Ajust here
 if (.Platform$OS.type == "unix") {
     register(MulticoreParam(cores_nb))
 } else {
@@ -68,7 +134,6 @@ if (.Platform$OS.type == "unix") {
 Define color per sample_type: M-VAMS, C-qDBS, W-DBS, QC, Plasma
 
 ```{r,eval=TRUE}
-#' Define colors for the different phenotypes
 col_sample_type <- brewer.pal(9, name = "Set1")[c(9, 2, 1, 3, 4)]
 names(col_sample_type) <- c("QC",   # grey
                           "M-VAMS", # blue
@@ -76,10 +141,9 @@ names(col_sample_type) <- c("QC",   # grey
                           "C-qDBS", # green
                           "Plasma") # purple
 col_sample <- col_sample_type[sampleData(mse_pos)$sample_type]
-
-#' Access Spectra Object
-spectra(mse_pos)
 ```
+
+# Dataset investigation 
 
 ## Chromatographic data visualization
 
@@ -95,16 +159,18 @@ bpc <- chromatogram(mse_pos, aggregationFun = "max")
 plot(bpc, col = paste0(col_sample, 80), main = "BPC", lwd = 1.5)
 grid()
 legend("topright", col = col_sample_type,
-       legend = names(col_sample_type), lty = 1, lwd = 2, cex=0.6, horiz = TRUE,
+       legend = names(col_sample_type), lty = 1, lwd = 2, cex=0.6, 
+       horiz = TRUE,
        bty = "n")
 
 #dev.off()
 ```
 
-Filter the data based on the RT observed on the BPC. In this data set we filter from 10 to 950 sec.
+Filter the data based on the RT observed on the BPC.
+In this data set we filter from 10 to 950 sec.
 
 ```{r, eval=TRUE}
-#| fig-cap: "BPC after filtering retentionm time."
+#| fig-cap: "BPC after filtering retention time."
 #' Filter the data based on retention time
 mse_pos <- filterRt(mse_pos, c(10, 950))
 
@@ -117,14 +183,13 @@ grid()
 legend("topright", col = col_sample_type,
        legend = names(col_sample_type), lty = 1, lwd = 2, cex=0.6,
        horiz = TRUE, bty = "n")
-
 ```
 
 ```{r, eval=TRUE}
 #| fig-cap: "Heatmap of TIC similarities. All plasma samples are group together."
 #' Total ion chromatogram
 tic <- chromatogram(mse_pos, aggregationFun = "sum") |>
-  bin(binSize = 8) #increase to 8
+  bin(binSize = 8)
 
 #' Calculate similarity (Pearson correlation) between BPCs
 ticmap <- do.call(cbind, lapply(tic, intensity)) |>
@@ -145,17 +210,20 @@ pheatmap(ticmap, annotation_col = ann,
 #dev.off()
 ```
 
+
 ## EICs
 
-Upload the list of the internal standards and also some endogenous compounds that will be used to make RT shift correction. RT must be in seconds.
+Upload the list of the internal standards and also some endogenous compounds 
+that will be used to make RT shift correction. RT must be in seconds.
 
 ```{r, eval=TRUE, warning = FALSE}
+#| tbl.cap:"Set of reference lipids, including deuterated lipids from SPLASH LIPIDOMIX and some deuterated compounds that are in high abundance in plasma."
 #' Load list of Internal standard SPLASH LIPIDOMIX
 intern_standard <- read_xlsx("splashlipidomix_list.xlsx") |>
     as.data.frame()
 intern_standard$rtmin <- intern_standard$RT - 30
 intern_standard$rtmax <- intern_standard$RT + 20
-intern_standard$mzmin <- intern_standard$mz - 0.008 #0.01 was suggested but 0.008 is good enough
+intern_standard$mzmin <- intern_standard$mz - 0.008 
 intern_standard$mzmax <- intern_standard$mz + 0.008
 rownames(intern_standard) <- intern_standard$short_name
 
@@ -186,12 +254,12 @@ fData(eic_is)[c("CAR", "LysoPC", "dLysoPC", "dLysoPE", "LPC", "SM",
     kable(format = "pipe")
 ```
 
-Table 1. set of reference lipids, including deuterated lipids from SPLASH LIPIDOMIX and some deuterated compounds that are in high abundance in plasma.
-
-We below plot the EICs for reference lipids (17 in total): isotope labeled lipids from splash lipidomix and some endogenous lipids.
+We below plot the EICs for reference lipids (17 in total): isotope labeled
+lipids from splash lipidomix and some endogenous lipids.
 
 ```{r, eval=TRUE}
-# Loop to go through all rows of the eic_is object and plot independent
+#| fig.cap:"EIC of all reference lipids."
+# Loop to go through all rows of the eic_is object and plot independent  
 
 for (i in seq_len(nrow(eic_is))) {
   eic <- eic_is[i,]
@@ -207,9 +275,8 @@ for (i in seq_len(nrow(eic_is))) {
 }
 ```
 
-Figure 4.EIC of all reference lipids
-
 ```{r, eval=TRUE}
+#|fig.cap:"EIC of three selected deuterated lipids."
 # Chromatogram example of three lipids from the list that was imported before
 eic_deuteratedLysoPC <- eic_is["dLysoPC"]
 eic_deuteratedSM <- eic_is["dSM"]
@@ -245,45 +312,20 @@ legend("topright", col = col_sample_type, legend = names(col_sample_type),
 #dev.off()
 ```
 
-Figure X. EIC of three selected deuterated lipids.
+# Data preprocessing
 
-## **Data preprocessing**
+## Chromatographic peak detection
 
-### **Chromatographic peak detection**
-
-Below we apply the CentWave algorithm with its default settings on the EICs of deuterated LysoPC, Sphingomyelin and Carnitine ions and evaluate the results.
-
-```{r, eval=TRUE}
-param_pd <- CentWaveParam()  #' Use default Centwave parameter for peak detection
-param_pd                     #' Look at the default parameters
-```
-
-```{r, eval=FALSE}
-#' Evaluate for Deuterated LysoPC
-dLysoPC_test <- findChromPeaks(eic_deuteratedLysoPC, param = param_pd)
-chromPeaks(dLysoPC_test)
-```
-
-```{r, eval=FALSE}
-#' Evaluate for Deuterated SM
-dSM_test <- findChromPeaks(eic_deuteratedSM, param = param_pd)
-chromPeaks(dSM_test)
-```
-
-```{r}
-#' Evaluate for CAR
-CAR_test <- findChromPeaks(eic_CAR, param = param_pd)
-chromPeaks(CAR_test)
-```
-
-We use the deuterated LysoPC of the first sample to extract the *m/z*, calculate the absolute difference and expressed in ppm.
+We use the deuterated LysoPC of the first sample to extract the *m/z*, 
+calculate the absolute difference and expressed in ppm.
 
 ```{r, eval=TRUE}
 #' Restrict the data to signal from dLysoPC in the first sample
 lpc <- mse_pos[1L] |>
   spectra() |>
   filterRt(rt = c(155, 170)) |>
-  filterMzRange(mz = fData(eic_deuteratedLysoPC)["dLysoPC", c("mzmin", "mzmax")])
+  filterMzRange(mz = fData(eic_deuteratedLysoPC)["dLysoPC", 
+                                                 c("mzmin", "mzmax")])
 
 #' Show the number of peaks per m/z filtered spectra
 lengths(lpc)
@@ -301,9 +343,16 @@ mz_diff <- lpc |>
 range(mz_diff * 1e6 / mean(unlist(mz(lpc))))
 ```
 
-We therefore, choose a value close to the maximum within this range for parameter `ppm`, i.e., 10 ppm, otherwise work with 2 `ppm` will be to low.
+We therefore, choose a value close to the maximum within this range for 
+parameter `ppm`, i.e., 10 ppm, otherwise work with 2 `ppm` will be to low.
 
-We can now perform the chromatographic peak detection with the adapted settings on our EICs, and test the parameters in some Lipids from the list. In this case deuterated LysoPC, Sphingomelyn and Carnitine.
+From previous observation of some of our ISTD we estimate the average peak width 
+to be around 4 to 8 seconds. We therefore set the `peakwidth` parameter to
+`c(4, 8)`. [Here link to figure above]
+
+We can now perform the chromatographic peak detection with the adapted settings
+on our EICs, and test the parameters in some Lipids from the list. In this case
+deuterated LysoPC, Sphingomelyn and Carnitine.
 
 ```{r, eval=TRUE}
 #' Parameters adapted for chromatographic peak detection on EICs.
@@ -327,9 +376,14 @@ CAR_test <- findChromPeaks(eic_CAR, param = param_pd)
 chromPeaks(CAR_test)
 ```
 
-With the customized parameters, a chromatographic peak was detected in each sample. Below, we use the [`plot()`](https://rdrr.io/r/graphics/plot.default.html) function on the EICs to visualize these results.
+It now seems that we have a peak detected in each sample for the first two ions, !!!
+
+With the customized parameters, a chromatographic peak was detected in each 
+sample. Below, we use the [`plot()`](https://rdrr.io/r/graphics/plot.default.html) 
+function on the EICs to visualize these results.
 
 ```{r, eval=TRUE}
+#| fig.cap:"EIC of three selected deuterated lipids after applying the optimized param selection."
 #' Plot test chromatogram for deuterated LysoPC, Sphingomielyn and Carnitine.
 par(mfrow = c(1, 3))
 plot(dLysoPC_test, main = fData(dLysoPC_test)$short_name,
@@ -353,8 +407,6 @@ legend("topright", col = col_sample_type,
        legend = names(col_sample_type), lty = 1, bty = "n")
 ```
 
-Figure X. EIC of the 3 selected lipids after apply the optimized param selection. Chromatographic peak detection on 3 EICs.
-
 We can see a peak seems to be detected in each sample for both ions. This indicates that our custom settings are suitable for our dataset. We now proceed and apply them to the entire dataset, extracting EICs again for the same ions to evaluate and confirm that chromatographic peak detection worked as expected.
 
 ```{r, eval=TRUE}
@@ -365,8 +417,7 @@ param_pd <- CentWaveParam(peakwidth = c(4, 8), ppm = 10, integrate = 2,
 mse_pos <- findChromPeaks(mse_pos, param = param_pd, chunkSize = cores_nb)
 
 #' Update EIC internal standard object
-#'
-#' Below tested a larger mz window to see if the carnitine gets detected but it jsut highlights all the noise.
+#' Below tested a larger mz window to see if the carnitine gets detected but it just highlights all the noise. 
 # new_mz <- intern_standard[, c("mzmin", "mzmax")]
 # new_mz$mzmin <- new_mz$mzmin - 0.01
 # new_mz$mzmax <- new_mz$mzmax + 0.01
@@ -388,9 +439,12 @@ rownames(fData(eic_is)) <- intern_standard$short_name
 eic_deuteratedLysoPC <- eic_is["dLysoPC"]
 eic_deuteratedSM <- eic_is["dSM"]
 eic_CAR <- eic_is["CAR"]
+
+## Here add some other double peak compound that we failed to identify before.
 ```
 
 ```{r, eval=FALSE}
+|# fig.cap="EIC of three selected deuterated lipids after applying the chromatographic peak detection on the entire dataset."
 par(mfrow = c(1, 3))
 plot(eic_deuteratedLysoPC, main = fData(dLysoPC_test)$short_name,
      col = paste0(col_sample, 80),
@@ -413,9 +467,10 @@ legend("topright", col = col_sample_type,
        legend = names(col_sample_type), lty = 1, bty = "n")
 ```
 
-Figure X.
-
-After applying the chromatographic peak detection over the entire dataset, only the first two peaks have been detected properly in all sample, but this does not happen with the Carnitine (not even after changing the signal to noise ratio, or opening the window for the *m/z* or rt)
+After applying the cinematographic peak detection over the entire dataset, 
+only the first two peaks have been detected properly in all sample, but this 
+does not happen with the Carnitine (not even after changing the signal to 
+noise ratio, or opening the window for the m/z or rt)
 
 **Merge split peaks**
 
@@ -435,7 +490,10 @@ chromPeakData(mse_pos)$merged |>
                          table()
 ```
 
-Evaluate the results of the chromatographic peak detection on EICs of e.g. internal standards or other compounds/ions known to be present in the samples. Here we update our EICs objects for the internal standards with the results of the chromatographic peak detection and refinement.
+Evaluate the results of the chromatographic peak detection on EICs of e.g. 
+internal standards or other compounds/ions known to be present in the samples. 
+Here we update our EICs objects for the internal standards with the results of
+the chromatographic peak detection and refinement.
 
 ```{r, eval=FALSE}
 eics_is_chrompeaks <- eic_is
@@ -451,7 +509,6 @@ eic_CAR <- eic_is["CAR"]
 ```
 
 ```{r, eval=FALSE}
-
 # Define output directory (create if it doesn't exist)
 outdir <- "peak_detection_ref_lipid"
 if (!dir.exists(outdir)) dir.create(outdir)
@@ -484,9 +541,14 @@ for (i in seq_len(nrow(eic_is))) {
 cat("All chromatograms saved in:", outdir, "\n")
 ```
 
-All the compound plots in eic_is are saved locally and also run `eic_is` in the console again to ensure that all the eic that have 2 peak are properly separated. Discuss with Johannes to see how to prevent merge.
+All the compound plots in `eic_is` are now saved locally, these should be 
+checked before continuing. Each peak should be detected in most samples 
+(if not all). Also ensure that all the EICs that have 2 peak are properly 
+separated. Discuss with Johannes to see how to prevent merge. !!!
 
 Number of chromatographic peaks per sample.
+
+!!! STOPPED HERE 
 
 ```{r, eval= TRUE}
 #' Count the number of peaks per sample and summarize them in a table.
@@ -496,11 +558,15 @@ data.frame(sample_name = sampleData(mse_pos)$sample_name,
   kable(format = "pipe")
 ```
 
-A similar number of chromatographic peaks was identified within the various samples of the data set. In all cases W-DBS has the lower number of features.
+A similar number of chromatographic peaks was identified within the various 
+samples of the data set. In all cases W-DBS has the lower number of features.
+Which makes sense as less volume was injected therefore features of lower\
+intensity would not be seen im W-DBS.
 
-### **Retention time alignment**
+## Retention time alignment
 
-To evaluate the presence of a shift we extract and plot below the BPC from the QC samples.
+To evaluate the presence of a shift we extract and plot below the BPC from the
+QC samples.
 
 ```{r, eval=TRUE}
 #' Get QC samples
