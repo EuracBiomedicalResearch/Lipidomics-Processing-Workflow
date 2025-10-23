@@ -14,25 +14,24 @@ for more context or issues.
         See my comments in the text. I have some suggestion regarding merging though.
         See line 464
 
--   Implement MetaboLights use properly. Sara need to fix the tables online before going on with that.
+-   Implement MetaboLights use properly. Sara need to fix the tables online before going on with that (The changes have been uploaded, Please let me know if you are able to see them)
 
 -   Fix abline in all the plotting code 
-  - i fixed it in the first one, please fix the other plots with that too.
+  - i fixed it in the first one, please fix the other plots with that too (FIXED)
 
 -   Matching loop (rank 2, 3 etc.)
 
--   Add figure and table captions
+-   Add figure and table captions (I have been adding them to the plots I think we are going to keep)
 
 -   Clean up useless code.
 
--   Implement the filterFeatures RSd code
+-   Implement the filterFeatures RSd code (Done)
 
 -   output plots code
 
 -   step by step explanation of normalisation
-    - PHILI will write the code.
+    - PHILI will write the code.(I have added the steps that we followed for the publication)
 
--   
 
 # Introduction
 
@@ -102,6 +101,10 @@ library(UpSetR)
 Load raw mzML data of the pilot study, this includes data of venous blood of 10
 healthy individuals loaded in the following BuS devices: M-VAMS, C-qDBS, W-DBS,
 also plasma samples.
+
+User should create the seq_pos.xlsx where injection order, sample name and 
+sample_type have to be included. Also POS_ data need to have all the files 
+in .mzml that where included in the excel file.
 
 ```{r, eval=FALSE}
 # Load pos data
@@ -209,7 +212,7 @@ legend("topright", col = col_sample_type,
 #dev.off()
 ```
 
-Filter the data based on the RT observed on the BPC. In this data set we filter
+Filter the data based on the retention time observed on the BPC. In this data set we filter
 from 10 to 950 sec.
 
 ```{r, eval=TRUE}
@@ -255,8 +258,7 @@ pheatmap(ticmap, annotation_col = ann,
 
 ## EICs
 
-Upload the list of the internal standards and also some endogenous compounds
-that will be used to make RT shift correction. RT must be in seconds.
+Upload the list of the reference lipids (internal standards form SPLAH LIPIDOMIX and also some endogenous compounds), that will be used to make retention time shift correction. Retention time must be in seconds.
 
 ```{r, eval=TRUE, warning = FALSE}
 #| tbl.cap: "Set of reference lipids, including deuterated lipids from SPLASH LIPIDOMIX and some deuterated compounds that are in high abundance in plasma."
@@ -292,8 +294,7 @@ fData(eic_is)[c("CAR", "LysoPC", "dLysoPC", "dLysoPE", "LPC", "SM",
     kable(format = "pipe")
 ```
 
-We below plot the EICs for reference lipids (17 in total): isotope labeled
-lipids from splash lipidomix and some endogenous lipids.
+We below plot the EICs for reference lipids (17 in total).The dotted red line represents the expected retention time of the peak, showing that the retention time shift varies depending on the isocratic range.
 
 ```{r, eval=TRUE}
 #| fig.cap: "EIC of all reference lipids."
@@ -314,7 +315,7 @@ for (i in seq_len(nrow(eic_is))) {
 ```
 
 ```{r, eval=TRUE}
-#|fig.cap: "EIC of three selected deuterated lipids."
+#|fig.cap: "Example: EIC of three selected deuterated lipids."
 # Chromatogram example of three lipids from the list that was imported before
 eic_deuteratedLysoPC <- eic_is["dLysoPC"]
 eic_deuteratedSM <- eic_is["dSM"]
@@ -342,6 +343,7 @@ plot(eic_CAR, main = fData(eic_CAR)$short_name,
      cex.main = 0.8,
       col = paste0(col_sample, 80))
 grid()
+abline(v = fData(eic_CAR)$rt, col = "red", lty = 3)
 
 legend("topright", col = col_sample_type, legend = names(col_sample_type),
        lty = 1,
@@ -524,7 +526,7 @@ My conclusion on the test is:
   results. 
 - Sara needs to check that compound 1 was actually detected in her original 
   analysis because i could not see it in any of my tests.
-- Regarding merging, I would advise to not run it actually, we mrege a very low 
+- Regarding merging, I would advise to not run it actually, we merge a very low 
   amount of peaks in the end and the peaks that we don't want to merge seem to
   be merging.. (compound 4 for example). SO let's remove that step ? 
 - I would advocate to re-increase the `sntresth` to 5 as well, to avoid picking
@@ -546,18 +548,22 @@ plot(dLysoPC_test, main = fData(dLysoPC_test)$short_name,
      peakBg = paste0(col_sample, 40)[chromPeaks(dLysoPC_test)[, "column"]],
      cex.main = 0.8, cex.axis = 0.8)
 grid()
+abline(v = fData(eic_deuteratedLysoPC)$rt, col = "red", lty = 3)
 
 plot(dSM_test, main = fData(dSM_test)$short_name,
      col = paste0(col_sample, 80),
      peakBg = paste0(col_sample, 40)[chromPeaks(dSM_test)[, "column"]],
      cex.main = 0.8, cex.axis = 0.8)
 grid()
+abline(v = fData(eic_deuteratedSM)$rt[i], col = "red", lty = 3)
 
 plot(CAR_test, main = fData(CAR_test)$short_name,
      col = paste0(col_sample, 80),
      peakBg = paste0(col_sample, 40)[chromPeaks(CAR_test)[, "column"]],
      cex.main = 0.8, cex.axis = 0.8)
 grid()
+abline(v = fData(eic_CAR)$rt, col = "red", lty = 3)
+
 legend("topright", col = col_sample_type,
        legend = names(col_sample_type), lty = 1, bty = "n")
 ```
@@ -621,6 +627,7 @@ plot(eic_CAR, main = fData(CAR_test)$short_name,
      peakBg = paste0(col_sample, 40)[chromPeaks(CAR_test)[, "column"]],
      cex.main = 0.8, cex.axis = 0.8)
 grid()
+
 legend("topright", col = col_sample_type,
        legend = names(col_sample_type), lty = 1, bty = "n")
 ```
@@ -711,7 +718,7 @@ data.frame(
 A similar number of chromatographic peaks was identified within the various
 samples of the data set. In all cases W-DBS has the lower number of features.
 Which makes sense as less volume was injected therefore features of lower\
-intensity would not be seen im W-DBS.
+intensity would not be seen in W-DBS.
 
 ## Retention time alignment
 
@@ -932,15 +939,13 @@ We can now evaluate the impact of the alignment on the retention times of
 internal standards across the full data set:
 
 ```{r, eval=FALSE}
+#| fig-cap: "Retetion time variation of internal standards before and after alignment."
 list(all_raw = rowSds(rt_raw, na.rm = TRUE),
      all_adj = rowSds(rt_adj, na.rm = TRUE)
      ) |>
     vioplot()
 grid()
 ```
-
-Figure X. Retetion time variation of internal standards before and after
-alignment.
 
 ## Correspondence
 
@@ -1029,10 +1034,7 @@ This corresponds to non-deuterated LysoPC and we can see that it can
 distinguish between the two peaks.
 
 ```{r, eval=FALSE}
-#### TEST for review Evaluation of the correspondance results in 17 EICs in the IS list.
-
-
-
+#| fig-cap: "Evaluation of the correspondance results in 17 EICs in the IS list."
 # Loop to go through all rows of the eic_is object and plot independent after correspondance analysis
 
 for (i in seq_len(nrow(eic_is))) {
@@ -1045,7 +1047,7 @@ for (i in seq_len(nrow(eic_is))) {
        col = paste0(col_sample, 80)
   )
   grid()
- #abline(v = median(rtime(eic)), col = "red", lty = 3)
+ abline(v = fData(eic_is)$rt[i], col = "red", lty = 3)
 }
 
 
@@ -1073,6 +1075,7 @@ for (i in seq_len(nrow(eic_isp))) {
     peakPch = 16
   )
   grid()
+  abline(v = fData(eic_icp)$rt[i], col = "red", lty = 3)
 }
 ```
 
@@ -1106,6 +1109,7 @@ sum(is.na(featureValues(mse_pos))) /
 ```
 
 ```{r}
+#| fig-cap: "Detected vs. filled-in signal."
 #' Get only detected signal in QC samples
 vals_detect <- featureValues(mse_pos, filled = FALSE)[, QC_samples]
 
@@ -1233,6 +1237,7 @@ quantile(abs(rt_sd - corrected_rt))
 ```
 
 ```{r}
+#| fig-cap: "lipid database rt vs. rt adjusted base on the model."
 # scatterplot lipid_name and rt(seconds)
 lipid_database$mz <- as.numeric(lipid_database$mz)
 
@@ -1242,34 +1247,43 @@ lipid_database$mz <- as.numeric(lipid_database$mz)
 #  geom_point(aes(color=`LIPID CATEGORY [ABBREV]`))+
 #  ggtitle("rt_database")
 
-plot(y = lipid_database$rt_sd, x =lipid_database$rt_adjusted, type = "l")
+plot(y = lipid_database$rt_sd, x =lipid_database$rt_adjusted, type = "l",
+     xlab = "Adjusted rt",
+     ylab = "Database rt")
 points(intern_standard$RT ~ intern_standard$exp_rt, col = "red", pch = 16, cex = 1)
 abline(v = min(fit$fitted.values), col = "blue", lwd = 1, lty = 2)
 abline(v = max(fit$fitted.values), col = "blue", lwd = 1, lty =2)
 grid()
 abline(0, 1, lty = 2, col = "#00000040")
 ```
-
-Figure X. lipid database rt vs. rt adjusted base on the model. The Blak line is
-build with the 592 compounds of the database and the red dots are the reference
-lipids (17 between endognous and deuterated)
+The Black line is build with the 592 compounds of the database and the red dots are the reference
+lipids (17 between endogenous and deuterated)
 
 ## missing steps ??
 
 These steps could be done after annotation, as we are in a semi-targeted
 workflow
 
--   plot some pCA
+-   normalization followed at CEMBIO for this study:
+  - missing values imputation (KNN algorithm)
+  - Normalization per volume (multiply whatman samples- factor 2.5 and plama samples - factor 1.08)
+  - Normalization per internal standard (for each lipid subclass dividing per each IS)
 
--   normalization
-
-    -   per volume
-    -   per internal standard
-
--   filtering (not sure we need that)
+     CAR with C17 sphinganine
+     CE with Chol Ester (18:1(d7))
+     Cer, Hexcer and SM with SM(18:1/18:1(d9))
+     DG with DAG(15:0/18:1(d7))
+     FA with FA(16:0(d31))
+     LPC with LysoPC(18:1(d7))  
+     LPE with LysoPE(18:1(d7))
+     PC with PC(15:0/18:1(d7))
+     PE with PE(15:0/18:1(d7))
+     TG with TAG(15:0/18:1(d7/15:0))
+     All this is now on the column IS_ norm, there I indicate the lipid name of the IS that we should use to make the division 
+     
+  - Remove lipids with a cv in QCs >30%
 
 # Annotate/ match
-
 -   maybe separate the QCs into another object or do that later.
 
 ```{r}
@@ -2009,8 +2023,17 @@ filter_dratio <- DratioFilter(threshold = 0.3,
 res <- filterFeatures(res, filter = filter_dratio, assay = "norm_imputed")
 ```
 
-no Dratio: because Qc is baased on different matrices. instead rsd, check
+no Dratio: because Qc is based on different matrices. instead rsd, check
 ?RsdFilter
+
+```{r}
+# RSD filter 
+rsd_filter <- RsdFilter(threshold = 0.3,
+                        qcIndex = res$sample_type == "QC")
+
+res_rsd <- filterFeatures(res, filter = rsd_filter)
+```
+
 
 ```{r}
 #' Number of features after analysis
