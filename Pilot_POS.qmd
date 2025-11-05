@@ -14,10 +14,7 @@ for more context or issues.
         See my comments in the text. I have some suggestion regarding merging though.
         See line 464
 
--   Implement MetaboLights use properly. Sara need to fix the tables online before going on with that (The changes have been uploaded, Please let me know if you are able to see them)
-
--   Fix abline in all the plotting code 
-  - i fixed it in the first one, please fix the other plots with that too (FIXED)
+-   Implement MetaboLights use properly. Changes on the tables have been uploaded, Please let me know if you are able to see them
 
 -   Matching loop (rank 2, 3 etc.)
 
@@ -31,6 +28,7 @@ for more context or issues.
 
 -   step by step explanation of normalisation
     - PHILI will write the code.(I have added the steps that we followed for the publication)
+
 
 
 # Introduction
@@ -442,8 +440,10 @@ deuterated LysoPC, Sphingomelyn and Carnitine.
 
 ```{r, eval=TRUE}
 #' Parameters adapted for chromatographic peak detection on EICs.
+#param_pd <- CentWaveParam(peakwidth = c(4, 8), ppm = 10, integrate = 2,
+#                          snthresh = 2) # these were the initial parameters
 param_pd <- CentWaveParam(peakwidth = c(4, 8), ppm = 10, integrate = 2,
-                          snthresh = 2)
+                          snthresh = 2, firstBaselineCheck = FALSE)
 
 #' Evaluate on the dLysoPC ion
 dLysoPC_test <- findChromPeaks(eic_deuteratedLysoPC, param = param_pd)
@@ -466,8 +466,13 @@ BELOW IS A TEST to improve peak picking params - to be deleted.
 I  tested it by subsetting for the 8 QC samples
 
 ```{r}
+mse_pos[1] |>
+  filterSpectra(filterRt, rt = c(190, 220)) |>
+  filterSpectra(filterMzRange, mz = c(482.3, 482.4)) |>
+  plot()
+
 ## Current param on the problematic compounds
-mse_test <- mse_pos
+mse_test <- mse_pos[1]
 param_pd <- CentWaveParam(peakwidth = c(4, 8), ppm = 10, integrate = 2,
                           snthresh = 2)
 mse_test <- findChromPeaks(mse_test, param = param_pd, chunkSize = 2L)
@@ -482,8 +487,8 @@ plot(fts)
 ## cp4 properly separated = refinement might merge. 
 
 
-param_pd <- CentWaveParam(peakwidth = c(4, 8), ppm = 25, integrate = 2,
-                          snthresh = 1, extendLengthMSW = TRUE)
+param_pd <- CentWaveParam(peakwidth = c(4, 8), ppm = 10, integrate = 2,
+                          snthresh = 2, firstBaselineCheck = FALSE) #keep it
 mse_test <- findChromPeaks(mse_test, param = param_pd, chunkSize = 2L)
 fts <- chromatogram(mse_test,
                        rt = as.matrix(df_features[, c("rt_min", "rt_max")]),
@@ -496,6 +501,11 @@ plot(fts)
 ## cp4 properly separated = refinement might merge. 
 
 ## sooo the original code works best actually
+
+mse_test[1] |>
+  filterSpectra(filterRt, rt = c(190, 220)) |>
+  filterSpectra(filterMzRange, mz = c(482.3, 482.4)) |>
+  plot()
 
 ## next i need ot make sure we don't merge cp2 and cp4.
 ## current code
@@ -576,7 +586,7 @@ to evaluate and confirm that chromatographic peak detection worked as expected.
 ```{r, eval=TRUE}
 #' Using the same settings, but with default snthresh
 param_pd <- CentWaveParam(peakwidth = c(4, 8), ppm = 10, integrate = 2,
-                          snthresh = 2)
+                          snthresh = 2, firstBaselineCheck = FALSE) # added november 4
 ## lowered the sntresth super low and still no detection of the carnitine peaks.
 mse_pos <- findChromPeaks(mse_pos, param = param_pd, chunkSize = cores_nb)
 
@@ -1137,7 +1147,7 @@ abline(0, 1)
 
 Figure X. Detected vs. filled-in signal.
 
-# Library correction.
+# Database correction.
 
 ```{r, eval=FALSE}
 #' Default parameter for the grouping and apply them to the test ions BPC
@@ -1233,7 +1243,7 @@ lipid_database$rt_adjusted <- corrected_rt
 ## difference between original and adjusted retention times
 quantile(abs(rt_sd - corrected_rt))
 
-# plot library 500 compounds rt  raw vs adj. then (on top) add the ref_rt vs exp_rt (20compounds)
+# plot library 592 compounds rt  raw vs adj. then (on top) add the ref_rt vs exp_rt (20compounds)
 ```
 
 ```{r}
@@ -1320,7 +1330,11 @@ Match features (query) against (aligned) library (target).
 query <- as.data.frame(rowData(res))
 query$feature_id <- rownames(rowData(res))
 #subset the lipid library for rank 1 adducts only 
-lipid_database_rank1 <- lipid_database[lipid_database$rank == 1, ]
+lipid_database_rank1 <- lipid_database[lipid_database$rank == 1, ] #242 annotations with both param_pd
+install.packages("dplyr")
+library(dply)
+lipid_database_rank1_2 <- lipid_database %>%
+  filter(rank %in% c(1, 2))
 
 
 ## Get the reference/databse data as a data.frame
@@ -1364,7 +1378,7 @@ The table below shows the ambiguous (multi-matching) features.
 ```{r, results = "asis"}
 table_amb <- mtched_data[mtched_data$feature_id %in% fids_ambiguous,
                          c("feature_id", "mzmed", "rtmed", "target_lipid.name",
-                           "target_Adduct", "ppm_error", "score_rt")]
+                           "target_Adduct", "ppm_error", "score_rt","target_rank")]
 table_amb <- table_amb[order(table_amb$feature_id, table_amb$rtmed), ]
 rownames(table_amb) <- NULL
 library(pander)
