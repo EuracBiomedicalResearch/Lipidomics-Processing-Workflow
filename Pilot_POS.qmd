@@ -134,30 +134,27 @@ mse_pos <- readMsObject(MsExperiment(),
 
 Some variable mapping needs to be done when importing from MetaboLights
 
-TODO !!!
-
 ```{r, eval=TRUE}
 # Filter for the pilot study
-#[...]
-#
-
+mse_pos <- mse_pos[sampleData(mse_pos)$`Factor Value[Cohort]` == "Cohort_study"]
 
 # Let's rename the column for easier access
 sad <- sampleData(mse_pos)
-sad <- sad[,c(1, 3, 8)]
-colnames(sad) <- c("sample_name", "file_name",  "sample_type")
+sad <- sad[,c(1, 3, 8, 10)]
+colnames(sad) <- c("sample_name", "file_name",  "sample_type", "injection_index")
 
 #  Add injection index column
-sad$inj_no <- seq_len(nrow(sad))
 sad$polarity <- "pos"
-
 sampleData(mse_pos) <- sad
 
 ## remove blank samples 
 mse_pos <- mse_pos[sampleData(mse_pos)$sample_type != "Blank"]
 
-### for now until the study is fixed i will test things on the first 8 QCs
-mse_pos <- mse_pos[1:8]
+## reorder the sample based on injection order
+mse_pos <- mse_pos[order(sampleData(mse_pos)$injection_index), ]
+
+##only phili - subset to make analysis faster
+mse_pos <- mse_pos[sampleData(mse_pos)$sample_type == "QC"]
 ```
 
 \[Phili: Here i would explain maybe some column names so that other people
@@ -296,21 +293,28 @@ We below plot the EICs for reference lipids (17 in total).The dotted red line re
 
 ```{r, eval=TRUE}
 #| fig.cap: "EIC of all reference lipids."
-# Loop to go through all rows of the eic_is object and plot independent  
 
+# Loop to go through all rows of the eic_is object and plot independent  
+dr <- "./figures/EIC_internal_standards/"
+if (!dir.exists(dr)) dir.create(dr, recursive = TRUE)
 for (i in seq_len(nrow(eic_is))) {
   eic <- eic_is[i,]
-  #png add
+  png(paste0(dr, rownames(fData(eic_is))[i], ".png"), ## check if the path breaks
+      width = 800, height = 600, res = 120)
   plot(eic,
-       main = rownames(fData(eic_is))[i], #use the rawnames as tittles
+       main = rownames(fData(eic_is))[i], 
        cex.axis = 0.8,
        cex.main = 0.8,
        col = paste0(col_sample, 80)
   )
   grid()
- abline(v = fData(eic_is)$rt[i], col = "red", lty = 3)  ## here is the fix, put it in the others plots too.
+  abline(v = fData(eic_is)$rt[i], col = "red", lty = 3)
+  dev.off()
 }
 ```
+
+
+[Phili: do we need to keep this below ? now i have saved them locally]
 
 ```{r, eval=TRUE}
 #|fig.cap: "Example: EIC of three selected deuterated lipids."
@@ -350,7 +354,8 @@ legend("topright", col = col_sample_type, legend = names(col_sample_type),
 #dev.off()
 ```
 
-THIS CAN BE DELETED AT THE END
+
+[alos remove this]
 ```{r}
 # Extract some feature examples where we are having issues
 # features "FT03637", "FT03866", "FT03865", "FT12793"
@@ -591,19 +596,13 @@ param_pd <- CentWaveParam(peakwidth = c(4, 8), ppm = 10, integrate = 2,
 ## lowered the sntresth super low and still no detection of the carnitine peaks.
 mse_pos <- findChromPeaks(mse_pos, param = param_pd, chunkSize = cores_nb)
 
-#' Update EIC internal standard object
-#' Below tested a larger mz window to see if the carnitine gets detected but it just highlights all the noise. 
-# new_mz <- intern_standard[, c("mzmin", "mzmax")]
-# new_mz$mzmin <- new_mz$mzmin - 0.01
-# new_mz$mzmax <- new_mz$mzmax + 0.01
-
 eics_is_noprocess <- eic_is
 eic_is <- chromatogram(mse_pos,
                        rt = as.matrix(intern_standard[, c("rtmin", "rtmax")]),
                        mz = as.matrix(intern_standard[, c("mzmin", "mzmax")]))
 ```
 
-```{r, eval=FALSE}
+```{r, eval=TRUE}
 fData(eic_is) <- fData(eics_is_noprocess)
 ```
 
@@ -688,13 +687,13 @@ eic_CAR <- eic_is["CAR"]
 
 ```{r, eval=FALSE}
 # Define output directory (create if it doesn't exist)
-outdir <- "peak_detection_ref_lipid"
-if (!dir.exists(outdir)) dir.create(outdir)
+dr <- "./figures/peak_detection_ref_lipid/"
+if (!dir.exists(dr)) dir.create(dr)
 
 # Loop through each row and save plots as PNG
 for (i in seq_len(nrow(eic_is))) {
   eic <- eic_is[i, ]
-  filename <- file.path(outdir, paste0(rownames(fData(eic_is))[i], ".png"))
+  filename <- file.path(dr, paste0(rownames(fData(eic_is))[i], ".png"))
   png(filename, width = 800, height = 600, res = 120)
   plot(
     eic,
@@ -704,7 +703,7 @@ for (i in seq_len(nrow(eic_is))) {
     col = paste0(col_sample, 80)
   )
   grid()
-  # abline(v = median(rtime(eic)), col = "red", lty = 3)
+  abline(v = fData(eic_is)$rt[i], col = "red", lty = 3)
   dev.off()
 }
 ```
@@ -1019,6 +1018,11 @@ param_cor <- PeakDensityParam(sampleGroups = group_mse,
                               minFraction = 0.5, binSize = 0.01, ppm = 10,
                               bw = 2)
 
+## for phili tests, to be removed later: 
+## param_cor <- PeakDensityParam(sampleGroups = rep(1, length(mse_pos)),
+                              # minFraction = 0.5, binSize = 0.01, ppm = 10,
+                              # bw = 2)
+
 #' Apply to whole data
 mse_pos <- groupChromPeaks(mse_pos, param = param_cor)
 ```
@@ -1060,13 +1064,6 @@ for (i in seq_len(nrow(eic_is))) {
   grid()
  abline(v = fData(eic_is)$rt[i], col = "red", lty = 3)
 }
-
-
-
-
-
-param_peak <-
-
 
 # Assuming lcms1 is your raw data object (XCMSnExp)
 mse_posp <- findChromPeaks(mse_pos, param = param)
@@ -1148,25 +1145,21 @@ abline(0, 1)
 
 Figure X. Detected vs. filled-in signal.
 
-## Save mse_pos and res object
-
-```{r}
-# save the mse_pos preprocessed object
-saveMsObject(mse_pos, AlabasterParam(path = file.path("objects/preprocessed_mse_pos")))
-
-# save the SummarizedExperiemnt
-saveObject(res, file.path("objects/preprocessed_res")) 
-```
-
 # Database correction.
 
-```{r, eval=FALSE}
+```{r, eval=TRUE}
 #' Default parameter for the grouping and apply them to the test ions BPC
 group <- eic_is$sample_type
 group[group =="QC"] <- NA
 param1 <- PeakDensityParam(sampleGroups = group , minFraction = 0.5,
                            binSize = 0.01, ppm = 10,
                            bw = 2)
+
+## phili code 
+# param1 <- PeakDensityParam(sampleGroups = rep(1, length(mse_pos)) , minFraction = 0.5,
+#                            binSize = 0.01, ppm = 10,
+#                            bw = 2)
+
 
 eic_is_corr <- groupChromPeaks(eic_is, param = param1)
 featureDefinitions(eic_is_corr[3, ]) ## Show johannes, why do we have a
@@ -1191,7 +1184,7 @@ for (i in seq_len(nrow(eic_is_corr))) {
   #abline(v = median(rtime(eic_is_corr)), col = "red", lty = 3) #ADD abline
   dev.off()
   if (nrow(table) > 1) {
-    idx_max <- which.max(rowSums(featureValues(eic_is_corr[i, ]), na.rm = TRUE))
+    idx_max <- which.max(rowSums(featureValues(eic_is_corr[i, ])))
     rt <- table[idx_max, ]$rtmed
   } else rt <- table$rtmed
   exp_rt[i] <- rt
@@ -1207,7 +1200,7 @@ ref_rt <- intern_standard$RT # is the ref RT
 intern_standard$exp_rt <- exp_rt
 
 diff_rt <- intern_standard$RT - intern_standard$exp_rt
-quantile(diff_rt)
+quantile(diff_rt, na.rm = TRUE)
 
 ## Fit the linear model
 fit <- lm(exp_rt ~ poly(ref_rt, 6, raw = TRUE) )
@@ -1321,9 +1314,18 @@ assays(res)$raw_filled <- featureValues(mse_pos, method = "sum",
 res_filtered <- assay(res)[rowMeans(assay(res), na.rm = TRUE) > 1500, ]
 
 sum(!rowMeans(assay(res), na.rm = TRUE) > 1500) #503 removed features
+
 ```
 
+## Save mse_pos and res object
 
+```{r}
+# save the mse_pos preprocessed object
+saveMsObject(mse_pos, AlabasterParam(path = file.path("objects/preprocessed_mse_pos")))
+
+# save the SummarizedExperiemnt
+saveObject(res, file.path("objects/preprocessed_res")) 
+```
 
 Match features (query) against (aligned) library (target).
 
@@ -1331,21 +1333,18 @@ Match features (query) against (aligned) library (target).
 ## Extract the feature definitions as a data.frame
 query <- as.data.frame(rowData(res))
 query$feature_id <- rownames(rowData(res))
-#subset the lipid library for rank 1 adducts only 
-lipid_database_rank1 <- lipid_database[lipid_database$rank == 1, ] #242 annotation before changing centwave parameters and 270 annotations with new param_pd
-install.packages("dplyr")
-library(dply)
-lipid_database_rank1_2 <- lipid_database %>%
-  filter(rank %in% c(1, 2))#376 obs
-
+## Subset the lipid library for rank 1 adducts only 
+lipid_database_rank1 <- lipid_database[lipid_database$rank == 1, ] #242 annotations with both param_pd
+lipid_database_rank1_2 <- lipid_database[lipid_database$rank %in% 1, ]
 
 ## Get the reference/databse data as a data.frame
 target <- as.data.frame(lipid_database_rank1)
 target$mz <- as.numeric(target$mz)
+
 ## Configure the matching between features (query) and database (target)
 param_match <- MzRtParam(tolerance = 0.001,
                          ppm = 20,
-                         toleranceRt = 5 #+/-5 sec 
+                         toleranceRt = 5. #+/-5 sec 
                          ) ## maybe adapt to settings from the original approach
 ## Perform the matching; define also the column names in query and target that
 ## contain the values to be matched (i.e. the m/z and retention time values)
@@ -1371,6 +1370,13 @@ mtch <- mtch[whichQuery(mtch)]
 mtched_data <- matchedData(mtch) |>
     as.data.frame()  ## can do some stuff with that table
 
+sum(mtched_data$target_lipid.name == "PC(39:6)") 
+lipid_database_rank1[c(198, 200),] |> as.data.frame()
+## i think the feature we are trying to match is too far.. It's an issue with the database again i believe.. there is no way that 2 features cna have the apex so close by...
+## The only way i can see this being fixed ios to increase the RT range so
+## the second feature match, but it means for ambiguous features to manually
+## deal with..  
+
 ## Get the features that match multiple targets
 fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
 ```
@@ -1387,6 +1393,8 @@ library(pander)
 pandoc.table(table_amb, split.table = Inf, style = "rmarkdown")
 library(writexl)
 write_xlsx(table_amb, path = "features-matching-multiple-lipids.xlsx")
+
+## same problem with TG is see below.
 ```
 
 ```{r}
@@ -1445,8 +1453,8 @@ plot(k, main = "Gráfico k")
 df_subset <- subset(mtched_data, grepl("ISTD", target_ORIGIN, ignore.case = TRUE))
 
 # Loop to plot all the compounds in the df_subset these are the internal standards
-outdir <- "ISTD_mtched_data"
-if (!dir.exists(outdir)) dir.create(outdir)
+dr <- "./figures/ISTD_mtched_data"
+if (!dir.exists(dr)) dir.create(dr, recursive = TRUE)
 
 # Loop through each row and save plots as PNG
 for (i in rownames(df_subset)) {
@@ -1463,7 +1471,7 @@ for (i in rownames(df_subset)) {
   ISTD <- featureChromatograms(mse_pos, features = i)
 
   # Define filename using the row name
-  filename <- file.path(outdir, paste0(i, ".png"))
+  filename <- file.path(dr, paste0(i, ".png"))
 
   # Open PNG device
   png(filename, width = 800, height = 600, res = 120)
@@ -1477,13 +1485,13 @@ for (i in rownames(df_subset)) {
     col = paste0(col_sample, 80)
   )
   grid()
-  # abline(v = median(rtime(eic)), col = "red", lty = 3)
+  abline(v = df_subset[i, "rtmed"], col = "red", lty = 3)
 
   # Close device
   dev.off()
 }
 
-cat("All chromatograms saved in:", outdir, "\n")
+cat("All chromatograms saved in:", dr, "\n")
 
 ```
 
@@ -1496,11 +1504,11 @@ lipid_adducts <- paste0(mtched_data$target_lipid.name, "_",
 lipid_ambiguous <- lipid_adducts[duplicated(lipid_adducts)]
 table_lips <- mtched_data[lipid_adducts %in% lipid_ambiguous,
                          c("feature_id", "mzmed", "rtmed", "target_lipid.name",
-                           "target_Adduct", "ppm_error", "score_rt", "target_rank")]
+                           "target_Adduct", "ppm_error", "score_rt")]
 table_lips <- table_lips[order(table_lips$target_lipid.name, table_lips$rtmed), ]
 rownames(table_lips) <- NULL
 pandoc.table(table_lips, split.table = Inf, style = "rmarkdown")
-write_xlsx(table_lips, path = "lipids-matching-multiple-features.xlsx")
+write_xlsx(table_amb, path = "lipids-matching-multiple-features.xlsx")
 ```
 
 ??? why is there DG(34:2) twice in the table, with different retentions times?
@@ -1554,10 +1562,6 @@ plot(test)
 # scoring and othe rinfo check the mtch_data
 
 ## need tofilter them out somehow.
-
-
-
-
 
 
 
@@ -1697,66 +1701,37 @@ follows: The abundance of all W-DBS samples should be multiply per 2.5 and
 Plasma samples per 1.08
 
 ```{r}
-assay_data <- assay(res)  # table with the features and their abundances 16800 rows
-assay_data <- as.data.frame(assay_data)
-mtched_data # table with the annotations and also the name of the features
+factors <- ifelse(grepl("W", colnames(res)), 2.5,
+             ifelse(grepl("P", colnames(res)), 1.08, 1))
+assay(res, "raw_corr") <- sweep(assay(res), MARGIN = 2, 
+                                STATS = factors, FUN = "*")
+assay(res, "raw_filled_corr") <- sweep(assay(res, "raw_filled"),
+                                       MARGIN = 2, STATS = factors, FUN = "*")
 
-# create a new column in each dataset containing the rownames 
-assay_data$feature_id <- rownames(assay_data)
-mtched_data$feature_id <- rownames(mtched_data)
+print("Assays now in res object:")
+print(names(assays(res)))
 
-# Create a join_df that contains the annotated lipids and the areas
-library(dplyr)
-join_df <- mtched_data %>%
-  left_join(assay_data, by = "feature_id")
-
-# if the sample name includes W, multiply per 2.5, si el nombre de la muestra contiene P mayuscula multiply per 1.08
-# volume normalization 
-# 
-factors <- ifelse(grepl("\\.mzML", colnames(join_df)) & grepl("W", colnames(join_df)), 2.5,
-           ifelse(grepl("\\.mzML", colnames(join_df)) & grepl("P", colnames(join_df)), 1.08, 1))
-
-normalized_df_vol <- join_df
-mzml_cols <- grep("\\.mzML", colnames(normalized_df_vol), value = TRUE)
-# Convert only those to numeric
-normalized_df_vol[mzml_cols] <- lapply(normalized_df_vol[mzml_cols], function(x) as.numeric(as.character(x)))
-
-normalized_df_vol[mzml_cols] <- Map(function(col, f) col * f,
-                     join_df[mzml_cols],
-                     factors[match(mzml_cols, colnames(normalized_df_vol))])
-
-#check the changes in one sample (CAN BE DELETED)
+## Check the changes in one sample (CAN BE DELETED)
 cbind(
-  original = join_df$D10W_pos.mzML,
-  scaled   = normalized_df_vol$D10W_pos.mzML
+  original = assay(res, "raw")["FT00001", "D10W_pos.mzML"],
+  scaled   = assay(res, "raw_corr")["FT00001", "D10W_pos.mzML"]
 )
 
 
-
-
-
-
-
-
-# create a new vector containing the features that have a match
+# Below i create a subset of the res object with only annotated features
 mtched_features_list <- mtched_data$feature_id
-# subset the res object only with the annotated compounds
-#subset_res <- subset(res,subset = mtched_features_list)
-subset_res <- res[rownames(res2) %in% mtched_features_list, ] #only 174 id out of 269
+annotated_res <- res[rownames(res) %in% mtched_data$feature_id, ] #only 174 id out of 269
+## above if we have different lengths, it's because of duplicated features in the annotation table.
 
-##code above need to be fixed so mtchd_features does not have duplciated featureID. 
-
-
-
-
-
-
-# Crear un nuevo objeto SummarizedExperiment con los datos modificados
-#se_scaled <- SummarizedExperiment(
- # assays = list(counts = assay_data_scaled),
-  #rowData = rowData(se),
-  #colData = colData(se)
-#)
+# Below we keep the res object but append annotation info for the annotated features
+rowData(res) <- cbind(rowData(res),
+                         mtched_data[match(rownames(res),
+                                           mtched_data$feature_id),
+                                     c("target_lipid.name",
+                                       "target_LIPID.CATEGORY..ABBREV.",
+                                       "target_LIPID.SUBCLASS..ABBREV.",
+                                       "target_Adduct"
+                                       )])
 
 ```
 
