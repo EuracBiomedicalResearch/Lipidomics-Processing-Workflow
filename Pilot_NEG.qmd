@@ -14,15 +14,11 @@ for more context or issues.
         See my comments in the text. I have some suggestion regarding merging though.
         See line 464
 
--   Implement MetaboLights use properly. Changes on the tables have been uploaded, Please let me know if you are able to see them
-
 -   Matching loop (rank 2, 3 etc.)
 
 -   Add figure and table captions (I have been adding them to the plots I think we are going to keep)
 
 -   Clean up useless code.
-
--   Implement the filterFeatures RSd code (Done)
 
 -   output plots code
 
@@ -217,7 +213,7 @@ BPC plot of all samples (colored by device), including QCs.
 ```{r, eval=TRUE}
 #| fig-cap: "BPC of all samples colored by phenotype"
 #' Extract and plot BPC for full data
-bpc <- chromatogram(mse_neg, aggregationFun = "max")  # ERROR when , aggregationFun = "max", error in evaluating the argument 'x' in selecting a method for function 'split': dims [product 0] do not match the length of object [363]
+bpc <- chromatogram(mse_neg, aggregationFun = "max") 
 
 #png("BPC_neg.png", width = 2000, height = 1500, res = 300)
 
@@ -363,53 +359,6 @@ legend("topright", col = col_sample_type, legend = names(col_sample_type),
 #dev.off()
 ```
 
-THIS CAN BE DELETED AT THE END
-```{r}
-# Extract some feature examples where we are having issues
-# features "FT03637", "FT03866", "FT03865", "FT12793"
-feature_name <- c("cp1", "cp2", "cp3", "cp4")
-mz_min <- c(482.305, 510.390, 510.370, 929.830)
-mz_max <- c(482.343,510.440, 510.398, 929.840 )
-rt_min <- c(193, 217, 180, 855)
-rt_max <- c(205, 226, 193, 875 )
-
-## not sure what they want to do with compound 4, seems hard to separate.
-
-# Combine into a data frame
-df_features <- data.frame(
-  feature_name = feature_name,
-  mz_min = mz_min,
-  mz_max = mz_max,
-  rt_min = rt_min,
-  rt_max = rt_max, 
-  rt = (rowMeans(cbind(rt_min, rt_max)))
-)
-
-# Extract EIC from the problematic features
-eic_features <- chromatogram(
-    mse_neg,
-    rt = as.matrix(df_features[, c("rt_min", "rt_max")]),
-    mz = as.matrix(df_features[, c("mz_min", "mz_max")]))
-
-# Add the cp name into the EIC_ features object 
-fData(eic_features)$cp_name <- df_features$feature_name
-rownames(fData(eic_features)) <- df_features$feature_name
-
-par(mfrow = c(2, 2), mar = c(4, 2, 2, 0.5))
-for (i in seq_len(nrow(eic_features))) {
-  eic <- eic_features[i,]
-  #png add
-  plot(eic,
-       main = rownames(fData(eic_features))[i], #use the rawnames as tittles
-       cex.axis = 0.8,
-       cex.main = 0.8,
-       col = paste0(col_sample, 80)
-  )
-  grid()
- abline(v = fData(eic_features)$rt[i], col = "red", lty = 3) 
-}
-```
-
 # Data preprocessing
 
 ## Chromatographic peak detection
@@ -422,8 +371,7 @@ calculate the absolute difference and expressed in ppm.
 lpc <- mse_neg[1L] |>
   spectra() |>
   filterRt(rt = c(209, 230)) |>
-  filterMzRange(mz = fData(eic_FA)["FA", 
-                                                 c("mzmin", "mzmax")])
+  filterMzRange(mz = fData(eic_FA)["FA", c("mzmin", "mzmax")])
 
 #' Show the number of peaks per m/z filtered spectra
 lengths(lpc)
@@ -470,87 +418,6 @@ PI_test <- findChromPeaks(eic_PI, param = param_pd)
 chromPeaks(PI_test)
 ```
 
-BELOW IS A TEST to improve peak picking params - to be deleted.
-I  tested it by subsetting for the 8 QC samples
-
-```{r}
-mse_neg[1] |>
-  filterSpectra(filterRt, rt = c(190, 220)) |>
-  filterSpectra(filterMzRange, mz = c(482.3, 482.4)) |>
-  plot()
-
-## Current param on the problematic compounds
-mse_test <- mse_neg[1]
-param_pd <- CentWaveParam(peakwidth = c(4, 8), ppm = 10, integrate = 2,
-                          snthresh = 2)
-mse_test <- findChromPeaks(mse_test, param = param_pd, chunkSize = 2L)
-fts <- chromatogram(mse_test,
-                       rt = as.matrix(df_features[, c("rt_min", "rt_max")]),
-                       mz = as.matrix(df_features[, c("mz_min", "mz_max")]))
-chromPeaks(fts)
-plot(fts)
-## cp1 no 
-## cp2 yes in 6/8 QCs ( i have some doubt this is not marged...)
-## cp3 in 6/8 samples
-## cp4 properly separated = refinement might merge. 
-
-
-param_pd <- CentWaveParam(peakwidth = c(4, 8), ppm = 10, integrate = 2,
-                          snthresh = 2, firstBaselineCheck = FALSE) #keep it
-mse_test <- findChromPeaks(mse_test, param = param_pd, chunkSize = 2L)
-fts <- chromatogram(mse_test,
-                       rt = as.matrix(df_features[, c("rt_min", "rt_max")]),
-                       mz = as.matrix(df_features[, c("mz_min", "mz_max")]))
-chromPeaks(fts)
-plot(fts)
-## cp1 no 
-## cp2 yes in 6/8 QCs ( i have some doubt this is not marged...)
-## cp3 in 4/8 samples
-## cp4 properly separated = refinement might merge. 
-
-## sooo the original code works best actually
-
-mse_test[1] |>
-  filterSpectra(filterRt, rt = c(190, 220)) |>
-  filterSpectra(filterMzRange, mz = c(482.3, 482.4)) |>
-  plot()
-
-## next i need ot make sure we don't merge cp2 and cp4.
-## current code
-param_msp <- MergeNeighboringPeaksParam(expandRt = 2.5, expandMz = 0.0015,
-                                        minProp = 0.75) ## reduce to 2 and 1s, and then test minprop
-mse_test <- refineChromPeaks(mse_test, param = param_msp, chunkSize = 2L)
-fts <- chromatogram(mse_test,
-                       rt = as.matrix(df_features[c(2,4), c("rt_min", "rt_max")]),
-                       mz = as.matrix(df_features[c(2,4), c("mz_min", "mz_max")]))
-chromPeaks(fts[1]) ## still ok ? the rt boundary look ok, why is it wrong later on ?
-chromPeaks(fts[2]) ## nope, so let's fix this. 
-plot(fts)
-
-## new
-param_msp <- MergeNeighboringPeaksParam(expandRt = 2, expandMz = 0.0015,
-                                        minProp = 0.95) ## reduce to 2 and 1s, and then test minprop
-mse_test <- refineChromPeaks(mse_test, param = param_msp, chunkSize = 2L)
-fts <- chromatogram(mse_test,
-                       rt = as.matrix(df_features[c(2,4), c("rt_min", "rt_max")]),
-                       mz = as.matrix(df_features[c(2,4), c("mz_min", "mz_max")]))
-chromPeaks(fts[1]) 
-chromPeaks(fts[2]) 
-plot(fts)
-```
-
-My conclusion on the test is: 
-- The current chosen param are the best in my opinion, i could not get better 
-  results. 
-- Sara needs to check that compound 1 was actually detected in her original 
-  analysis because i could not see it in any of my tests.
-- Regarding merging, I would advise to not run it actually, we merge a very low 
-  amount of peaks in the end and the peaks that we don't want to merge seem to
-  be merging.. (compound 4 for example). SO let's remove that step ? 
-- I would advocate to re-increase the `sntresth` to 5 as well, to avoid picking
-  noise. I think it was lowered to get the carnitine but it did not work in 
-  the end no ? If it did then ignore my comment and keep it to 2
-
 
 With the customized parameters, a chromatographic peak was detected in each
 sample. Below, we use
@@ -588,7 +455,7 @@ to evaluate and confirm that chromatographic peak detection worked as expected.
 ```{r, eval=TRUE}
 #' Using the same settings, but with default snthresh
 param_pd <- CentWaveParam(peakwidth = c(4, 8), ppm = 10, integrate = 2,
-                          snthresh = 2) # added november 4
+                          snthresh = 2, firstBaselineCheck = FALSE) # added november 4
 ## lowered the sntresth super low and still no detection of the carnitine peaks.
 mse_neg <- findChromPeaks(mse_neg, param = param_pd, chunkSize = cores_nb)
 
@@ -977,7 +844,7 @@ plotChromPeakDensity(
     peakPch = 16)
 ```
 
-Correspondence analysis with optimized parameters, deuterated SM.
+Correspondence analysis with optimized parameters, deuterated PI.
 
 
 We can observe for the first two ions that the peaks are grouped accurately
@@ -995,7 +862,7 @@ mse_pos <- groupChromPeaks(mse_neg, param = param_cor)
 ```
 
 Evaluation of the correspondence results in other EIC in the IS list similar to
-the deuterated LysoPC.
+the deuterated FA.
 
 ```{r, eval=TRUE}
 #' Extract chromatogram for an m/z similar to the one of the labeled methionine
@@ -1121,7 +988,7 @@ for (i in seq_len(nrow(eic_is_corr))) {
        main = rownames(fData(eic_is_corr))[i],
        cex.axis = 0.8,
        cex.main = 0.8)
-  #abline(v = median(rtime(eic_is_corr)), col = "red", lty = 3) #ADD abline
+  abline(v = fData(eic_is_corr)$rt[i], col = "red", lty = 3)
   dev.off()
   if (nrow(table) > 1) {
     idx_max <- which.max(rowSums(featureValues(eic_is_corr[i, ])))
@@ -1274,12 +1141,8 @@ Match features (query) against (aligned) library (target).
 query <- as.data.frame(rowData(res))
 query$feature_id <- rownames(rowData(res))
 #subset the lipid library for rank 1 adducts only 
-lipid_database_rank1 <- lipid_database[lipid_database$rank == 1, ] #242 annotation before changing centwave parameters and 270 annotations with new param_pd
-install.packages("dplyr")
-library(dply)
-lipid_database_rank1_2 <- lipid_database %>%
-  filter(rank %in% c(1, 2))#376 obs
-
+lipid_database_rank1 <- lipid_database[lipid_database$rank == 1, ] #242 annotation before changing centwave parameters and 270 
+lipid_database_rank1_2 <- lipid_database[lipid_database$rank %in% 1, ]
 
 ## Get the reference/databse data as a data.frame
 target <- as.data.frame(lipid_database_rank1)
@@ -1356,7 +1219,11 @@ featureDefinitions(eg5)
 
 ```{r}
 #plot some features
-a <- featureChromatograms(mse_neg, features = "FT03106")
+a <- featureChromatograms(mse_neg, features = "FT01791") #FA(20:3) #Error in .i2index(features, ids = rownames(featureDefinitions(x)), "features") : 'features' out of bounds
+plot(a)
+featureDefinitions(a)
+a1 <- chromatogram(mse_neg, mz = c(929.833, 929.836)) #TG(53:3)
+plot(a1)
 b <- featureChromatograms(mse_neg, features = "FT03107")
 par(mfrow = c(1, 2))
 plot(a)
@@ -1387,7 +1254,7 @@ plot(k, main = "Gráfico k")
 df_subset <- subset(mtched_data, grepl("ISTD", target_ORIGIN, ignore.case = TRUE))
 
 # Loop to plot all the compounds in the df_subset these are the internal standards
-outdir <- "ISTD_mtched_data"
+outdir <- "ISTD_mtched_data_neg"
 if (!dir.exists(outdir)) dir.create(outdir)
 
 # Loop through each row and save plots as PNG
@@ -1442,7 +1309,7 @@ table_lips <- mtched_data[lipid_adducts %in% lipid_ambiguous,
 table_lips <- table_lips[order(table_lips$target_lipid.name, table_lips$rtmed), ]
 rownames(table_lips) <- NULL
 pandoc.table(table_lips, split.table = Inf, style = "rmarkdown")
-write_xlsx(table_lips, path = "lipids-matching-multiple-features.xlsx")
+write_xlsx(table_lips, path = "lipids-matching-multiple-featuresNEG.xlsx")
 ```
 
 ??? why is there DG(34:2) twice in the table, with different retentions times?
