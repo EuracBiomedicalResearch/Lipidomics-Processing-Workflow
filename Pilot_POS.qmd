@@ -14,20 +14,13 @@ for more context or issues.
         See my comments in the text. I have some suggestion regarding merging though.
         See line 464
 
--   Implement MetaboLights use properly. Changes on the tables have been uploaded, Please let me know if you are able to see them
-
 -   Matching loop (rank 2, 3 etc.)
 
 -   Add figure and table captions (I have been adding them to the plots I think we are going to keep)
 
 -   Clean up useless code.
 
--   Implement the filterFeatures RSd code (Done)
-
 -   output plots code
-
--   step by step explanation of normalisation
-    - PHILI will write the code.(I have added the steps that we followed for the publication)
 
 
 
@@ -100,7 +93,7 @@ Load raw mzML data of the pilot study, this includes data of venous blood of 10
 healthy individuals loaded in the following BuS devices: M-VAMS, C-qDBS, W-DBS,
 also plasma samples.
 
-User should create the seq_pos.xlsx where injection order, sample name and 
+OPTION 1: User should create the seq_pos.xlsx where injection order, sample name and 
 sample_type have to be included. Also POS_ data need to have all the files 
 in .mzml that where included in the excel file.
 
@@ -118,7 +111,7 @@ mse_pos <- readMsExperiment(spectraFiles = spectra_files_pos,
 sampleData(mse_pos)
 ```
 
-Below we show how to load from MetaboLights as an alternative to mzml files.
+OPTION 2: Below we show how to load from MetaboLights as an alternative to mzml files.
 
 ```{r, eval=TRUE}
 param <- MetaboLightsParam(mtblsId = "MTBLS10722",
@@ -352,54 +345,6 @@ legend("topright", col = col_sample_type, legend = names(col_sample_type),
        bty = "n")
 
 #dev.off()
-```
-
-
-[alos remove this]
-```{r}
-# Extract some feature examples where we are having issues
-# features "FT03637", "FT03866", "FT03865", "FT12793"
-feature_name <- c("cp1", "cp2", "cp3", "cp4")
-mz_min <- c(482.305, 510.390, 510.370, 929.830)
-mz_max <- c(482.343,510.440, 510.398, 929.840 )
-rt_min <- c(193, 217, 180, 855)
-rt_max <- c(205, 226, 193, 875 )
-
-## not sure what they want to do with compound 4, seems hard to separate.
-
-# Combine into a data frame
-df_features <- data.frame(
-  feature_name = feature_name,
-  mz_min = mz_min,
-  mz_max = mz_max,
-  rt_min = rt_min,
-  rt_max = rt_max, 
-  rt = (rowMeans(cbind(rt_min, rt_max)))
-)
-
-# Extract EIC from the problematic features
-eic_features <- chromatogram(
-    mse_pos,
-    rt = as.matrix(df_features[, c("rt_min", "rt_max")]),
-    mz = as.matrix(df_features[, c("mz_min", "mz_max")]))
-
-# Add the cp name into the EIC_ features object 
-fData(eic_features)$cp_name <- df_features$feature_name
-rownames(fData(eic_features)) <- df_features$feature_name
-
-par(mfrow = c(2, 2), mar = c(4, 2, 2, 0.5))
-for (i in seq_len(nrow(eic_features))) {
-  eic <- eic_features[i,]
-  #png add
-  plot(eic,
-       main = rownames(fData(eic_features))[i], #use the rawnames as tittles
-       cex.axis = 0.8,
-       cex.main = 0.8,
-       col = paste0(col_sample, 80)
-  )
-  grid()
- abline(v = fData(eic_features)$rt[i], col = "red", lty = 3) 
-}
 ```
 
 # Data preprocessing
@@ -1065,10 +1010,10 @@ for (i in seq_len(nrow(eic_is))) {
  abline(v = fData(eic_is)$rt[i], col = "red", lty = 3)
 }
 
-# Assuming lcms1 is your raw data object (XCMSnExp)
+# Assuming mse_pos is your raw data object (XCMSnExp) ERROR
 mse_posp <- findChromPeaks(mse_pos, param = param)
 
-# Extract chromatograms again with peaks included
+# Extract chromatograms again with peaks included ERROR
 eic_isp <- chromatogram(mse_pos,
                        rt = as.matrix(intern_standard[, c("rtmin", "rtmax")]),
                        mz = as.matrix(intern_standard[, c("mzmin", "mzmax")]))
@@ -1145,6 +1090,17 @@ abline(0, 1)
 
 Figure X. Detected vs. filled-in signal.
 
+
+## Save mse_pos and res object
+
+```{r}
+# save the mse_pos preprocessed object
+saveMsObject(mse_pos, AlabasterParam(path = file.path("objects/preprocessed_mse_pos")))
+
+# save the SummarizedExperiemnt
+saveObject(res, file.path("objects/preprocessed_res")) 
+```
+
 # Database correction.
 
 ```{r, eval=TRUE}
@@ -1181,10 +1137,10 @@ for (i in seq_len(nrow(eic_is_corr))) {
        main = rownames(fData(eic_is_corr))[i],
        cex.axis = 0.8,
        cex.main = 0.8)
-  #abline(v = median(rtime(eic_is_corr)), col = "red", lty = 3) #ADD abline
+  #abline(v = fData(eic_is_corr)$rt[i], col = "red", lty = 3)
   dev.off()
   if (nrow(table) > 1) {
-    idx_max <- which.max(rowSums(featureValues(eic_is_corr[i, ])))
+    idx_max <- which.max(rowSums(featureValues(eic_is_corr[i, ]),na.rm = TRUE))
     rt <- table[idx_max, ]$rtmed
   } else rt <- table$rtmed
   exp_rt[i] <- rt
@@ -1317,17 +1273,92 @@ sum(!rowMeans(assay(res), na.rm = TRUE) > 1500) #503 removed features
 
 ```
 
-## Save mse_pos and res object
 
+Match features (query) against (aligned) database (target).
+CAN BE DELETED
 ```{r}
-# save the mse_pos preprocessed object
-saveMsObject(mse_pos, AlabasterParam(path = file.path("objects/preprocessed_mse_pos")))
+# TGs annotation 
+lipid_database_TG <- lipid_database[lipid_database$`LIPID SUBCLASS [ABBREV]` == "Triglycerides [TG]", ]
 
-# save the SummarizedExperiemnt
-saveObject(res, file.path("objects/preprocessed_res")) 
+lipid_database_TG$rank[
+  lipid_database_TG$Adduct == "Adduct[M+NH4]+"
+] <- 1
+
+lipid_database_TG$rank[
+  lipid_database_TG$Adduct == "Adduct[M+C2H7N2]+"
+] <- 2
+
+lipid_database_TG2 <- lipid_database_TG[lipid_database_TG$rank == 1, ]
+## Get the reference/databse data as a data.frame
+target <- as.data.frame(lipid_database_TG2)
+target$mz <- as.numeric(target$mz)
+
+## Configure the matching between features (query) and database (target)
+param_match <- MzRtParam(tolerance = 0.001,
+                         ppm = 20,
+                         toleranceRt = 5. #+/-5 sec 
+                         ) ## maybe adapt to settings from the original approach
+## Perform the matching; define also the column names in query and target that
+## contain the values to be matched (i.e. the m/z and retention time values)
+mtch <- matchValues(query, target,
+                    param = param_match,
+                    mzColname = c("mzmed", "mz"),
+                    rtColname = c("rtmed", "rt_adjusted"))
+mtch
+
+mtch <- mtch[whichQuery(mtch)]
+mtched_data <- matchedData(mtch) |>
+    as.data.frame()  ## can do some stuff with that table
+
+## Get the features that match multiple targets
+fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
+
+
+# table_amb
+table_amb <- mtched_data[mtched_data$feature_id %in% fids_ambiguous,
+                         c("feature_id", "mzmed", "rtmed", "target_lipid.name",
+                           "target_Adduct", "ppm_error", "score_rt","target_rank")]
+table_amb <- table_amb[order(table_amb$feature_id, table_amb$rtmed), ]
+rownames(table_amb) <- NULL
+library(pander)
+pandoc.table(table_amb, split.table = Inf, style = "rmarkdown")
+
+#12 amb and 56 obs whe using amonium as predominant adduct 
+#12 amb more ppm error from 3 to 18ppm and 72 obs when acetamidine is predominant adduct
+#we have 136 lipids in the databse
+write_xlsx(mtched_data, path = "TGs-Amonium.xlsx")
 ```
 
-Match features (query) against (aligned) library (target).
+CAN BE DELETED
+```{r}
+#examples amb TGs
+d <- featureChromatograms(mse_pos, features = "FT17527") #TG(53:4)acetamidina no isotopic patter in qualitative 
+plot(d)
+d1 <- chromatogram(mse_pos, mz = c(927.804, 927.822), rt = c(830, 845)) 
+plot(d1)
+
+d_nh4 <- featureChromatograms(mse_pos, features = "FT16255") #TG(53:4)amonium isotopic pattern in qualitative
+plot(d_nh4)
+d_nh4_1 <- chromatogram(mse_pos, mz = c(886.785, 886.792), rt = c(810,840)) 
+plot(d_nh4_1)
+
+
+par(mfrow = c(1, 2))
+plot(d1)
+plot(d_nh4_1)
+
+par(mfrow = c(1, 2))
+plot(d)
+plot(d_nh4)
+
+
+t <- featureChromatograms(mse_pos, features = "FT16322") #TG(53:3)amonium 
+plot(t)
+t1 <- chromatogram(mse_pos, mz = c(888.798, 888.804), rt = c(835,850)) 
+plot(t1)
+
+```
+Match features (query) against (aligned) database (target).
 
 ```{r}
 ## Extract the feature definitions as a data.frame
@@ -1398,7 +1429,7 @@ write_xlsx(table_amb, path = "features-matching-multiple-lipids.xlsx")
 ```
 
 ```{r}
-## example of peak non detected: 
+## example of peak non detected before changing the centwave parameter _pd: 
 ## it has low intensity, we need to refine preprocessing. 
 eg1 <- chromatogram(mse_pos, mz = c(482.315, 482.333), rt = c(193, 210)) #LPE(0:0/18:0)
 plot(eg1)
@@ -1422,13 +1453,25 @@ featureDefinitions(eg5)
 
 ```{r}
 #plot some features
-a <- featureChromatograms(mse_pos, features = "FT06046")
-b <- featureChromatograms(mse_pos, features = "FT06045")
-par(mfrow = c(1, 2))
+a <- featureChromatograms(mse_pos, features = "FT17595") #TG(53:3)
 plot(a)
-plot(b)
+a1 <- chromatogram(mse_pos, mz = c(929.826, 929.847), rt = c(855, 875)) 
+plot(a1)
 
-d <- featureChromatograms(mse_pos, features = "FT08345")
+b <- featureChromatograms(mse_pos, features = "FT13173") #SM(d18:2/23:0)
+c <- featureChromatograms(mse_pos, features = "FT13172") #SM(d18:2/23:0) some peaks are 10 sec wide
+par(mfrow = c(1, 2))
+plot(b)
+plot(c)
+b1 <- chromatogram(mse_pos, mz = c(799.536, 799.671), rt = c(690, 710)) 
+plot(b1)
+
+
+d <- featureChromatograms(mse_pos, features = "FT17527") #TG(53:4)acetamidina 
+plot(d)
+d1 <- chromatogram(mse_pos, mz = c(927.804, 927.822), rt = c(830, 850)) 
+plot(d1)
+
 e <- featureChromatograms(mse_pos, features = "FT08851")
 f <- featureChromatograms(mse_pos, features = "FT08853")
 g <- featureChromatograms(mse_pos, features = "FT08344")
@@ -1694,7 +1737,7 @@ later on discuss how to deal with features that matches multiple compound.
 we could concatenate the annotation to the summarized experiment object. Do the
 normalization, quantitation, plotting after,..
 
-# Data normalization
+# Data normalization followed 
 
 Here before we imput the missing values we have to normalize per volume as
 follows: The abundance of all W-DBS samples should be multiply per 2.5 and
@@ -1720,7 +1763,7 @@ cbind(
 
 # Below i create a subset of the res object with only annotated features
 mtched_features_list <- mtched_data$feature_id
-annotated_res <- res[rownames(res) %in% mtched_data$feature_id, ] #only 174 id out of 269
+annotated_res <- res[rownames(res) %in% mtched_data$feature_id, ] #only 279 id out of 299, aprox 20 duplicates
 ## above if we have different lengths, it's because of duplicated features in the annotation table.
 
 # Below we keep the res object but append annotation info for the annotated features
@@ -1778,7 +1821,7 @@ pca_34 <- autoplot(pca_res, data = vals_st, colour = 'sample_type',
 grid.arrange(pca_12, pca_34, ncol = 1)
 ```
 
-DESDE AQUI estadistica metabonout
+FROM HERE statistics metabonout
 
 ```{r}
 #' Impute missing values using an uniform distribution
