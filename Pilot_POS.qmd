@@ -147,7 +147,7 @@ mse_pos <- mse_pos[sampleData(mse_pos)$sample_type != "Blank"]
 mse_pos <- mse_pos[order(sampleData(mse_pos)$injection_index), ]
 
 ##only phili - subset to make analysis faster
-mse_pos <- mse_pos[sampleData(mse_pos)$sample_type == "QC"]
+#mse_pos <- mse_pos[sampleData(mse_pos)$sample_type == "QC"]
 ```
 
 \[Phili: Here i would explain maybe some column names so that other people
@@ -594,18 +594,21 @@ ratio, or opening the window for the m/z or rt)
 
 ## Refinment of chromatographic peaks
 
-```{r, eval=TRUE}
+[Phili: I am testing for removal of refinment, this should help for the 
+compounds annotation that elute very close to eachothers]
+
+```{r, eval=FALSE}
 #' set up the parameter
 param_msp <- MergeNeighboringPeaksParam(expandRt = 2.5, expandMz = 0.0015,
                                         minProp = 0.75)
 ```
 
-```{r, eval=TRUE}
+```{r, eval=FALSE}
 #' Apply on whole dataset
 mse_pos <- refineChromPeaks(mse_pos, param = param_msp, chunkSize = cores_nb)
 ```
 
-```{r}
+```{r, eval=FALSE}
 chromPeakData(mse_pos)$merged |>
                          table()
 ```
@@ -959,14 +962,14 @@ and apply them to the whole data.
 
 ```{r, eval=TRUE}
 #' Define the settings for the param_cor
-param_cor <- PeakDensityParam(sampleGroups = group_mse,
-                              minFraction = 0.5, binSize = 0.01, ppm = 10,
-                              bw = 2)
+# param_cor <- PeakDensityParam(sampleGroups = group_mse,
+#                               minFraction = 0.5, binSize = 0.01, ppm = 10,
+#                               bw = 2)
 
 ## for phili tests, to be removed later: 
-## param_cor <- PeakDensityParam(sampleGroups = rep(1, length(mse_pos)),
-                              # minFraction = 0.5, binSize = 0.01, ppm = 10,
-                              # bw = 2)
+param_cor <- PeakDensityParam(sampleGroups = rep(1, length(mse_pos)),
+minFraction = 0.5, binSize = 0.01, ppm = 10,
+bw = 2)
 
 #' Apply to whole data
 mse_pos <- groupChromPeaks(mse_pos, param = param_cor)
@@ -1112,9 +1115,9 @@ param1 <- PeakDensityParam(sampleGroups = group , minFraction = 0.5,
                            bw = 2)
 
 ## phili code 
-# param1 <- PeakDensityParam(sampleGroups = rep(1, length(mse_pos)) , minFraction = 0.5,
-#                            binSize = 0.01, ppm = 10,
-#                            bw = 2)
+param1 <- PeakDensityParam(sampleGroups = rep(1, length(mse_pos)) , minFraction = 0.5,
+                           binSize = 0.01, ppm = 10,
+                           bw = 2)
 
 
 eic_is_corr <- groupChromPeaks(eic_is, param = param1)
@@ -1123,7 +1126,7 @@ featureDefinitions(eic_is_corr[3, ]) ## Show johannes, why do we have a
 ## with xcms version >= 4.7.1 only 2 features are found.
 
 exp_rt <- vector("numeric", length = nrow(eic_is_corr))
-dr <- "./ref_lipid_image/"
+dr <- "figures/ref_lipid_image/"
 dir.create(dr, recursive = TRUE, showWarnings = FALSE)
 for (i in seq_len(nrow(eic_is_corr))) {
   table <- featureDefinitions(eic_is_corr[i,])
@@ -1137,7 +1140,7 @@ for (i in seq_len(nrow(eic_is_corr))) {
        main = rownames(fData(eic_is_corr))[i],
        cex.axis = 0.8,
        cex.main = 0.8)
-  #abline(v = fData(eic_is_corr)$rt[i], col = "red", lty = 3)
+  abline(v = fData(eic_is_corr)$rt[i], col = "red", lty = 3)
   dev.off()
   if (nrow(table) > 1) {
     idx_max <- which.max(rowSums(featureValues(eic_is_corr[i, ]),na.rm = TRUE))
@@ -1145,7 +1148,6 @@ for (i in seq_len(nrow(eic_is_corr))) {
   } else rt <- table$rtmed
   exp_rt[i] <- rt
 }
-
 
 ## before going on, check the plots. the line should overlap what we expect.
 
@@ -1173,8 +1175,27 @@ Library fix
 
 ```{r}
 lipid_database <- read_xlsx("LipidDatabase_R.xlsx", sheet = 4L)
+## remove rows that have rank == 0, because they essentially do not exist
+lipid_database <- lipid_database[lipid_database$rank != 0, ]
+## convert rt
 lipid_database$rt_sd <- as.numeric(lipid_database$`RT ESI(+) (min)`) * 60
 lipid_database <- lipid_database[order(lipid_database$rt_sd), ]
+## Correct naming so that all names are unique 
+get_rt_rank <- function(x) {
+  match(x, sort(unique(x)))
+}
+
+rt_ranks <- ave(
+  lipid_database$`RT ESI(+) (min)`, 
+  lipid_database$`lipid name`, 
+  FUN = get_rt_rank
+)
+# Create the final unique name
+lipid_database$lipid_name_unique <- paste(
+  lipid_database$`lipid name`, 
+  rt_ranks, 
+  sep = "_"
+)
 
 is.unsorted(lipid_database$rt_sd) # check rtime are properly sorted. we want FALSE
 
@@ -1229,30 +1250,6 @@ abline(0, 1, lty = 2, col = "#00000040")
 The Black line is build with the 592 compounds of the database and the red dots are the reference
 lipids (17 between endogenous and deuterated)
 
-## missing steps ??
-
-These steps could be done after annotation, as we are in a semi-targeted
-workflow
-
--   normalization followed at CEMBIO for this study:
-  - missing values imputation (KNN algorithm)
-  - Normalization per volume (multiply whatman samples- factor 2.5 and plama samples - factor 1.08)
-  - Normalization per internal standard (for each lipid subclass dividing per each IS)
-
-     CAR with C17 sphinganine
-     CE with Chol Ester (18:1(d7))
-     Cer, Hexcer and SM with SM(18:1/18:1(d9))
-     DG with DAG(15:0/18:1(d7))
-     FA with FA(16:0(d31))
-     LPC with LysoPC(18:1(d7))  
-     LPE with LysoPE(18:1(d7))
-     PC with PC(15:0/18:1(d7))
-     PE with PE(15:0/18:1(d7))
-     TG with TAG(15:0/18:1(d7/15:0))
-     All this is now on the column IS_ norm, there I indicate the lipid name of the IS that we should use to make the division 
-     
-  - Remove lipids with a cv in QCs >30%
-
 # Annotate/ match
 -   maybe separate the QCs into another object or do that later.
 
@@ -1270,13 +1267,12 @@ assays(res)$raw_filled <- featureValues(mse_pos, method = "sum",
 res_filtered <- assay(res)[rowMeans(assay(res), na.rm = TRUE) > 1500, ]
 
 sum(!rowMeans(assay(res), na.rm = TRUE) > 1500) #503 removed features
-
 ```
 
 
 Match features (query) against (aligned) database (target).
-CAN BE DELETED
-```{r}
+DO nOT run for now
+```{r, eval = FALSE}
 # TGs annotation 
 lipid_database_TG <- lipid_database[lipid_database$`LIPID SUBCLASS [ABBREV]` == "Triglycerides [TG]", ]
 
@@ -1366,7 +1362,6 @@ query <- as.data.frame(rowData(res))
 query$feature_id <- rownames(rowData(res))
 ## Subset the lipid library for rank 1 adducts only 
 lipid_database_rank1 <- lipid_database[lipid_database$rank == 1, ] #242 annotations with both param_pd
-lipid_database_rank1_2 <- lipid_database[lipid_database$rank %in% 1, ]
 
 ## Get the reference/databse data as a data.frame
 target <- as.data.frame(lipid_database_rank1)
@@ -1401,32 +1396,130 @@ mtch <- mtch[whichQuery(mtch)]
 mtched_data <- matchedData(mtch) |>
     as.data.frame()  ## can do some stuff with that table
 
-sum(mtched_data$target_lipid.name == "PC(39:6)") 
-lipid_database_rank1[c(198, 200),] |> as.data.frame()
-## i think the feature we are trying to match is too far.. It's an issue with the database again i believe.. there is no way that 2 features cna have the apex so close by...
-## The only way i can see this being fixed ios to increase the RT range so
-## the second feature match, but it means for ambiguous features to manually
-## deal with..  
+mtched_data$feature_id <- sub("\\..*$", "", rownames(mtched_data))
+sum(duplicated(mtched_data$feature_id))
+```
 
-## Get the features that match multiple targets
-fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
+Before checking for feature duplication (whih is mostly an issue of the database or can easily be resolved based on score)
+I also want to check if one lipid matches multiple feautres as it could
+indicate an issue with the processing above. bigger problem
+
+```{r}
+sum(duplicated(paste0(mtched_data$target_lipid_name_unique, mtched_data$target_Adduct, sep = "_"))) 
+## this above is necessary as some adduct are both rank 1 for the same lipid.
+## I have 12, that's a problem. 
+amblip <- mtched_data[paste0(mtched_data$target_lipid_name_unique, mtched_data$target_Adduct, sep = "_") %in%
+                        paste0(mtched_data$target_lipid_name_unique[duplicated(paste0(mtched_data$target_lipid_name_unique, mtched_data$target_Adduct, sep = "_"))],
+                               mtched_data$target_Adduct[duplicated(paste0(mtched_data$target_lipid_name_unique, mtched_data$target_Adduct, sep = "_"))],
+                               sep = "_"), ]
+
+amblip
+
+plot(featureChromatograms(mse_pos[1:2, keepFeatures = TRUE], features = c("FT02887", "FT02888"))) ## well it's actually very different fts 
+## ok so after checking a lot of them are just proper ambiguity. reducing the ppm threshold would help to be honest. but otherwise it's either score based deicsion or manually (but even manually sometimes we just can tell when it's really betweeen 2 features.)
+
+## for now i will keep the one with the highest score 
+
+mtched_data <- mtched_data[order(mtched_data$score), ]
+mtched_data <- mtched_data[!duplicated(paste0(mtched_data$target_lipid_name_unique, mtched_data$target_Adduct, sep = "_")), ]
 ```
 
 The table below shows the ambiguous (multi-matching) features.
 
 ```{r, results = "asis"}
+## Get the features that match multiple targets
+fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
+sum(duplicated(mtched_data$feature_id))
 table_amb <- mtched_data[mtched_data$feature_id %in% fids_ambiguous,
-                         c("feature_id", "mzmed", "rtmed", "target_lipid.name",
-                           "target_Adduct", "ppm_error", "score_rt","target_rank")]
-table_amb <- table_amb[order(table_amb$feature_id, table_amb$rtmed), ]
+                         c("feature_id", "mzmed", "rtmed", "target_lipid_name_unique",
+                           "target_Adduct", "ppm_error", "score_rt","target_rank", "target_mz", "target_rt_adjusted")]
+table_amb <- table_amb[order(table_amb$feature_id), ]
+##export
 rownames(table_amb) <- NULL
-library(pander)
-pandoc.table(table_amb, split.table = Inf, style = "rmarkdown")
 library(writexl)
 write_xlsx(table_amb, path = "features-matching-multiple-lipids.xlsx")
 
-## same problem with TG is see below.
+## let's check it
+library(pander)
+pandoc.table(table_amb, split.table = Inf, style = "rmarkdown")
+
+## when checking honestly, i do not have a great way to deal with this. 
+## it's either hte rt between the 2 lipids are sooo close < 4 seconds, which is less than the peak width so there's just now way ## and in this case i would group the annotation 
+## in another case we have a bit larger difference in rt (still very small though), and in that case i would keep the one that matches the best in rt. 
+## we could increase the rt threshold and make some peak match to a further one (as we saw in some case we have a large shift), and then again filter the ambiguity based on rt score.
+## but hoenstly if the RT is SO different HOW do we know if this is rteally the right compound.., without MS2 confirmation this is a reach and i would not trust it. 
+## one confirmation  could be, the adduct we are checking below. we could check this, afterward on in final only keep the ambiguity where we can fiund more adduct. this would confirm the RT. Sara let's discuss this. i kinda like that idea. 
+## 
+## ## for now below i just keep the one with the best rt score. will change that based on our discussion
+sorted_data <- mtched_data[order(mtched_data$feature_id, mtched_data$score_rt), ]
+mtched_data_unique <- sorted_data[!duplicated(sorted_data$feature_id), ]
 ```
+
+
+
+
+## Matching adducts 
+testing another matching
+- matching rtmed of the feature definiton, we expect adducts to have the same rt.
+- i also tried using rtmin and rtmax but this gave me better results both in term of number AND ambiguity.
+
+I feel like the code can be simplified very much 
+
+```{r}
+## i'm "correcting" the duplication by taking the ones that have the lowest
+##  RT error, this need to be changed later.
+query <- featureDefinitions(mse_pos)
+## now i'm taking the RT ranges of the features 
+target_round2 <- featureDefinitions(mse_pos)[mtched_data_unique$feature_id,"rtmed", drop = FALSE]
+target_round2$lipid_name <- mtched_data_unique$target_lipid_name_unique[
+    match(rownames(target_round2), mtched_data_unique$feature_id)]
+
+## subset the data for some lipids of interest
+target_round2_subset <- lipid_database[lipid_database$lipid_name_unique %in% target_round2$lipid_name, ]
+
+## remove rank 1 
+target_round2_subset <- target_round2_subset[target_round2_subset$rank != 1, ]
+target_round2_subset$rtmed <- target_round2$rtmed[
+    match(target_round2_subset$lipid_name_unique, target_round2$lipid_name)]
+
+target_round2_subset <- as.data.frame(target_round2_subset)
+## Configure the matching between features (query) and database (target)
+param_match <- MzRtParam(tolerance = 0.001,
+                         ppm = 20,
+                         toleranceRt = 1)
+mtch <- matchValues(query, target_round2_subset,
+                    param = param_match,
+                    mzColname = c("mzmed", "mz"),
+                    rtColname = c("rtmed", "rtmed"))
+mtch
+
+mtch <- mtch[whichQuery(mtch)]
+mtched_data_round2 <- matchedData(mtch) |>
+    as.data.frame()  
+
+mtched_data_round2$feature_id <- sub("\\..*$", "", rownames(mtched_data_round2))
+
+##  % match 
+length(unique(mtched_data_round2$feature_id)) / nrow(target_round2_subset) * 100
+
+## table of duplicated features 
+ambfts <- mtched_data_round2[mtched_data_round2$feature_id %in% 
+                                 mtched_data_round2$feature_id[duplicated(mtched_data_round2$feature_id)], ]
+
+#plot(featureChromatograms(mse_pos[1:2, keepFeatures = TRUE], features = "FT08860"))
+## ye i mean the rt (wether raw or from the table is so close, there is no way we can know)
+## some are VERY close isomers, no idea how to deal with that. 
+
+## table of duplicated lipids - i am not 100% sure this is right...
+sum(duplicated(paste0(mtched_data_round2$target_lipid_name_unique, mtched_data_round2$target_Adduct, sep = "_"))) 
+
+## honestly this is not bad. 
+
+## let's merge with the first matching results to have a full table
+colnames(mtched_data_round2)[!colnames(mtched_data_round2) %in% colnames(mtched_data)]
+mtched_data_full <- rbind(mtched_data, mtched_data_round2[, colnames(mtched_data)])
+```
+
 
 ```{r}
 ## example of peak non detected before changing the centwave parameter _pd: 
@@ -1538,24 +1631,9 @@ cat("All chromatograms saved in:", dr, "\n")
 
 ```
 
-Next we get the database entries that match multiple features (i.e., two
-different features matching the same lipid/compound).
 
-```{r}
-lipid_adducts <- paste0(mtched_data$target_lipid.name, "_",
-                        mtched_data$target_Adduct)
-lipid_ambiguous <- lipid_adducts[duplicated(lipid_adducts)]
-table_lips <- mtched_data[lipid_adducts %in% lipid_ambiguous,
-                         c("feature_id", "mzmed", "rtmed", "target_lipid.name",
-                           "target_Adduct", "ppm_error", "score_rt")]
-table_lips <- table_lips[order(table_lips$target_lipid.name, table_lips$rtmed), ]
-rownames(table_lips) <- NULL
-pandoc.table(table_lips, split.table = Inf, style = "rmarkdown")
-write_xlsx(table_amb, path = "lipids-matching-multiple-features.xlsx")
-```
 
-??? why is there DG(34:2) twice in the table, with different retentions times?
-same retention time and differen adduct
+Can we delete what's below ? sara i will let you deal with that. 
 
 ```{r}
 ## find features IDs of ambiguous matches
@@ -1605,7 +1683,6 @@ plot(test)
 # scoring and othe rinfo check the mtch_data
 
 ## need tofilter them out somehow.
-
 
 
 ## import information from mtch_data dataframe to res object using the feature ID present in both table.
@@ -1739,6 +1816,25 @@ normalization, quantitation, plotting after,..
 
 # Data normalization followed 
 
+-   normalization followed at CEMBIO for this study:
+  - missing values imputation (KNN algorithm)
+  - Normalization per volume (multiply whatman samples- factor 2.5 and plama samples - factor 1.08)
+  - Normalization per internal standard (for each lipid subclass dividing per each IS)
+
+     CAR with C17 sphinganine
+     CE with Chol Ester (18:1(d7))
+     Cer, Hexcer and SM with SM(18:1/18:1(d9))
+     DG with DAG(15:0/18:1(d7))
+     FA with FA(16:0(d31))
+     LPC with LysoPC(18:1(d7))  
+     LPE with LysoPE(18:1(d7))
+     PC with PC(15:0/18:1(d7))
+     PE with PE(15:0/18:1(d7))
+     TG with TAG(15:0/18:1(d7/15:0))
+     All this is now on the column IS_ norm, there I indicate the lipid name of the IS that we should use to make the division 
+     
+  - Remove lipids with a cv in QCs >30%
+
 Here before we imput the missing values we have to normalize per volume as
 follows: The abundance of all W-DBS samples should be multiply per 2.5 and
 Plasma samples per 1.08
@@ -1762,26 +1858,99 @@ cbind(
 
 
 # Below i create a subset of the res object with only annotated features
-mtched_features_list <- mtched_data$feature_id
-annotated_res <- res[rownames(res) %in% mtched_data$feature_id, ] #only 279 id out of 299, aprox 20 duplicates
+mtched_features_list <- mtched_data_unique$feature_id
+annotated_res <- res[rownames(res) %in% mtched_data_unique$feature_id, ] #only 279 id out of 299, aprox 20 duplicates
+rowData(annotated_res) <- cbind(rowData(annotated_res),
+                                 mtched_data_unique[match(rownames(annotated_res),
+                                                   mtched_data_unique$feature_id),
+                                             c("target_lipid.name",
+                                               "target_LIPID.CATEGORY..ABBREV.",
+                                               "target_LIPID.SUBCLASS..ABBREV.",
+                                               "target_Adduct", "target_IS_norm"
+                                             )])
 ## above if we have different lengths, it's because of duplicated features in the annotation table.
 
 # Below we keep the res object but append annotation info for the annotated features
 rowData(res) <- cbind(rowData(res),
-                         mtched_data[match(rownames(res),
-                                           mtched_data$feature_id),
+                         mtched_data_unique[match(rownames(res),
+                                           mtched_data_unique$feature_id),
                                      c("target_lipid.name",
                                        "target_LIPID.CATEGORY..ABBREV.",
                                        "target_LIPID.SUBCLASS..ABBREV.",
-                                       "target_Adduct"
+                                       "target_Adduct", "target_IS_norm"
                                        )])
-
 ```
 
+- Normalization per internal standard (for each lipid subclass dividing per each IS)
+
+     CAR with C17 sphinganine
+     CE with Chol Ester (18:1(d7))
+     Cer, Hexcer and SM with SM(18:1/18:1(d9))
+     DG with DAG(15:0/18:1(d7))
+     FA with FA(16:0(d31))
+     LPC with LysoPC(18:1(d7))  
+     LPE with LysoPE(18:1(d7))
+     PC with PC(15:0/18:1(d7))
+     PE with PE(15:0/18:1(d7))
+     TG with TAG(15:0/18:1(d7/15:0))
+     All this is now on the column IS_ norm, there I indicate the lipid name of the IS that we should use to make the division
+
+Again need to simplify the code ( phili will do it here)
 ```{r}
-## match group to 
-colData(res)$lipid_group 
+## this mapping is there: 
+rowData(annotated_res)$target_IS_norm
+
+## the internal standanrd nae is here: 
+rowData(annotated_res)$target_lipid.name
+
+## now we can make a loop to divide each feature by the IS appropiate
+assay(annotated_res, "raw_filled_ISnorm") <- assay(annotated_res, "raw_filled_corr") # create new assay to store the IS normalized data
+
+#check that the is have been detected before anything. 
+rowData(annotated_res)$target_IS_norm %in% rowData(annotated_res)$target_lipid.name
+## C17 Sphinganine missing
+
+
+for (i in seq_len(nrow(annotated_res))) {
+    is_name <- rowData(annotated_res)$target_IS_norm[i]
+    if (!is_name %in% rowData(annotated_res)$target_lipid.name) {
+        warning(sprintf("IS '%s' for feature '%s' not found in the dataset. Skipping IS normalization for this feature.",
+                        is_name, rownames(annotated_res)[i]))
+        next
+    }
+    if (!is.na(is_name)) {
+        is_idx <- which(rowData(annotated_res)$target_lipid.name == is_name)
+        if (length(is_idx) == 1) {
+            assay(annotated_res, "raw_filled_ISnorm")[i, ] <-
+                assay(annotated_res, "raw_filled_corr")[i, ] /
+                assay(annotated_res, "raw_filled_corr")[is_idx, ]
+        } else {
+            warning(sprintf("IS '%s' not found or duplicated for feature '%s'. Skipping IS normalization for this feature.",
+                            is_name, rownames(annotated_res)[i]))
+        }
+    } else {
+        warning(sprintf("No IS specified for feature '%s'. Skipping IS normalization for this feature.",
+                        rownames(annotated_res)[i]))
+    }
+}
+
+## quickly check res ## fix evaluation
+mat_corr <- assay(annotated_res, "raw_filled_corr")
+mat_norm <- assay(annotated_res, "raw_filled_ISnorm")
+vals_before <- as.numeric(mat_corr)
+vals_after  <- as.numeric(mat_norm)
+
+# Filter out zeros/NAs for logging to avoid errors
+vals_before_log <- log2(vals_before[vals_before > 0 & !is.na(vals_before)])
+vals_after_log  <- log2(vals_after[vals_after > 0 & !is.na(vals_after)])
+
+vioplot(list(Before = vals_before_log, After = vals_after_log),
+        main = "Global Intensity Dist. (Log10)",
+        ylab = "Log10 Intensity",
+        col = c("mistyrose", "lightcyan"))
 ```
+
+
 
 ```{r}
 # subset_res 
