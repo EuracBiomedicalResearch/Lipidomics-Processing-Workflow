@@ -962,14 +962,14 @@ and apply them to the whole data.
 
 ```{r, eval=TRUE}
 #' Define the settings for the param_cor
-# param_cor <- PeakDensityParam(sampleGroups = group_mse,
-#                               minFraction = 0.5, binSize = 0.01, ppm = 10,
-#                               bw = 2)
+param_cor <- PeakDensityParam(sampleGroups = group_mse,
+                              minFraction = 0.5, binSize = 0.01, ppm = 10,
+                              bw = 2)
 
 ## for phili tests, to be removed later: 
-param_cor <- PeakDensityParam(sampleGroups = rep(1, length(mse_pos)),
-minFraction = 0.5, binSize = 0.01, ppm = 10,
-bw = 2)
+# param_cor <- PeakDensityParam(sampleGroups = rep(1, length(mse_pos)),
+# minFraction = 0.5, binSize = 0.01, ppm = 10,
+# bw = 2)
 
 #' Apply to whole data
 mse_pos <- groupChromPeaks(mse_pos, param = param_cor)
@@ -1115,9 +1115,9 @@ param1 <- PeakDensityParam(sampleGroups = group , minFraction = 0.5,
                            bw = 2)
 
 ## phili code 
-param1 <- PeakDensityParam(sampleGroups = rep(1, length(mse_pos)) , minFraction = 0.5,
-                           binSize = 0.01, ppm = 10,
-                           bw = 2)
+# param1 <- PeakDensityParam(sampleGroups = rep(1, length(mse_pos)) , minFraction = 0.5,
+#                            binSize = 0.01, ppm = 10,
+#                            bw = 2)
 
 
 eic_is_corr <- groupChromPeaks(eic_is, param = param1)
