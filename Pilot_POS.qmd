@@ -1318,6 +1318,7 @@ write_xlsx(mtched_data, path = "TGs-Amonium.xlsx")
 ```
 
 CAN BE DELETED
+
 ```{r, eval = FALSE}
 #examples amb TGs
 d <- featureChromatograms(mse_pos, features = "FT17527") #TG(53:4)acetamidina no isotopic patter in qualitative 
@@ -1362,10 +1363,8 @@ target$mz <- as.numeric(target$mz)
 ## Configure the matching between features (query) and database (target)
 param_match <- MzRtParam(tolerance = 0.001,
                          ppm = 20,
-                         toleranceRt = 5. #+/-5 sec 
-                         ) ## maybe adapt to settings from the original approach
-## Perform the matching; define also the column names in query and target that
-## contain the values to be matched (i.e. the m/z and retention time values)
+                         toleranceRt = 5. #+/-5 sec , could increase if base confirmation on adduct presence
+                         ) 
 mtch <- matchValues(query, target,
                     param = param_match,
                     mzColname = c("mzmed", "mz"),
@@ -1392,23 +1391,31 @@ mtched_data$feature_id <- sub("\\..*$", "", rownames(mtched_data))
 sum(duplicated(mtched_data$feature_id))
 ```
 
-Before checking for feature duplication (which is mostly an issue of the database or can easily be resolved based on score)
+Before checking for feature duplication (which is mostly an issue of the 
+database or can easily be resolved based on score)
 I also want to check if one lipid matches multiple feautres as it could
 indicate an issue with the processing above. bigger problem
 
 ```{r}
-sum(duplicated(paste0(mtched_data$target_lipid_name_unique, mtched_data$target_Adduct, sep = "_"))) 
+sum(duplicated(paste0(mtched_data$target_lipid_name_unique, 
+                      mtched_data$target_Adduct, sep = "_"))) 
 ## this above is necessary as some adduct are both rank 1 for the same lipid.
 ## I have 12, that's a problem. 
-amblip <- mtched_data[paste0(mtched_data$target_lipid_name_unique, mtched_data$target_Adduct, sep = "_") %in%
-                        paste0(mtched_data$target_lipid_name_unique[duplicated(paste0(mtched_data$target_lipid_name_unique, mtched_data$target_Adduct, sep = "_"))],
-                               mtched_data$target_Adduct[duplicated(paste0(mtched_data$target_lipid_name_unique, mtched_data$target_Adduct, sep = "_"))],
+amblip <- mtched_data[paste0(mtched_data$target_lipid_name_unique,
+                             mtched_data$target_Adduct, sep = "_") %in%
+            paste0(mtched_data$target_lipid_name_unique[duplicated(paste0(mtched_data$target_lipid_name_unique,
+                                                                          mtched_data$target_Adduct, sep = "_"))],
+                               mtched_data$target_Adduct[duplicated(paste0(mtched_data$target_lipid_name_unique, 
+                                                                           mtched_data$target_Adduct, sep = "_"))],
                                sep = "_"), ]
 
 amblip
 
 # well it's actually very different fts 
-## ok so after checking a lot of them are just proper ambiguity. reducing the ppm threshold would help to be honest. but otherwise it's either score based deicsion or manually (but even manually sometimes we just can tell when it's really betweeen 2 features.)
+## ok so after checking a lot of them are just proper ambiguity. reducing the 
+## ppm threshold would help to be honest. but otherwise it's either score
+## based deicsion or manually (but even manually sometimes we just can tell
+## when it's really betweeen 2 features.)
 
 ## for now i will keep the one with the highest score 
 
@@ -1436,7 +1443,7 @@ library(pander)
 pandoc.table(table_amb, split.table = Inf, style = "rmarkdown")
 
 ## when checking honestly, i do not have a great way to deal with this. 
-## it's either hte rt between the 2 lipids are sooo close < 4 seconds, which is less than the peak width so there's just now way ## and in this case i would group the annotation 
+## it's either the rt between the 2 lipids are sooo close < 4 seconds, which is less than the peak width so there's just now way ## and in this case i would group the annotation 
 ## in another case we have a bit larger difference in rt (still very small though), and in that case i would keep the one that matches the best in rt. 
 ## we could increase the rt threshold and make some peak match to a further one (as we saw in some case we have a large shift), and then again filter the ambiguity based on rt score.
 ## but honestly if the RT is SO different HOW do we know if this is really the right compound.., without MS2 confirmation this is a reach and i would not trust it. 
