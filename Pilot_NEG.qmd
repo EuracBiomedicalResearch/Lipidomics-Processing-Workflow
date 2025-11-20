@@ -139,10 +139,10 @@ Below we show how to load from MetaboLights as an alternative to mzml files.
 
 ```{r, eval=FALSE}
 param <- MetaboLightsParam(mtblsId = "MTBLS10722",
-                           assayName = "a_MTBLS10722_LC-MS_positive_reverse-phase_metabolite_profiling.txt",
+                           assayName = "a_MTBLS10722_LC-MS_negative_reverse-phase_metabolite_profiling.txt",
                            filePattern = ".mzML")
 
-mse_pos <- readMsObject(MsExperiment(),
+mse_neg <- readMsObject(MsExperiment(),
                         param,
                         keepOntology = FALSE,
                         keepProtocol = FALSE,
@@ -155,26 +155,25 @@ TODO !!!
 
 ```{r, eval=TRUE}
 # Filter for the pilot study
-#[...]
-#
-
+mse_neg <- mse_pos[sampleData(mse_neg)$`Factor Value[Cohort]` == "Cohort_study"]
 
 # Let's rename the column for easier access
-sad <- sampleData(mse_pos)
-sad <- sad[,c(1, 3, 8)]
-colnames(sad) <- c("sample_name", "file_name",  "sample_type")
+sad <- sampleData(mse_neg)
+sad <- sad[,c(1, 3, 8, 10)]
+colnames(sad) <- c("sample_name", "file_name",  "sample_type", "injection_index")
 
 #  Add injection index column
-sad$inj_no <- seq_len(nrow(sad))
 sad$polarity <- "pos"
-
-sampleData(mse_pos) <- sad
+sampleData(mse_neg) <- sad
 
 ## remove blank samples 
-mse_pos <- mse_pos[sampleData(mse_pos)$sample_type != "Blank"]
+mse_neg <- mse_neg[sampleData(mse_neg)$sample_type != "Blank"]
 
-### for now until the study is fixed i will test things on the first 8 QCs
-mse_pos <- mse_pos[1:8]
+## reorder the sample based on injection order
+mse_neg <- mse_neg[order(sampleData(mse_neg)$injection_index), ]
+
+##only phili - subset to make analysis faster
+mse_neg <- mse_neg[sampleData(mse_neg)$sample_type == "QC"]
 ```
 
 \[Phili: Here i would explain maybe some column names so that other people
@@ -302,7 +301,7 @@ rownames(fData(eic_is)) <- intern_standard$short_name
 
 fdata <- fData(eic_is)
 
-fData(eic_is)[c("FA", "PI"),
+fData(eic_is)[c("dFA", "dPI"),
               c("short_name", "mz", "rt", "rtmin", "rtmax")] |>
     kable(format = "pipe")
 ```
@@ -330,8 +329,8 @@ for (i in seq_len(nrow(eic_is))) {
 ```{r, eval=TRUE}
 #|fig.cap: "Example: EIC of three selected deuterated lipids."
 # Chromatogram example of three lipids from the list that was imported before
-eic_FA <- eic_is["FA"]
-eic_PI <- eic_is["PI"]
+eic_FA <- eic_is["dFA"]
+eic_PI <- eic_is["dPI"]
 
 #png("EIC_exampledeuteratedlipids.png", width = 2000, height = 1500, res = 300)
 
@@ -371,7 +370,7 @@ calculate the absolute difference and expressed in ppm.
 lpc <- mse_neg[1L] |>
   spectra() |>
   filterRt(rt = c(209, 230)) |>
-  filterMzRange(mz = fData(eic_FA)["FA", c("mzmin", "mzmax")])
+  filterMzRange(mz = fData(eic_FA)["dFA", c("mzmin", "mzmax")])
 
 #' Show the number of peaks per m/z filtered spectra
 lengths(lpc)
@@ -479,8 +478,8 @@ fData(eic_is) <- fData(eics_is_noprocess)
 # Plot to evaluate the chromatographic peak detection results.
 rownames(fData(eic_is)) <- intern_standard$short_name
 
-eic_FA <- eic_is["FA"]
-eic_PI <- eic_is["PI"]
+eic_FA <- eic_is["dFA"]
+eic_PI <- eic_is["dPI"]
 
 ## Here add some other double peak compound that we failed to identify before.
 ```
@@ -540,8 +539,8 @@ eic_is <- chromatogram(mse_neg,
                        mz = as.matrix(intern_standard[, c("mzmin", "mzmax")]))
 fData(eic_is) <- fData(eics_is_chrompeaks)
 
-eic_deuteratedLysoPC <- eic_is["FA", ]
-eic_deuteratedSM <- eic_is["PI", ]
+eic_deuteratedLysoPC <- eic_is["dFA", ]
+eic_deuteratedSM <- eic_is["dPI", ]
 ```
 
 ### Evaluate peak detection results
@@ -696,8 +695,8 @@ alignment, and subsequently plot them.
 
 ```{r, eval=TRUE}
 #' Extract the EICs for the test ions before alignment
-old_eic_FA <- eic_is["FA"]
-old_eic_PI<- eic_is["PI"]
+old_eic_FA <- eic_is["dFA"]
+old_eic_PI<- eic_is["dPI"]
 
 #' Update the EICs
 eic_is <- chromatogram(mse_neg,
@@ -706,8 +705,8 @@ eic_is <- chromatogram(mse_neg,
 fData(eic_is) <- fdata
 
 #' Extract the EICs for the test ions
-eic_FA <- eic_is["FA"]
-eic_PI <- eic_is["PI"]
+eic_FA <- eic_is["dFA"]
+eic_PI <- eic_is["dPI"]
 ```
 
 ```{r, eval=TRUE}
@@ -717,17 +716,17 @@ par(mfrow = c(2, 2), mar = c(4, 4.5, 2, 1))
 plot(old_eic_FA, main = "FA before alignment", peakType = "none",
      col = paste0(col_sample, 80))
 grid()
-abline(v = intern_standard["FA", "RT"], col = "red", lty = 3)
+abline(v = intern_standard["dFA", "RT"], col = "red", lty = 3)
 
 plot(eic_FA, main = "FA after alignment", peakType = "none",
      col = paste0(col_sample, 80))
 grid()
-abline(v = intern_standard["FA", "RT"], col = "red", lty = 3)
+abline(v = intern_standard["dFA", "RT"], col = "red", lty = 3)
 
 plot(old_eic_PI, main = "PI before alignment",
      peakType = "none", col = paste0(col_sample, 80))
 grid()
-abline(v = intern_standard["PI", "RT"], col = "red", lty = 3)
+abline(v = intern_standard["dPI", "RT"], col = "red", lty = 3)
 
 legend("topright", col = col_sample_type,
        legend = names(col_sample_type), lty = 1, bty = "n")
@@ -735,7 +734,7 @@ legend("topright", col = col_sample_type,
 plot(eic_PI, main = "PI after alignment",
      peakType = "none", col = paste0(col_sample, 80))
 grid()
-abline(v = intern_standard["PI", "RT"], col = "red", lty = 3)
+abline(v = intern_standard["dPI", "RT"], col = "red", lty = 3)
 
 ```
 
@@ -858,21 +857,21 @@ param_cor <- PeakDensityParam(sampleGroups = group_mse,
                               bw = 2)
 
 #' Apply to whole data
-mse_pos <- groupChromPeaks(mse_neg, param = param_cor)
+mse_neg <- groupChromPeaks(mse_neg, param = param_cor)
 ```
 
 Evaluation of the correspondence results in other EIC in the IS list similar to
 the deuterated FA.
 
 ```{r, eval=TRUE}
-#' Extract chromatogram for an m/z similar to the one of the labeled methionine
+#' Extract chromatogram for an m/z similar to the one of the labeled 
 chr_test <- chromatogram(mse_neg,
                          mz = as.matrix(intern_standard["FA",
                                                         c("mzmin", "mzmax")]),
-                         rt = c(120, 184),
+                         rt = c(370, 390),
                          aggregationFun = "max")
 plotChromPeakDensity(
-    chr_test, simulate = FALSE,
+    chr_test,param = param_cor, simulate = FALSE,
     col = paste0(col_sample, "80"),
     peakCol = col_sample[chromPeaks(chr_test)[, "sample"]],
     peakBg = paste0(col_sample[chromPeaks(chr_test)[, "sample"]], 20),
@@ -883,7 +882,7 @@ This corresponds to non-deuterated LysoPC and we can see that it can
 distinguish between the two peaks.
 
 ```{r, eval=FALSE}
-#| fig-cap: "Evaluation of the correspondance results in 17 EICs in the IS list."
+#| fig-cap: "Evaluation of the correspondance results in  EICs in the IS list."
 # Loop to go through all rows of the eic_is object and plot independent after correspondance analysis
 
 for (i in seq_len(nrow(eic_is))) {
@@ -905,7 +904,7 @@ for (i in seq_len(nrow(eic_is))) {
 We next examine how prevalent missing values are in our present dataset:
 
 ```{r}
-#' Percentage of missing values
+#' Percentage of missing values.  
 sum(is.na(featureValues(mse_neg))) /
     length(featureValues(mse_neg)) * 100
 
@@ -1109,10 +1108,10 @@ workflow
 
 ```{r}
 #' extract results as a SummarizedExperiment
-res <- quantify(mse_pos, method = "sum", filled = FALSE)
+res <- quantify(mse_neg, method = "sum", filled = FALSE)
 res
 
-assays(res)$raw_filled <- featureValues(mse_pos, method = "sum",
+assays(res)$raw_filled <- featureValues(mse_neg, method = "sum",
                                         filled = TRUE)
 ```
 
@@ -1124,11 +1123,11 @@ sum(!rowMeans(assay(res), na.rm = TRUE) > 1500) #503 removed features
 
 ```
 
-## Save mse_pos and res object
+## Save mse_neg and res object
 
 ```{r}
-# save the mse_pos preprocessed object
-saveMsObject(mse_pos, AlabasterParam(path = file.path("objects/preprocessed_mse_neg")))
+# save the mse_neg preprocessed object
+saveMsObject(mse_neg, AlabasterParam(path = file.path("objects/preprocessed_mse_neg")))
 
 # save the SummarizedExperiemnt
 saveObject(res, file.path("objects/preprocessed_res_neg")) 
@@ -1309,7 +1308,7 @@ table_lips <- mtched_data[lipid_adducts %in% lipid_ambiguous,
 table_lips <- table_lips[order(table_lips$target_lipid.name, table_lips$rtmed), ]
 rownames(table_lips) <- NULL
 pandoc.table(table_lips, split.table = Inf, style = "rmarkdown")
-write_xlsx(table_lips, path = "lipids-matching-multiple-featuresNEG.xlsx")
+write_xlsx(table_lips, path = "lipids-matching-multiple-features_neg.xlsx")
 ```
 
 ??? why is there DG(34:2) twice in the table, with different retentions times?
