@@ -8,21 +8,13 @@ format: html
 So we organize a bit what is left to do. Also `!!!` can be found in the text
 for more context or issues.
 
--   Test peak picking and refinement parameters to improve peak detection
-
-    -   I tested some things but could not get better results than the current ones.
-        See my comments in the text. I have some suggestion regarding merging though.
-        See line 464
-
--   Matching loop (rank 2, 3 etc.)
+-   Improve annotation strategy.
 
 -   Add figure and table captions (I have been adding them to the plots I think we are going to keep)
 
 -   Clean up useless code.
 
 -   output plots code
-
-
 
 # Introduction
 
@@ -254,7 +246,7 @@ Upload the list of the reference lipids (internal standards form SPLAH LIPIDOMIX
 intern_standard <- read_xlsx("splashlipidomix_list.xlsx") |>
     as.data.frame()
 intern_standard$rtmin <- intern_standard$RT - 30
-intern_standard$rtmax <- intern_standard$RT + 20
+intern_standard$rtmax <- intern_standard$RT + 15
 intern_standard$mzmin <- intern_standard$mz - 0.008 
 intern_standard$mzmax <- intern_standard$mz + 0.008
 rownames(intern_standard) <- intern_standard$short_name
@@ -1814,12 +1806,50 @@ later on discuss how to deal with features that matches multiple compound.
 we could concatenate the annotation to the summarized experiment object. Do the
 normalization, quantitation, plotting after,..
 
-# Data normalization followed 
+# Data normalization 
+
+```{r}
+#' Impute missing values using an uniform distribution
+na_unidis <- function(z) {
+    na <- is.na(z)
+    if (any(na)) {
+        min = min(z, na.rm = TRUE)
+        z[na] <- runif(sum(na), min = min/2, max = min)
+    }
+    z
+}
+
+#' Row-wise impute missing values and add the data as a new assay
+tmp <- apply(assay(annotated_res, "raw_filled"), MARGIN = 1, na_unidis)
+assays(annotated_res)$raw_filled_imputed <- t(tmp)
+```
+
+```{r}
+#' Log2 transform and scale data
+vals <- assay(annotated_res, "raw_filled_imputed") |>
+    log2() |>
+    t() |>
+    scale(center = TRUE, scale = TRUE)
+
+#' Perform the PCA
+pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
+
+#' Plot the results
+vals_st <- cbind(vals, sample_type = annotated_res$sample_type)
+pca_12 <- autoplot(pca_res, data = vals_st , colour = 'sample_type', scale = 0) +
+    scale_color_manual(values = col_sample_type)
+pca_34 <- autoplot(pca_res, data = vals_st, colour = 'sample_type',
+                   x = 3, y = 4, scale = 0) +
+    scale_color_manual(values = col_sample_type)
+grid.arrange(pca_12, pca_34, ncol = 1)
+```
+
+## Cembio workflow
 
 -   normalization followed at CEMBIO for this study:
   - missing values imputation (KNN algorithm)
-  - Normalization per volume (multiply whatman samples- factor 2.5 and plama samples - factor 1.08)
-  - Normalization per internal standard (for each lipid subclass dividing per each IS)
+  - Normalization per volume (multiply whatman samples- factor 2.5 and plama samples - factor 1.08) - DONE
+  - Normalization per internal standard (for each lipid subclass dividing per each IS) - DONE
 
      CAR with C17 sphinganine
      CE with Chol Ester (18:1(d7))
@@ -1833,7 +1863,7 @@ normalization, quantitation, plotting after,..
      TG with TAG(15:0/18:1(d7/15:0))
      All this is now on the column IS_ norm, there I indicate the lipid name of the IS that we should use to make the division 
      
-  - Remove lipids with a cv in QCs >30%
+  - Remove lipids with a cv in QCs >30% - done
 
 Here before we imput the missing values we have to normalize per volume as
 follows: The abundance of all W-DBS samples should be multiply per 2.5 and
@@ -1879,6 +1909,33 @@ rowData(res) <- cbind(rowData(res),
                                        "target_LIPID.SUBCLASS..ABBREV.",
                                        "target_Adduct", "target_IS_norm"
                                        )])
+```
+
+
+```{r}
+#' Row-wise impute missing values and add the data as a new assay
+tmp <- apply(assay(annotated_res, "raw_filled_corr"), MARGIN = 1, na_unidis)
+assays(annotated_res)$raw_filled_corr_imputed <- t(tmp)
+```
+
+```{r}
+#' Log2 transform and scale data
+vals <- assay(annotated_res, "raw_filled_corr_imputed") |>
+    log2() |>
+    t() |>
+    scale(center = TRUE, scale = TRUE)
+
+#' Perform the PCA
+pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
+
+#' Plot the results
+vals_st <- cbind(vals, sample_type = annotated_res$sample_type)
+pca_12 <- autoplot(pca_res, data = vals_st , colour = 'sample_type', scale = 0) +
+    scale_color_manual(values = col_sample_type)
+pca_34 <- autoplot(pca_res, data = vals_st, colour = 'sample_type',
+                   x = 3, y = 4, scale = 0) +
+    scale_color_manual(values = col_sample_type)
+grid.arrange(pca_12, pca_34, ncol = 1)
 ```
 
 - Normalization per internal standard (for each lipid subclass dividing per each IS)
@@ -1950,29 +2007,84 @@ vioplot(list(Before = vals_before_log, After = vals_after_log),
         col = c("mistyrose", "lightcyan"))
 ```
 
-
-
 ```{r}
-# subset_res 
-#' Impute missing values using an uniform distribution
-na_unidis <- function(z) {
-    na <- is.na(z)
-    if (any(na)) {
-        min = min(z, na.rm = TRUE)
-        z[na] <- runif(sum(na), min = min/2, max = min)
-    }
-    z
-}
-
 #' Row-wise impute missing values and add the data as a new assay
-tmp <- apply(assay(subset_res, "raw_filled"), MARGIN = 1, na_unidis)
-assays(subset_res)$raw_filled_imputed <- t(tmp)
+tmp <- apply(assay(annotated_res, "raw_filled_ISnorm"), MARGIN = 1, na_unidis)
+assays(annotated_res)$raw_filled_ISnorm_imputed <- t(tmp)
 ```
 
 ```{r}
-# subset_res
 #' Log2 transform and scale data
-vals <- assay(subset_res, "raw_filled_imputed") |>
+vals <- assay(annotated_res, "raw_filled_ISnorm_imputed") |>
+    log2() |>
+    t() |>
+    scale(center = TRUE, scale = TRUE)
+
+#' Perform the PCA
+pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
+
+#' Plot the results
+vals_st <- cbind(vals, sample_type = annotated_res$sample_type)
+pca_12 <- autoplot(pca_res, data = vals_st , colour = 'sample_type', scale = 0) +
+    scale_color_manual(values = col_sample_type)
+pca_34 <- autoplot(pca_res, data = vals_st, colour = 'sample_type',
+                   x = 3, y = 4, scale = 0) +
+    scale_color_manual(values = col_sample_type)
+grid.arrange(pca_12, pca_34, ncol = 1)
+```
+
+- Remove lipids with a cv in QCs >30% - quality control 
+
+
+```{r}
+#' Number of features before filtering
+nrow(annotated_res)
+```
+
+```{r}
+ #' keep unfiltered object
+res_unfilt <- annotated_res
+```
+
+```{r}
+# RSD filter 
+rsd_filter <- RsdFilter(threshold = 0.3,
+                        qcIndex = annotated_res$sample_type == "QC")
+
+annotated_res <- filterFeatures(annotated_res, filter = rsd_filter)
+```
+
+
+```{r}
+#' Number of features after analysis
+nrow(annotated_res)
+```
+
+```{r}
+#' Percentage left: end/beginning
+nrow(annotated_res)/nrow(res_unfilt) * 100
+```
+
+From there on i guess we don't need QCs anymore
+
+```{r}
+res_qc <- annotated_res[, annotated_res$sample_type == "QC"]
+res <- annotated_res[, annotated_res$sample_type != "QC"]
+
+## redefine colours for the new data set without QCs
+col_sample <- col_sample[names(col_sample) != "QC"]
+col_sample_type <- col_sample_type[names(col_sample_type) != "QC"]
+```
+
+```{r}
+#' Calculate the QC's CV and add as feature variable to the data set
+rowData(res)$qc_cv <- assay(res_qc, "norm") |>
+               rowRsd()
+```
+
+```{r}
+#' Log2 transform and scale data
+vals <- assay(res, "raw_filled_ISnorm_imputed") |>
     log2() |>
     t() |>
     scale(center = TRUE, scale = TRUE)
@@ -1990,7 +2102,8 @@ pca_34 <- autoplot(pca_res, data = vals_st, colour = 'sample_type',
 grid.arrange(pca_12, pca_34, ncol = 1)
 ```
 
-FROM HERE statistics metabonout
+FROM HERE statistics metabonaut
+we need to discuss if more is necessary and how much they want to deviate from their workflow
 
 ```{r}
 #' Impute missing values using an uniform distribution
@@ -2203,61 +2316,7 @@ Distribution of cv values across samples for the raw and normalized data
 the Cv in study sample decrease, usually that's not ideal but here might be
 driven by the whatman intensity correction (check this)
 
-# Quality control: Feature prefiltering
 
-\[Move this section above\]
-
-```{r}
-#' Number of features before filtering
-nrow(res)
-```
-
-```{r}
- #' keep unfiltered object
-res_unfilt <- res
-```
-
-```{r}
-#' Compute and filter based on the Dratio
-filter_dratio <- DratioFilter(threshold = 0.3,
-                              qcIndex = res$sample_type == "QC",
-                              studyIndex = res$sample_type != "QC",
-                              mad = TRUE)
-res <- filterFeatures(res, filter = filter_dratio, assay = "norm_imputed")
-```
-
-no Dratio: because Qc is based on different matrices. instead rsd, check
-?RsdFilter
-
-```{r}
-# RSD filter 
-rsd_filter <- RsdFilter(threshold = 0.3,
-                        qcIndex = res$sample_type == "QC")
-
-res_rsd <- filterFeatures(res, filter = rsd_filter)
-```
-
-
-```{r}
-#' Number of features after analysis
-nrow(res)
-```
-
-```{r}
-#' Percentage left: end/beginning
-nrow(res)/nrow(res_unfilt) * 100
-```
-
-```{r}
-res_qc <- res[, res$sample_type == "QC"]
-res <- res[, res$sample_type != "QC"]
-```
-
-```{r}
-#' Calculate the QC's CV and add as feature variable to the data set
-rowData(res)$qc_cv <- assay(res_qc, "norm") |>
-               rowRsd()
-```
 
 # Overlaping features
 
