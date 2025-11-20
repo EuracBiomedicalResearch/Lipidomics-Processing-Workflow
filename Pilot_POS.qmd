@@ -1085,18 +1085,34 @@ abline(0, 1)
 
 Figure X. Detected vs. filled-in signal.
 
+```{r}
+#' extract results as a SummarizedExperiment
+res <- quantify(mse_pos, method = "sum", filled = FALSE)
+res
+
+assays(res)$raw_filled <- featureValues(mse_pos, method = "sum",
+                                        filled = TRUE)
+```
+
+```{r}
+# Filter the res object setting a threshold of 1.5*10^3
+res_filtered <- assay(res)[rowMeans(assay(res), na.rm = TRUE) > 1500, ]
+
+sum(!rowMeans(assay(res), na.rm = TRUE) > 1500) #503 removed features
+```
 
 ## Save mse_pos and res object
 
 ```{r}
 # save the mse_pos preprocessed object
 saveMsObject(mse_pos, AlabasterParam(path = file.path("objects/preprocessed_mse_pos")))
-
+#readMsObject(XcmsExperiment(), AlabasterParam(path = file.path("objects/preprocessed_mse_pos"))) -> mse_pos
 # save the SummarizedExperiemnt
+res@metadata <- list()
 saveObject(res, file.path("objects/preprocessed_res")) 
 ```
 
-# Database correction.
+# Database correction
 
 ```{r, eval=TRUE}
 #' Default parameter for the grouping and apply them to the test ions BPC
@@ -1243,23 +1259,7 @@ The Black line is build with the 592 compounds of the database and the red dots 
 lipids (17 between endogenous and deuterated)
 
 # Annotate/ match
--   maybe separate the QCs into another object or do that later.
-
-```{r}
-#' extract results as a SummarizedExperiment
-res <- quantify(mse_pos, method = "sum", filled = FALSE)
-res
-
-assays(res)$raw_filled <- featureValues(mse_pos, method = "sum",
-                                        filled = TRUE)
-```
-
-```{r}
-# Filter the res object setting a threshold of 1.5*10^3
-res_filtered <- assay(res)[rowMeans(assay(res), na.rm = TRUE) > 1500, ]
-
-sum(!rowMeans(assay(res), na.rm = TRUE) > 1500) #503 removed features
-```
+-   maybe separate the QCs into another object or do that later
 
 
 Match features (query) against (aligned) database (target).
@@ -1318,7 +1318,7 @@ write_xlsx(mtched_data, path = "TGs-Amonium.xlsx")
 ```
 
 CAN BE DELETED
-```{r}
+```{r, eval = FALSE}
 #examples amb TGs
 d <- featureChromatograms(mse_pos, features = "FT17527") #TG(53:4)acetamidina no isotopic patter in qualitative 
 plot(d)
@@ -1392,7 +1392,7 @@ mtched_data$feature_id <- sub("\\..*$", "", rownames(mtched_data))
 sum(duplicated(mtched_data$feature_id))
 ```
 
-Before checking for feature duplication (whih is mostly an issue of the database or can easily be resolved based on score)
+Before checking for feature duplication (which is mostly an issue of the database or can easily be resolved based on score)
 I also want to check if one lipid matches multiple feautres as it could
 indicate an issue with the processing above. bigger problem
 
@@ -1407,7 +1407,7 @@ amblip <- mtched_data[paste0(mtched_data$target_lipid_name_unique, mtched_data$t
 
 amblip
 
-plot(featureChromatograms(mse_pos[1:2, keepFeatures = TRUE], features = c("FT02887", "FT02888"))) ## well it's actually very different fts 
+# well it's actually very different fts 
 ## ok so after checking a lot of them are just proper ambiguity. reducing the ppm threshold would help to be honest. but otherwise it's either score based deicsion or manually (but even manually sometimes we just can tell when it's really betweeen 2 features.)
 
 ## for now i will keep the one with the highest score 
@@ -1439,27 +1439,26 @@ pandoc.table(table_amb, split.table = Inf, style = "rmarkdown")
 ## it's either hte rt between the 2 lipids are sooo close < 4 seconds, which is less than the peak width so there's just now way ## and in this case i would group the annotation 
 ## in another case we have a bit larger difference in rt (still very small though), and in that case i would keep the one that matches the best in rt. 
 ## we could increase the rt threshold and make some peak match to a further one (as we saw in some case we have a large shift), and then again filter the ambiguity based on rt score.
-## but hoenstly if the RT is SO different HOW do we know if this is rteally the right compound.., without MS2 confirmation this is a reach and i would not trust it. 
-## one confirmation  could be, the adduct we are checking below. we could check this, afterward on in final only keep the ambiguity where we can fiund more adduct. this would confirm the RT. Sara let's discuss this. i kinda like that idea. 
+## but honestly if the RT is SO different HOW do we know if this is really the right compound.., without MS2 confirmation this is a reach and i would not trust it. 
+## one confirmation  could be, the adduct we are checking below. we could check this, afterward on in final only keep the ambiguity where we can found more adduct. this would confirm the RT. Sara let's discuss this. i kinda like that idea. 
 ## 
 ## ## for now below i just keep the one with the best rt score. will change that based on our discussion
 sorted_data <- mtched_data[order(mtched_data$feature_id, mtched_data$score_rt), ]
 mtched_data_unique <- sorted_data[!duplicated(sorted_data$feature_id), ]
 ```
 
-
-
-
 ## Matching adducts 
+
 testing another matching
-- matching rtmed of the feature definiton, we expect adducts to have the same rt.
-- i also tried using rtmin and rtmax but this gave me better results both in term of number AND ambiguity.
+
+- matching rtmed of the feature definiton, we expect adducts to have the same
+rt.
+- i also tried using rtmin and rtmax but this gave me better results both in 
+term of number AND ambiguity.
 
 I feel like the code can be simplified very much 
 
 ```{r}
-## i'm "correcting" the duplication by taking the ones that have the lowest
-##  RT error, this need to be changed later.
 query <- featureDefinitions(mse_pos)
 ## now i'm taking the RT ranges of the features 
 target_round2 <- featureDefinitions(mse_pos)[mtched_data_unique$feature_id,"rtmed", drop = FALSE]
@@ -1513,7 +1512,7 @@ mtched_data_full <- rbind(mtched_data, mtched_data_round2[, colnames(mtched_data
 ```
 
 
-```{r}
+```{r, eval=FALSE}
 ## example of peak non detected before changing the centwave parameter _pd: 
 ## it has low intensity, we need to refine preprocessing. 
 eg1 <- chromatogram(mse_pos, mz = c(482.315, 482.333), rt = c(193, 210)) #LPE(0:0/18:0)
@@ -1536,7 +1535,7 @@ featureDefinitions(eg5)
 
 ```
 
-```{r}
+```{r, eval= FALSE}
 #plot some features
 a <- featureChromatograms(mse_pos, features = "FT17595") #TG(53:3)
 plot(a)
@@ -1577,7 +1576,7 @@ k <- featureChromatograms(mse_pos, features = "FT03637") # intensity PG 1400
 plot(k, main = "Gráfico k")
 ```
 
-```{r}
+```{r,eval= FALSE}
 df_subset <- subset(mtched_data, grepl("ISTD", target_ORIGIN, ignore.case = TRUE))
 
 # Loop to plot all the compounds in the df_subset these are the internal standards
@@ -1624,10 +1623,9 @@ cat("All chromatograms saved in:", dr, "\n")
 ```
 
 
-
 Can we delete what's below ? sara i will let you deal with that. 
 
-```{r}
+```{r, eval = FALSE}
 ## find features IDs of ambiguous matches
 tmp <- table(mtch$feature_id)
 tmp <- tmp[tmp > 1]
@@ -1687,8 +1685,8 @@ rownames(mtched_data)
 
 ```{r}
 ## remove duplicated form the
-length(unique(mtched_data$target_lipid.name)) ## number of lipid matched, ONLY 206
-
+length(unique(mtched_data$target_lipid_name_unique)) ## number of lipid matched, ONLY 206
+## I have 268 with QCs
 length(unique(mtched_data$target_LIPID.CATEGORY..ABBREV.))
 
 # Lipid Distribution barplot
@@ -1801,12 +1799,9 @@ legend("topright",
 
 -   
 
-later on discuss how to deal with features that matches multiple compound.
-
-we could concatenate the annotation to the summarized experiment object. Do the
-normalization, quantitation, plotting after,..
-
 # Data normalization 
+
+## Initial quality assessment
 
 ```{r}
 #' Impute missing values using an uniform distribution
@@ -1844,28 +1839,67 @@ pca_34 <- autoplot(pca_res, data = vals_st, colour = 'sample_type',
 grid.arrange(pca_12, pca_34, ncol = 1)
 ```
 
+Figure X. PCA of the data colored by sample_type.Volumetric devices profiles
+are clearly different from W-DBS and plasma.
+
+
+Intensity evaluation
+
+```{r}
+layout(mat = matrix(1:3, ncol = 1), height = c(0.2, 0.2, 0.8))
+
+par(mar = c(0.2, 4.5, 0.2, 3))
+barplot(apply(assay(res, "raw"), MARGIN = 2, function(x) sum(!is.na(x))),
+        col = paste0(col_sample, 80), border = col_sample,
+        ylab = "# detected peaks", xaxt = "n", space = 0.012)
+grid(nx = NA, ny = NULL)
+barplot(apply(assay(res, "raw_filled"), MARGIN = 2, function(x) sum(!is.na(x))),
+        col = paste0(col_sample, 80), border = col_sample,
+        ylab = "# detected + filled peaks", xaxt = "n",
+        space = 0.012)
+grid(nx = NA, ny = NULL)
+vioplot(log2(assay(res, "raw_filled")), xaxt = "n",
+        ylab = expression(log[2]~feature~abundance),
+        col = paste0(col_sample, 80), border = col_sample)
+points(colMedians(log2(assay(res, "raw_filled")), na.rm = TRUE), type = "b",
+       pch = 1)
+grid(nx = NA, ny = NULL)
+legend("topright", col = col_sample_type,
+       legend = names(col_sample_type), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
+       cex = 0.8,  bty = "n")
+```
+
+Less features in plasma.. 
+
+
+```{r}
+par(mfrow = c(1, 1), mar = c(3.5, 4.5, 2.5, 1))
+boxplot(MsCoreUtils::rowRla(assay(res, "raw_filled"),
+                            f = res$sample_type, transform = "log2"),
+        cex = 0.5, pch = 16,
+        col = paste0(col_sample, 80), ylab = "RLA",
+        border = col_sample, boxwex = 1,
+        outline = FALSE, xaxt = "n", main = "Relative log abundance",
+        cex.main = 1)
+axis(side = 1, at = seq_len(ncol(res)), labels = colData(res)$sample_name)
+grid(nx = NA, ny = NULL)
+abline(h = 0, lty=3, lwd = 1, col = "black")
+legend("topright", col = col_sample_type,
+       legend = names(col_sample_type), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
+       cex = 0.8,  bty = "n")
+```
+
+RLA plot for the raw data and filled data.
+
+
 ## Cembio workflow
 
--   normalization followed at CEMBIO for this study:
+The only thing missing is this: 
   - missing values imputation (KNN algorithm)
-  - Normalization per volume (multiply whatman samples- factor 2.5 and plama samples - factor 1.08) - DONE
-  - Normalization per internal standard (for each lipid subclass dividing per each IS) - DONE
+    - We usually do it using uniform distribution, but honeslty i'm not sure
+     what is best. 
 
-     CAR with C17 sphinganine
-     CE with Chol Ester (18:1(d7))
-     Cer, Hexcer and SM with SM(18:1/18:1(d9))
-     DG with DAG(15:0/18:1(d7))
-     FA with FA(16:0(d31))
-     LPC with LysoPC(18:1(d7))  
-     LPE with LysoPE(18:1(d7))
-     PC with PC(15:0/18:1(d7))
-     PE with PE(15:0/18:1(d7))
-     TG with TAG(15:0/18:1(d7/15:0))
-     All this is now on the column IS_ norm, there I indicate the lipid name of the IS that we should use to make the division 
-     
-  - Remove lipids with a cv in QCs >30% - done
-
-Here before we imput the missing values we have to normalize per volume as
+Here before we impute the missing values we have to normalize per volume as
 follows: The abundance of all W-DBS samples should be multiply per 2.5 and
 Plasma samples per 1.08
 
@@ -1874,17 +1908,17 @@ factors <- ifelse(grepl("W", colnames(res)), 2.5,
              ifelse(grepl("P", colnames(res)), 1.08, 1))
 assay(res, "raw_corr") <- sweep(assay(res), MARGIN = 2, 
                                 STATS = factors, FUN = "*")
-assay(res, "raw_filled_corr") <- sweep(assay(res, "raw_filled"),
+assay(res, "corr_filled") <- sweep(assay(res, "raw_filled"),
                                        MARGIN = 2, STATS = factors, FUN = "*")
 
 print("Assays now in res object:")
 print(names(assays(res)))
 
 ## Check the changes in one sample (CAN BE DELETED)
-cbind(
-  original = assay(res, "raw")["FT00001", "D10W_pos.mzML"],
-  scaled   = assay(res, "raw_corr")["FT00001", "D10W_pos.mzML"]
-)
+# cbind(
+#   original = assay(res, "raw")["FT00001", "D10W_pos.mzML"],
+#   scaled   = assay(res, "raw_corr")["FT00001", "D10W_pos.mzML"]
+# )
 
 
 # Below i create a subset of the res object with only annotated features
@@ -1914,13 +1948,13 @@ rowData(res) <- cbind(rowData(res),
 
 ```{r}
 #' Row-wise impute missing values and add the data as a new assay
-tmp <- apply(assay(annotated_res, "raw_filled_corr"), MARGIN = 1, na_unidis)
-assays(annotated_res)$raw_filled_corr_imputed <- t(tmp)
+tmp <- apply(assay(annotated_res, "corr_filled"), MARGIN = 1, na_unidis)
+assays(annotated_res)$corr_filled_imputed <- t(tmp)
 ```
 
 ```{r}
 #' Log2 transform and scale data
-vals <- assay(annotated_res, "raw_filled_corr_imputed") |>
+vals <- assay(annotated_res, "corr_filled_imputed") |>
     log2() |>
     t() |>
     scale(center = TRUE, scale = TRUE)
@@ -1961,7 +1995,7 @@ rowData(annotated_res)$target_IS_norm
 rowData(annotated_res)$target_lipid.name
 
 ## now we can make a loop to divide each feature by the IS appropiate
-assay(annotated_res, "raw_filled_ISnorm") <- assay(annotated_res, "raw_filled_corr") # create new assay to store the IS normalized data
+assay(annotated_res, "ISnorm_filled") <- assay(annotated_res, "corr_filled")
 
 #check that the is have been detected before anything. 
 rowData(annotated_res)$target_IS_norm %in% rowData(annotated_res)$target_lipid.name
@@ -1975,12 +2009,14 @@ for (i in seq_len(nrow(annotated_res))) {
                         is_name, rownames(annotated_res)[i]))
         next
     }
+    if (rowData(annotated_res)$target_lipid.name[i] == is_name)
+      next
     if (!is.na(is_name)) {
         is_idx <- which(rowData(annotated_res)$target_lipid.name == is_name)
         if (length(is_idx) == 1) {
-            assay(annotated_res, "raw_filled_ISnorm")[i, ] <-
-                assay(annotated_res, "raw_filled_corr")[i, ] /
-                assay(annotated_res, "raw_filled_corr")[is_idx, ]
+            assay(annotated_res, "ISnorm_filled")[i, ] <-
+                assay(annotated_res, "corr_filled")[i, ] /
+                assay(annotated_res, "corr_filled")[is_idx, ]
         } else {
             warning(sprintf("IS '%s' not found or duplicated for feature '%s'. Skipping IS normalization for this feature.",
                             is_name, rownames(annotated_res)[i]))
@@ -1992,8 +2028,8 @@ for (i in seq_len(nrow(annotated_res))) {
 }
 
 ## quickly check res ## fix evaluation
-mat_corr <- assay(annotated_res, "raw_filled_corr")
-mat_norm <- assay(annotated_res, "raw_filled_ISnorm")
+mat_corr <- assay(annotated_res, "corr_filled")
+mat_norm <- assay(annotated_res, "ISnorm_filled")
 vals_before <- as.numeric(mat_corr)
 vals_after  <- as.numeric(mat_norm)
 
@@ -2009,13 +2045,13 @@ vioplot(list(Before = vals_before_log, After = vals_after_log),
 
 ```{r}
 #' Row-wise impute missing values and add the data as a new assay
-tmp <- apply(assay(annotated_res, "raw_filled_ISnorm"), MARGIN = 1, na_unidis)
-assays(annotated_res)$raw_filled_ISnorm_imputed <- t(tmp)
+tmp <- apply(assay(annotated_res, "ISnorm_filled"), MARGIN = 1, na_unidis)
+assays(annotated_res)$ISnorm_filled_imputed <- t(tmp)
 ```
 
 ```{r}
 #' Log2 transform and scale data
-vals <- assay(annotated_res, "raw_filled_ISnorm_imputed") |>
+vals <- assay(annotated_res, "ISnorm_filled_imputed") |>
     log2() |>
     t() |>
     scale(center = TRUE, scale = TRUE)
@@ -2033,6 +2069,8 @@ pca_34 <- autoplot(pca_res, data = vals_st, colour = 'sample_type',
 grid.arrange(pca_12, pca_34, ncol = 1)
 ```
 
+
+## Quality control 
 - Remove lipids with a cv in QCs >30% - quality control 
 
 
@@ -2065,202 +2103,14 @@ nrow(annotated_res)
 nrow(annotated_res)/nrow(res_unfilt) * 100
 ```
 
-From there on i guess we don't need QCs anymore
-
-```{r}
-res_qc <- annotated_res[, annotated_res$sample_type == "QC"]
-res <- annotated_res[, annotated_res$sample_type != "QC"]
-
-## redefine colours for the new data set without QCs
-col_sample <- col_sample[names(col_sample) != "QC"]
-col_sample_type <- col_sample_type[names(col_sample_type) != "QC"]
-```
-
-```{r}
-#' Calculate the QC's CV and add as feature variable to the data set
-rowData(res)$qc_cv <- assay(res_qc, "norm") |>
-               rowRsd()
-```
-
-```{r}
-#' Log2 transform and scale data
-vals <- assay(res, "raw_filled_ISnorm_imputed") |>
-    log2() |>
-    t() |>
-    scale(center = TRUE, scale = TRUE)
-
-#' Perform the PCA
-pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
-
-#' Plot the results
-vals_st <- cbind(vals, sample_type = res$sample_type)
-pca_12 <- autoplot(pca_res, data = vals_st , colour = 'sample_type', scale = 0) +
-    scale_color_manual(values = col_sample_type)
-pca_34 <- autoplot(pca_res, data = vals_st, colour = 'sample_type',
-                   x = 3, y = 4, scale = 0) +
-    scale_color_manual(values = col_sample_type)
-grid.arrange(pca_12, pca_34, ncol = 1)
-```
-
-FROM HERE statistics metabonaut
-we need to discuss if more is necessary and how much they want to deviate from their workflow
-
-```{r}
-#' Impute missing values using an uniform distribution
-na_unidis <- function(z) {
-    na <- is.na(z)
-    if (any(na)) {
-        min = min(z, na.rm = TRUE)
-        z[na] <- runif(sum(na), min = min/2, max = min)
-    }
-    z
-}
-
-#' Row-wise impute missing values and add the data as a new assay
-tmp <- apply(assay(res, "raw_filled"), MARGIN = 1, na_unidis)
-assays(res)$raw_filled_imputed <- t(tmp)
-```
-
-## Initial quality assessment
-
--   plot also just the annotated data
--   calcualte the missing values Principal Component Analysis
-
-```{r}
-#' Log2 transform and scale data
-vals <- assay(res, "raw_filled_imputed") |>
-    log2() |>
-    t() |>
-    scale(center = TRUE, scale = TRUE)
-
-#' Perform the PCA
-pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
-
-#' Plot the results
-vals_st <- cbind(vals, sample_type = res$sample_type)
-pca_12 <- autoplot(pca_res, data = vals_st , colour = 'sample_type', scale = 0) +
-    scale_color_manual(values = col_sample_type)
-pca_34 <- autoplot(pca_res, data = vals_st, colour = 'sample_type',
-                   x = 3, y = 4, scale = 0) +
-    scale_color_manual(values = col_sample_type)
-grid.arrange(pca_12, pca_34, ncol = 1)
-```
-
-Figure X. PCA of the data colored by sample_type.Volumetric devices profiles
-are clearly different from W-DBS and plasma.
-
-Intensity evaluation
-
-```{r}
-layout(mat = matrix(1:3, ncol = 1), height = c(0.2, 0.2, 0.8))
-
-par(mar = c(0.2, 4.5, 0.2, 3))
-barplot(apply(assay(res, "raw"), MARGIN = 2, function(x) sum(!is.na(x))),
-        col = paste0(col_sample, 80), border = col_sample,
-        ylab = "# detected peaks", xaxt = "n", space = 0.012)
-grid(nx = NA, ny = NULL)
-barplot(apply(assay(res, "raw_filled"), MARGIN = 2, function(x) sum(!is.na(x))),
-        col = paste0(col_sample, 80), border = col_sample,
-        ylab = "# detected + filled peaks", xaxt = "n",
-        space = 0.012)
-grid(nx = NA, ny = NULL)
-vioplot(log2(assay(res, "raw_filled")), xaxt = "n",
-        ylab = expression(log[2]~feature~abundance),
-        col = paste0(col_sample, 80), border = col_sample)
-points(colMedians(log2(assay(res, "raw_filled")), na.rm = TRUE), type = "b",
-       pch = 1)
-grid(nx = NA, ny = NULL)
-legend("topright", col = col_sample_type,
-       legend = names(col_sample_type), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
-       cex = 0.8,  bty = "n")
-```
-
-replot this after normalisation too Number of detected peaks and feature
-abundances.
-
-```{r}
-par(mfrow = c(1, 1), mar = c(3.5, 4.5, 2.5, 1))
-boxplot(MsCoreUtils::rowRla(assay(res, "raw_filled"),
-                            f = res$sample_type, transform = "log2"),
-        cex = 0.5, pch = 16,
-        col = paste0(col_sample, 80), ylab = "RLA",
-        border = col_sample, boxwex = 1,
-        outline = FALSE, xaxt = "n", main = "Relative log abundance",
-        cex.main = 1)
-axis(side = 1, at = seq_len(ncol(res)), labels = colData(res)$sample_name)
-grid(nx = NA, ny = NULL)
-abline(h = 0, lty=3, lwd = 1, col = "black")
-legend("topright", col = col_sample_type,
-       legend = names(col_sample_type), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
-       cex = 0.8,  bty = "n")
-```
-
-RLA plot for the raw data and filled data.
-
-## Between sample normalisation
-
-Media scaling, Here should I apply the volume and IS normalization???
-
-```{r}
-#' Compute median and generate normalization factor
-mdns <- apply(assay(res, "raw_filled"), MARGIN = 2,
-              median, na.rm = TRUE )
-nf_mdn <- mdns / median(mdns)
-
-#' divide dataset by median of median and create a new assay.
-assays(res)$norm <- sweep(assay(res, "raw_filled"), MARGIN = 2, nf_mdn, '/')
-assays(res)$norm_imputed <- sweep(assay(res, "raw_filled_imputed"), MARGIN = 2,
-                                  nf_mdn, '/')
-```
-
 ## Assessing overall effectiveness of the normalization approach
-
-Principal component analysis
-
-```{r}
-#' Data before normalization
-vals_st <- cbind(vals, sample_type = res$sample_type)
-pca_raw <- autoplot(pca_res, data = vals_st,
-                    colour = 'sample_type', scale = 0) +
-    scale_color_manual(values = col_sample_type)
-
-#' Data after normalization
-vals_norm <- apply(assay(res, "norm"), MARGIN = 1, na_unidis) |>
-    log2() |>
-    scale(center = TRUE, scale = TRUE)
-
-pca_res_norm <- prcomp(vals_norm, scale = FALSE, center = FALSE)
-vals_st_norm <- cbind(vals_norm, sample_type = res$sample_type)
-pca_adj <- autoplot(pca_res_norm, data = vals_st_norm,
-                    colour = 'sample_type', scale = 0) +
-    scale_color_manual(values = col_sample_type)
-
-grid.arrange(pca_raw, pca_adj, ncol = 1)
-```
-
-write PC1 PC2 interpretation
-
-PC1 and PC2 of the data before and after normalization
-
-```{r}
-pca_raw <- autoplot(pca_res, data = vals_st ,
-                    colour = 'sample_type', x = 3, y = 4, scale = 0) +
-    scale_color_manual(values = col_sample_type)
-pca_adj <- autoplot(pca_res_norm, data = vals_st_norm,
-                    colour = 'sample_type', x = 3, y = 4, scale = 0) +
-    scale_color_manual(values = col_sample_type)
-
-grid.arrange(pca_raw, pca_adj, ncol = 1)
-```
-
-PC3 and PC4 of the data before and after normalization
 
 Intensity evaluation
 
 ```{r}
 par(mfrow = c(2, 1), mar = c(3.5, 4.5, 2.5, 1))
 
-boxplot(rowRla(assay(res, "raw_filled"), group = res$sample_type),
+boxplot(rowRla(assay(annotated_res, "raw_filled"), group = annotated_res$sample_type),
         cex = 0.5, pch = 16, ylab = "RLA", border = col_sample,
         col = paste0(col_sample, 80), cex.main = 1, outline = FALSE,
         xaxt = "n", main = "Raw data", boxwex = 1)
@@ -2270,11 +2120,11 @@ legend("topright", inset = c(0, -0.2), col = col_sample_type,
        ncol = 3, cex = 0.7, bty = "n")
 abline(h = 0, lty=3, lwd = 1, col = "black")
 
-boxplot(rowRla(assay(res, "norm"), group = res$sample_type),
+boxplot(rowRla(assay(annotated_res, "ISnorm_filled"), group = annotated_res$sample_type),
         cex = 0.5, pch = 16, ylab = "RLA", border = col_sample,
         col = paste0(col_sample, 80), boxwex = 1, outline = FALSE,
         xaxt = "n", main = "Normallized data", cex.main = 1)
-axis(side = 1, at = seq_len(ncol(res)), labels = res$sample_name)
+axis(side = 1, at = seq_len(ncol(annotated_res)), labels = annotated_res$sample_name)
 grid(nx = NA, ny = NULL)
 abline(h = 0, lty = 3, lwd = 1, col = "black")
 ```
@@ -2286,17 +2136,17 @@ Coefficient of variation
 
 ```{r}
 #' Calculate the CV values
-index_study <- res$sample_type %in% c("M-VAMS", "W-DBS", "C-qDBS", "Plasma")
-index_QC <- res$sample_type == "QC"
+index_study <- annotated_res$sample_type %in% c("M-VAMS", "W-DBS", "C-qDBS", "Plasma")
+index_QC <- annotated_res$sample_type == "QC"
 
 sample_res <- cbind(
-    QC_raw = rowRsd(assay(res, "raw_filled")[, index_QC],
+    QC_raw = rowRsd(assay(annotated_res, "raw_filled")[, index_QC],
                     na.rm = TRUE, mad = TRUE),
-    QC_norm = rowRsd(assay(res, "norm")[, index_QC],
+    QC_norm = rowRsd(assay(annotated_res, "ISnorm_filled")[, index_QC],
                      na.rm = TRUE, mad = TRUE),
-    Study_raw = rowRsd(assay(res, "raw_filled")[, index_study],
+    Study_raw = rowRsd(assay(annotated_res, "raw_filled")[, index_study],
                        na.rm = TRUE, mad = TRUE),
-    Study_norm = rowRsd(assay(res, "norm")[, index_study],
+    Study_norm = rowRsd(assay(annotated_res, "ISnorm_filled")[, index_study],
                         na.rm = TRUE, mad = TRUE)
 )
 
@@ -2310,13 +2160,100 @@ res_df <- data.frame(
 
 kable(res_df, format = "pipe")
 ```
+## test median scaling 
 
-Distribution of cv values across samples for the raw and normalized data
+```{r}
+#' Compute median and generate normalization factor
+mdns <- apply(assay(annotated_res, "ISnorm_filled"), MARGIN = 2,
+              median, na.rm = TRUE )
+nf_mdn <- mdns / median(mdns)
 
-the Cv in study sample decrease, usually that's not ideal but here might be
-driven by the whatman intensity correction (check this)
+#' divide dataset by median of median and create a new assay.
+assays(annotated_res)$median_scaling <- sweep(assay(annotated_res,
+                                                    "ISnorm_filled"), 
+                                              MARGIN = 2, nf_mdn, '/')
+assays(annotated_res)$median_scaling_imputed <- sweep(assay(annotated_res,
+                                                            "ISnorm_filled_imputed"), 
+                                                      MARGIN = 2,
+                                  nf_mdn, '/')
+```
 
+Intensity evaluation
 
+```{r}
+par(mfrow = c(2, 1), mar = c(3.5, 4.5, 2.5, 1))
+
+boxplot(rowRla(assay(annotated_res, "raw_filled"), group = annotated_res$sample_type),
+        cex = 0.5, pch = 16, ylab = "RLA", border = col_sample,
+        col = paste0(col_sample, 80), cex.main = 1, outline = FALSE,
+        xaxt = "n", main = "Raw data", boxwex = 1)
+grid(nx = NA, ny = NULL)
+legend("topright", inset = c(0, -0.2), col = col_sample_type,
+       legend = names(col_sample_type), lty=1, lwd = 2, xpd = TRUE,
+       ncol = 3, cex = 0.7, bty = "n")
+abline(h = 0, lty=3, lwd = 1, col = "black")
+
+boxplot(rowRla(assay(annotated_res, "median_scaling"), group = annotated_res$sample_type),
+        cex = 0.5, pch = 16, ylab = "RLA", border = col_sample,
+        col = paste0(col_sample, 80), boxwex = 1, outline = FALSE,
+        xaxt = "n", main = "Normallized data", cex.main = 1)
+axis(side = 1, at = seq_len(ncol(annotated_res)), labels = annotated_res$sample_name)
+grid(nx = NA, ny = NULL)
+abline(h = 0, lty = 3, lwd = 1, col = "black")
+```
+
+fix RLA plot before and after normalization - plot also intensity of IS before
+and after normalization (log 2)
+
+Coefficient of variation
+
+```{r}
+#' Calculate the CV values
+index_study <- annotated_res$sample_type %in% c("M-VAMS", "W-DBS", "C-qDBS", "Plasma")
+index_QC <- annotated_res$sample_type == "QC"
+
+sample_res <- cbind(
+    QC_raw = rowRsd(assay(annotated_res, "raw_filled")[, index_QC],
+                    na.rm = TRUE, mad = TRUE),
+    QC_norm = rowRsd(assay(annotated_res, "median_scaling")[, index_QC],
+                     na.rm = TRUE, mad = TRUE),
+    Study_raw = rowRsd(assay(annotated_res, "raw_filled")[, index_study],
+                       na.rm = TRUE, mad = TRUE),
+    Study_norm = rowRsd(assay(annotated_res, "median_scaling")[, index_study],
+                        na.rm = TRUE, mad = TRUE)
+)
+
+#' Summarize the values across features
+res_df <- data.frame(
+    QC_raw = quantile(sample_res[, "QC_raw"], na.rm = TRUE),
+    QC_norm = quantile(sample_res[, "QC_norm"], na.rm = TRUE),
+    Study_raw = quantile(sample_res[, "Study_raw"], na.rm = TRUE),
+    Study_norm = quantile(sample_res[, "Study_norm"], na.rm = TRUE)
+)
+
+kable(res_df, format = "pipe")
+```
+mm the median scaling seem to actually flatten the study sample variation... 
+but it is quiote high so not sure hwat to think. I'll continue without fro now.
+
+From there on i guess we don't need QCs anymore
+
+```{r}
+res_qc <- annotated_res[, annotated_res$sample_type == "QC"]
+res <- annotated_res[, annotated_res$sample_type != "QC"]
+
+## redefine colours for the new data set without QCs
+col_sample <- col_sample[names(col_sample) != "QC"]
+col_sample_type <- col_sample_type[names(col_sample_type) != "QC"]
+```
+
+```{r}
+#' Calculate the QC's CV and add as feature variable to the data set
+rowData(res)$qc_cv <- assay(res_qc, "ISnorm_filled") |>
+               rowRsd()
+```
+
+FROM HERE statistics metabonaut
 
 # Overlaping features
 
@@ -2361,7 +2298,7 @@ Number of Features in common between the devices.
 col_sample <- col_sample_type[res$sample_type]
 
 #' Log transform and scale the data for PCA analysis
-vals <- assay(res, "norm_imputed") |>
+vals <- assay(res, "ISnorm_filled_imputed") |>
     t() |>
     log2() |>
     scale(center = TRUE, scale = TRUE)
@@ -2370,12 +2307,64 @@ pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
 vals_st <- cbind(vals, sample_type = res$sample_type)
 autoplot(pca_res, data = vals_st , colour = 'sample_type', scale = 0) +
     scale_color_manual(values = col_sample_type)
-
-
 ```
 
-PCA of the data after normalization and quality control
+PCA of the data after normalization and quality control, without QCs
+- Plotting with highlighting different colors would be good. 
 
 The samples clearly separate by study group on PCA indicating that there are
-differences in the metabolite profiles between the groups, speacially Plasma
+differences in the metabolite profiles between the groups, specially Plasma
 and de BuS devices are separated by the first component.
+
+```{r}
+#' Define the linear model to be applied to the data
+p.cut <- 0.05     # cut-off for significance.
+m.cut <- 0.5      # cut-off for log2 fold change
+
+age <- res$age
+sample_type <- factor(res$sample_type) 
+design <- model.matrix(~ sample_type) ## here need to add  + sex, but that is not in the current metadata.. 
+
+#' Fit the linear model to the data, explaining metabolite
+#' concentrations by phenotype and age.
+fit <- lmFit(log2(assay(res, "ISnorm_filled_imputed")), design = design)
+fit <- eBayes(fit)
+```
+
+Below plot stuff for each, this is random code, it runs but i don't know if 
+this is interesting or not. 
+
+```{r}
+tmp <- data.frame(
+    coef.vams = fit$coefficients[, "sample_typeM-VAMS"],
+    pvalue.vams = fit$p.value[, "sample_typeM-VAMS"],
+    adjp.vams = p.adjust(fit$p.value[, "sample_typeM-VAMS"], method = "BH"),
+    avg.vams = rowMeans(
+        log2(assay(res, "ISnorm_filled_imputed")[, res$sample_type == "M-VAMS"])),
+    avg.CTR = rowMeans(
+        log2(assay(res, "ISnorm_filled_imputed")[, res$sample_type == "C-qDBS"]))
+)
+tmp$significant.vams <- tmp$adjp.vams < 0.05
+#' Add the results to the object's rowData
+rowData(res) <- cbind(rowData(res), tmp)
+```
+
+the thing above can be build for each device. and a heatmap can be build on it.
+
+```{r}
+#' Plot volcano plot of the statistical results
+par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
+plot(rowData(res)$coef.vams, -log10(rowData(res)$adjp.vams),
+     xlab = expression(log[2]~difference),
+     ylab = expression(-log[10]~p[BH]), pch = 16, col = "#00000060",
+     cex.main = 1.5, cex.lab = 1.5, cex.axis = 1.3)
+grid()
+abline(h = -log10(0.05), col = "#0000ffcc")
+if (any(rowData(res)$significant.vams)) {
+    points(rowData(res)$coef.vams[rowData(res)$significant.vams],
+           -log10(rowData(res)$adjp.vams[rowData(res)$significant.vams]),
+           col = "#0000ffcc")
+}
+```
+
+Cant hen ahve a table of significant features, build a heatmap,....
