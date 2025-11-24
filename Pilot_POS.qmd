@@ -89,7 +89,7 @@ OPTION 1: User should create the seq_pos.xlsx where injection order, sample name
 sample_type have to be included. Also POS_ data need to have all the files 
 in .mzml that where included in the excel file.
 
-```{r, eval=FALSE}
+```{r, eval=TRUE}
 # Load pos data
 seq_pos <- read_xlsx(paste0("seq_pos.xlsx"),
                  col_names = TRUE) |> as.data.frame()
@@ -105,7 +105,7 @@ sampleData(mse_pos)
 
 OPTION 2: Below we show how to load from MetaboLights as an alternative to mzml files.
 
-```{r, eval=TRUE}
+```{r, eval=FALSE}
 param <- MetaboLightsParam(mtblsId = "MTBLS10722",
                            assayName = "a_MTBLS10722_LC-MS_positive_reverse-phase_metabolite_profiling.txt",
                            filePattern = ".mzML")
@@ -119,7 +119,7 @@ mse_pos <- readMsObject(MsExperiment(),
 
 Some variable mapping needs to be done when importing from MetaboLights
 
-```{r, eval=TRUE}
+```{r, eval=FALSE}
 # Filter for the pilot study
 mse_pos <- mse_pos[sampleData(mse_pos)$`Factor Value[Cohort]` == "Cohort_study"]
 
@@ -386,7 +386,7 @@ deuterated LysoPC, Sphingomelyn and Carnitine.
 #param_pd <- CentWaveParam(peakwidth = c(4, 8), ppm = 10, integrate = 2,
 #                          snthresh = 2) # these were the initial parameters
 param_pd <- CentWaveParam(peakwidth = c(4, 8), ppm = 10, integrate = 2,
-                          snthresh = 2, firstBaselineCheck = FALSE)
+                          snthresh = 2, firstBaselineCheck = FALSE). # should I increase the snthresh??
 
 #' Evaluate on the dLysoPC ion
 dLysoPC_test <- findChromPeaks(eic_deuteratedLysoPC, param = param_pd)
@@ -408,7 +408,7 @@ chromPeaks(CAR_test)
 BELOW IS A TEST to improve peak picking params - to be deleted.
 I  tested it by subsetting for the 8 QC samples
 
-```{r}
+```{r, eval=FALSE}
 mse_pos[1] |>
   filterSpectra(filterRt, rt = c(190, 220)) |>
   filterSpectra(filterMzRange, mz = c(482.3, 482.4)) |>
@@ -1005,11 +1005,12 @@ for (i in seq_len(nrow(eic_is))) {
  abline(v = fData(eic_is)$rt[i], col = "red", lty = 3)
 }
 
+#paramw <- 
 # Assuming mse_pos is your raw data object (XCMSnExp) ERROR
 mse_posp <- findChromPeaks(mse_pos, param = param)
 
 # Extract chromatograms again with peaks included ERROR
-eic_isp <- chromatogram(mse_pos,
+eic_isp <- chromatogram(mse_posp,
                        rt = as.matrix(intern_standard[, c("rtmin", "rtmax")]),
                        mz = as.matrix(intern_standard[, c("mzmin", "mzmax")]))
 
@@ -1093,6 +1094,7 @@ Figure X. Detected vs. filled-in signal.
 saveMsObject(mse_pos, AlabasterParam(path = file.path("objects/preprocessed_mse_pos")))
 
 # save the SummarizedExperiemnt
+res@metadata <- list()
 saveObject(res, file.path("objects/preprocessed_res")) 
 ```
 
