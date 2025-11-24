@@ -1396,7 +1396,7 @@ target$mz <- as.numeric(target$mz)
 ## Configure the matching between features (query) and database (target)
 param_match <- MzRtParam(tolerance = 0.001, # change this to 0 
                          ppm = 20, ## need to think about reducing this threshold, maybe not 
-                         toleranceRt = 10 #+/-5 sec , could increase if base confirmation on adduct presence 10 
+                         toleranceRt = 10 #+/-10 sec , could increase if base confirmation on adduct presence 10 
                          ) 
 mtch <- matchValues(query, target,
                     param = param_match,
@@ -1428,6 +1428,7 @@ length(unique(mtched_data$target_lipid_name_unique)) / length(unique(lipid_datab
 
 ## Calculate isotope pattern similarity
 
+phili will clean up the code 
 ```{r}
 library(enviPat)
 
@@ -1481,7 +1482,6 @@ isopattern_to_spectra <- function(x) {
 }
 
 theoretical_spectra <- isopattern_to_spectra(ip)
-## i would like to make the iso_peak the right length.  based on teh feature_id 
 fts_ori <- mtched_data$feature_id
 fts_uniq <- iso_spectra$feature_id
 iso_spectra <- iso_spectra[match(fts_ori, fts_uniq)]
@@ -1489,24 +1489,34 @@ mtched_data$isopeak_count <- lengths(iso_spectra)
 mtched_data$isopeak_sim <- diag(compareSpectra(iso_spectra, theoretical_spectra,
                                    ppm = 20))
 mtched_data
+```
 
+The plotting can take a bit of time (and space), so do it only if needed.
+
+```{r}
 # plot 
 dr <- file.path("figures/iso_pattern_check/")
 dir.create(dr, showWarnings = FALSE, recursive = TRUE)
+
 for (i in seq_len(nrow(mtched_data))) {
   
-    cmp <- paste0(mtched_data$target_lipid_name_unique[i],
-                  "_", mtched_data$target_adduct[i])
-    ## remove parenthesis and ":" and "/"
-    cmp <- gsub("\\(|\\)|:|/", "", cmp)
-    f <- png(dr, paste0(cmp , "_", iso_spectra$feature_id[i], ".png"),
-             width = 8, height = 8, units = "cm", res = 600, pointsize = 4)
-    plotSpectraMirror(iso_spectra[i],
-                      theoretical_spectra[i], ppm = 20,
-                      main = paste(cmp, iso_spectra$feature_id[i], sep = " - "))
-    grid()
-    dev.off()
+  cmp <- paste0(mtched_data$target_lipid_name_unique[i],
+                "_", mtched_data$target_adduct[i])
+  
+  cmp <- gsub("[():/ +]", "", cmp)
+
+  out_file <- file.path(dr, paste0(cmp, "_", iso_spectra$feature_id[i], ".png"))
+  png(filename = out_file, width = 8, height = 8, units = "cm", res = 600, pointsize = 4)
+  plotSpectraMirror(iso_spectra[i],
+                    theoretical_spectra[i], ppm = 20,
+                    main = paste(cmp, iso_spectra$feature_id[i], sep = " - "))
+  
+  dev.off()
 }
+
+## if you want to check for a specific feature/lipid, i would advise to ctrl+F 
+## for the feature in the folder and then visually check which lipid (in the
+## file name)
 ```
 
 
@@ -1519,7 +1529,6 @@ indicate an issue with the processing above. bigger problem
 sum(duplicated(paste0(mtched_data$target_lipid_name_unique, 
                       mtched_data$target_Adduct, sep = "_"))) 
 ## this above is necessary as some adduct are both rank 1 for the same lipid.
-## I have 12, that's a problem. 
 amblip <- mtched_data[paste0(mtched_data$target_lipid_name_unique,
                              mtched_data$target_Adduct, sep = "_") %in%
             paste0(mtched_data$target_lipid_name_unique[duplicated(paste0(mtched_data$target_lipid_name_unique,
@@ -1529,11 +1538,14 @@ amblip <- mtched_data[paste0(mtched_data$target_lipid_name_unique,
                                sep = "_"), c("feature_id", "mzmed", "rtmed", "target_lipid_name_unique",
                            "target_Adduct", "ppm_error", "score_rt","target_rank", "target_mz", "target_rt_adjusted", "score", "isopeak_count", "isopeak_sim")]
 
-amblip
+amblip # how many ? 
 
 
-## please sara check the results and tll me how i can automatise the decision 
+## please sara check the results and tll me how i can automatize the decision 
 ## here.
+## I know it's probably a lot, but I am guessing there is a way to easily 
+## remove some just based on the scoring so don't feel to overwhelmed, look
+## at some example of ambiguity and try to see what strategy would makwe sense
 
 ## for now i will keep the one with the highest score 
 mtched_data <- mtched_data[order(mtched_data$score), ]
