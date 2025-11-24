@@ -3,6 +3,11 @@ title: "R_lipidomicsOptimization"
 format: html
 ---
 
+```{r setup, include=FALSE}
+run_plot <- FALSE
+
+```
+
 # TODOS
 
 So we organize a bit what is left to do. Also `!!!` can be found in the text
@@ -139,7 +144,7 @@ mse_pos <- mse_pos[sampleData(mse_pos)$sample_type != "Blank"]
 mse_pos <- mse_pos[order(sampleData(mse_pos)$injection_index), ]
 
 ##only phili - subset to make analysis faster
-#mse_pos <- mse_pos[sampleData(mse_pos)$sample_type == "QC"]
+# mse_pos <- mse_pos[sampleData(mse_pos)$sample_type == "QC"]
 ```
 
 \[Phili: Here i would explain maybe some column names so that other people
@@ -175,7 +180,7 @@ col_sample <- col_sample_type[sampleData(mse_pos)$sample_type]
 
 BPC plot of all samples (colored by device), including QCs.
 
-```{r, eval=TRUE}
+```{r, eval=run_plot}
 #| fig-cap: "BPC of all samples colored by phenotype"
 #' Extract and plot BPC for full data
 bpc <- chromatogram(mse_pos, aggregationFun = "max")
@@ -195,11 +200,14 @@ legend("topright", col = col_sample_type,
 Filter the data based on the retention time observed on the BPC. In this data set we filter
 from 10 to 950 sec.
 
-```{r, eval=TRUE}
-#| fig-cap: "BPC after filtering retention time."
+```{r}
 #' Filter the data based on retention time
 mse_pos <- filterRt(mse_pos, c(10, 950))
+```
 
+
+```{r, eval=run_plot}
+#| fig-cap: "BPC after filtering retention time."
 # Plot BPC after filtering
 bpc <- chromatogram(mse_pos, aggregationFun = "max")
 
@@ -211,7 +219,7 @@ legend("topright", col = col_sample_type,
        horiz = TRUE, bty = "n")
 ```
 
-```{r, eval=TRUE}
+```{r, eval=run_plot}
 #| fig-cap: "Heatmap of TIC similarities. All plasma samples are group together."
 #' Total ion chromatogram
 tic <- chromatogram(mse_pos, aggregationFun = "sum") |>
@@ -276,7 +284,7 @@ fData(eic_is)[c("CAR", "LysoPC", "dLysoPC", "dLysoPE", "LPC", "SM",
 
 We below plot the EICs for reference lipids (17 in total).The dotted red line represents the expected retention time of the peak, showing that the retention time shift varies depending on the isocratic range.
 
-```{r, eval=TRUE}
+```{r, eval=run_plot}
 #| fig.cap: "EIC of all reference lipids."
 
 # Loop to go through all rows of the eic_is object and plot independent  
@@ -393,13 +401,13 @@ dLysoPC_test <- findChromPeaks(eic_deuteratedLysoPC, param = param_pd)
 chromPeaks(dLysoPC_test)
 ```
 
-```{r, eval=TRUE}
+```{r, eval=run_plot}
 #' Evaluate on the Sphingomyelin ion
 dSM_test <- findChromPeaks(eic_deuteratedSM, param = param_pd)
 chromPeaks(dSM_test)
 ```
 
-```{r}
+```{r, eval = run_plot}
 #' Evaluate on the Sphingomyelin ion
 CAR_test <- findChromPeaks(eic_CAR, param = param_pd)
 chromPeaks(CAR_test)
@@ -492,7 +500,7 @@ sample. Below, we use
 the [`plot()`](https://rdrr.io/r/graphics/plot.default.html)  function on the
 EICs to visualize these results.
 
-```{r, eval=TRUE}
+```{r, eval=run_plot}
 #| fig.cap: "EIC of three selected deuterated lipids after applying the optimized param selection."
 #' Plot test chromatogram for deuterated LysoPC, Sphingomielyn and Carnitine.
 par(mfrow = c(1, 3))
@@ -550,11 +558,9 @@ rownames(fData(eic_is)) <- intern_standard$short_name
 eic_deuteratedLysoPC <- eic_is["dLysoPC"]
 eic_deuteratedSM <- eic_is["dSM"]
 eic_CAR <- eic_is["CAR"]
-
-## Here add some other double peak compound that we failed to identify before.
 ```
 
-```{r, eval=FALSE}
+```{r, eval=run_plot}
 #| fig.cap: "EIC of three selected deuterated lipids after applying the chromatographic peak detection on the entire dataset."
 par(mfrow = c(1, 3))
 plot(eic_deuteratedLysoPC, main = fData(dLysoPC_test)$short_name,
@@ -610,7 +616,7 @@ internal standards or other compounds/ions known to be present in the samples.
 Here we update our EICs objects for the internal standards with the results of
 the chromatographic peak detection and refinement.
 
-```{r, eval=FALSE}
+```{r, eval=run_plot}
 eics_is_chrompeaks <- eic_is
 
 eic_is <- chromatogram(mse_pos,
@@ -625,7 +631,7 @@ eic_CAR <- eic_is["CAR"]
 
 ### Evaluate peak detection results
 
-```{r, eval=FALSE}
+```{r, eval=run_plot}
 # Define output directory (create if it doesn't exist)
 dr <- "./figures/peak_detection_ref_lipid/"
 if (!dir.exists(dr)) dir.create(dr)
@@ -675,7 +681,7 @@ intensity would not be seen in W-DBS.
 To evaluate the presence of a shift we extract and plot below the BPC from the
 QC samples.
 
-```{r, eval=TRUE}
+```{r, eval=run_plot}
 #| fig-cap: "BPC of QC samples."
 #' Get QC samples
 QC_samples <- sampleData(mse_pos)$sample_type == "QC"
@@ -699,7 +705,7 @@ param_c <- PeakDensityParam(
 mse_pos <- groupChromPeaks(mse_pos, param = param_c)
 ```
 
-```{r, eval=TRUE}
+```{r, eval=run_plot}
 #| fig-cap: "Initial correspondence analysis based on QC samples."
 plotChromPeakDensity(
     eic_deuteratedLysoPC, param = param_c,
@@ -726,7 +732,7 @@ mse_pos <- adjustRtime(mse_pos, param = param_c)
 Alignment adjusted the retention times of all spectra in the data set, as well
 as the retention times of all identified chromatographic peaks.
 
-```{r, eval=TRUE}
+```{r, eval=run_plot}
 #| fig-cap: "Retention time alignment results."
 #| label: fig-alignment-results
 #' Visualize alignment results
@@ -741,7 +747,7 @@ as can be seen in Figure @fig-alignment-results).
 
 We can also compare the BPC before and after alignment.
 
-```{r, eval = TRUE}
+```{r, eval =TRUE}
 #' Get data before alignment
 mse_pos_raw <- dropAdjustedRtime(mse_pos)
 
@@ -749,7 +755,7 @@ mse_pos_raw <- dropAdjustedRtime(mse_pos)
 mse_pos <- applyAdjustedRtime(mse_pos)
 ```
 
-```{r, eval= TRUE}
+```{r, eval= run_plot}
 #| fig-cap: "BPC before and after alignment."
 #' Plot the BPC before and after alignment
 par(mfrow = c(2, 1), mar = c(2, 1, 1, 0.5))
@@ -773,7 +779,7 @@ We next evaluate the impact of the alignment on the EICs of the selected
 internal standards. We thus below first extract the ion chromatograms after
 alignment, and subsequently plot them.
 
-```{r, eval=TRUE}
+```{r, eval=run_plot}
 #' Extract the EICs for the test ions before alignment
 old_eic_dLysoPC <- eic_is["dLysoPC"]
 old_eic_dSM <- eic_is["dSM"]
@@ -791,7 +797,7 @@ eic_dSM <- eic_is["dSM"]
 eic_CAR <- eic_is["CAR"]
 ```
 
-```{r, eval=TRUE}
+```{r, eval=run_plot}
 #| fig-cap: "EIC of three selected deuterated lipids before and after alignment."
 par(mfrow = c(2, 2), mar = c(4, 4.5, 2, 1))
 
@@ -833,7 +839,7 @@ In addition to a visual inspection of the results, we also evaluate the impact
 of the alignment by comparing the variance in retention times for internal
 standards before and after alignment.
 
-```{r, eval= TRUE}
+```{r, eval= run_plot}
 #' Extract the matrix with all chromatographic peaks and add a column
 #' with the ID of the chromatographic peak
 chrom_peaks <- chromPeaks(mse_pos) |> as.data.frame()
@@ -871,7 +877,7 @@ each sample that most likely represents signal from that ion. We can now
 extract the retention times for these chromatographic peaks before and after
 alignment.
 
-```{r, eval= TRUE}
+```{r, eval=run_plot}
 #' Define the index of the selected chromatographic peaks in the
 #' full chromPeaks matrix
 idx <- match(intern_standard_peaks, rownames(chromPeaks(mse_pos)))
@@ -888,7 +894,7 @@ rt_adj <- chromPeaks(mse_pos)[idx, "rt"] |>
 We can now evaluate the impact of the alignment on the retention times of
 internal standards across the full data set:
 
-```{r, eval=FALSE}
+```{r, eval=run_plot}
 #| fig-cap: "Retetion time variation of internal standards before and after alignment."
 list(all_raw = rowSds(rt_raw, na.rm = TRUE),
      all_adj = rowSds(rt_adj, na.rm = TRUE)
@@ -903,7 +909,7 @@ The goal of the correspondence analysis is to identify chromatographic peaks
 that originate from the same types of ions in all samples of an experiment and
 to group them into LC-MS *features*.
 
-```{r, eval=TRUE}
+```{r, eval=run_plot}
 #' Optimized parameter for the grouping and apply them to the test ions BP2
 #' fix grouping, NA for QCs
 group_mse <- sampleData(mse_pos)$sample_type
@@ -913,7 +919,7 @@ param_cor <- PeakDensityParam(sampleGroups = group_mse, bw = 2)
 param_cor
 ```
 
-```{r,eval=TRUE}
+```{r,eval=run_plot}
 plotChromPeakDensity(
     eic_deuteratedLysoPC, param = param_cor,
     col = paste0(col_sample, "80"),
@@ -925,7 +931,7 @@ plotChromPeakDensity(
 
 Correspondence analysis with optimized parameters, deuterated LysoPC.
 
-```{r,eval=TRUE}
+```{r,eval=run_plot}
 plotChromPeakDensity(
     eic_deuteratedSM, param = param_cor,
     col = paste0(col_sample, "80"),
@@ -936,7 +942,7 @@ plotChromPeakDensity(
 
 Correspondence analysis with optimized parameters, deuterated SM.
 
-```{r, eval=TRUE}
+```{r, eval=run_plot}
 plotChromPeakDensity(
     eic_CAR, param = param_cor,
     col = paste0(col_sample, "80"),
@@ -970,7 +976,7 @@ mse_pos <- groupChromPeaks(mse_pos, param = param_cor)
 Evaluation of the correspondence results in other EIC in the IS list similar to
 the deuterated LysoPC.
 
-```{r, eval=TRUE}
+```{r, eval=run_plot}
 #' Extract chromatogram for an m/z similar to the one of the labeled methionine
 chr_test <- chromatogram(mse_pos,
                          mz = as.matrix(intern_standard["LysoPC",
@@ -988,10 +994,9 @@ plotChromPeakDensity(
 This corresponds to non-deuterated LysoPC and we can see that it can
 distinguish between the two peaks.
 
-```{r, eval=FALSE}
+```{r, eval=run_plot}
 #| fig-cap: "Evaluation of the correspondance results in 17 EICs in the IS list."
 # Loop to go through all rows of the eic_is object and plot independent after correspondance analysis
-
 for (i in seq_len(nrow(eic_is))) {
   eic <- eic_is[i,]
   #png add
@@ -1057,7 +1062,7 @@ sum(is.na(featureValues(mse_pos))) /
     length(featureValues(mse_pos)) * 100
 ```
 
-```{r}
+```{r, eval=run_plot}
 #| fig-cap: "Detected vs. filled-in signal."
 #' Get only detected signal in QC samples
 vals_detect <- featureValues(mse_pos, filled = FALSE)[, QC_samples]
@@ -1165,7 +1170,6 @@ ref_rt <- intern_standard$RT # is the ref RT
 
 # res is the exp RT
 intern_standard$exp_rt <- exp_rt
-
 diff_rt <- intern_standard$RT - intern_standard$exp_rt
 quantile(diff_rt, na.rm = TRUE)
 
@@ -1189,6 +1193,7 @@ lipid_database <- lipid_database[lipid_database$rank != 0, ]
 ## convert rt
 lipid_database$rt_sd <- as.numeric(lipid_database$`RT ESI(+) (min)`) * 60
 lipid_database <- lipid_database[order(lipid_database$rt_sd), ]
+
 ## Correct naming so that all names are unique 
 get_rt_rank <- function(x) {
   match(x, sort(unique(x)))
@@ -1205,6 +1210,32 @@ lipid_database$lipid_name_unique <- paste(
   rt_ranks, 
   sep = "_"
 )
+
+## create an adduct formula
+lipid_database$adduct <- gsub("Adduct", "", lipid_database$Adduct)
+lookup_ads <- data.frame(
+  name = c("[M+H]+", "[M+Na]+", "[M+C2H7N2]+", "[M+K]+", "[M+NH4]+"),
+  mass_multi = c(1.0000000, 1.0000000, 1.0000000, 1.0000000, 1.0000000),
+  mass_add = c(1.007276, 22.989220, 59.060380, 38.963160, 18.033830),
+  formula_add = c("H", "Na", "C2H7N2", "K", "NH4"),
+  formula_sub = c("C0", "C0", "C0", "C0", "C0"),
+  charge = c(1, 1, 1, 1, 1),
+  positive = c(TRUE, TRUE, TRUE, TRUE, TRUE)
+)
+
+custom_ads <- lookup_ads[match(lipid_database$adduct, lookup_ads$name), ]
+row.names(custom_ads) <- NULL
+sladduct <- split(custom_ads, seq(nrow(custom_ads)))
+
+## fix deuterium formula 
+lipid_database$fix_form <- gsub("D([0-9]+)", "[2H\\1]", lipid_database$`MOLECULAR FORMULA`)
+
+form <- mapply(lipid_database$fix_form, 
+               adduct=sladduct, FUN = adductFormula, standardize = TRUE)
+
+form <- gsub("\\[2H([0-9]+)\\]", "D\\1", form)
+
+lipid_database$adduct_formula <- unname(gsub("^\\[|\\].*$", "", form))
 
 is.unsorted(lipid_database$rt_sd) # check rtime are properly sorted. we want FALSE
 
@@ -1259,9 +1290,8 @@ abline(0, 1, lty = 2, col = "#00000040")
 The Black line is build with the 592 compounds of the database and the red dots are the reference
 lipids (17 between endogenous and deuterated)
 
-# Annotate/ match
--   maybe separate the QCs into another object or do that later
 
+# Annotate/ match
 
 Match features (query) against (aligned) database (target).
 DO nOT run for now
@@ -1306,7 +1336,8 @@ fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
 # table_amb
 table_amb <- mtched_data[mtched_data$feature_id %in% fids_ambiguous,
                          c("feature_id", "mzmed", "rtmed", "target_lipid.name",
-                           "target_Adduct", "ppm_error", "score_rt","target_rank")]
+                           "target_Adduct", "ppm_error", "score_rt",
+                           "target_rank")]
 table_amb <- table_amb[order(table_amb$feature_id, table_amb$rtmed), ]
 rownames(table_amb) <- NULL
 library(pander)
@@ -1348,8 +1379,10 @@ t1 <- chromatogram(mse_pos, mz = c(888.798, 888.804), rt = c(835,850))
 plot(t1)
 
 ```
-Match features (query) against (aligned) database (target).
 
+## rank1 matching 
+
+Match features (query) against (aligned) database (target).
 ```{r}
 ## Extract the feature definitions as a data.frame
 query <- as.data.frame(rowData(res))
@@ -1362,9 +1395,9 @@ target <- as.data.frame(lipid_database_rank1)
 target$mz <- as.numeric(target$mz)
 
 ## Configure the matching between features (query) and database (target)
-param_match <- MzRtParam(tolerance = 0.001,
-                         ppm = 20,
-                         toleranceRt = 5. #+/-5 sec , could increase if base confirmation on adduct presence
+param_match <- MzRtParam(tolerance = 0.001, # change this to 0 
+                         ppm = 20, ## need to think about reducing this threshold, maybe not 
+                         toleranceRt = 10 #+/-10 sec , could increase if base confirmation on adduct presence 10 
                          ) 
 mtch <- matchValues(query, target,
                     param = param_match,
@@ -1389,8 +1422,104 @@ mtched_data <- matchedData(mtch) |>
     as.data.frame()  ## can do some stuff with that table
 
 mtched_data$feature_id <- sub("\\..*$", "", rownames(mtched_data))
-sum(duplicated(mtched_data$feature_id))
+
+## also summarise coverage of database for positive
+length(unique(mtched_data$target_lipid_name_unique)) / length(unique(lipid_database_rank1$lipid_name_unique)) * 100 ## rerun this at the end, i think it's wrong bc of duplicate
 ```
+
+## Calculate isotope pattern similarity
+
+phili will clean up the code 
+```{r}
+library(enviPat)
+
+data(isotopes)
+spectra(mse_pos) <- setBackend(spectra(mse_pos), MsBackendMemory())
+sp <- featureSpectra(mse_pos, msLevel = 1L, skipFilled = TRUE, 
+                     features = unique(mtched_data$feature_id), method = "closest_rt")
+
+## i need to somehow summarise per feature 
+csp <- combineSpectra(sp, f = sp$feature_id, p = sp$feature_id,
+                      peaks = "intersect", ppm = 2)
+
+
+#' For each MS1 spectrum, extract the peaks matching potential isotope peaks.
+iso_spectra <- spectrapply(csp, function(z) {
+    idx <- isotopologues(peaksData(z)[[1L]], ppm = 10, seedMz = z$feature_mzmed)
+    if (length(idx) == 1L) {
+        addProcessing(z, function(x, i = idx[[1L]], ...) x[i, , drop = FALSE]) |>
+            applyProcessing()
+    } else {
+        filterMzValues(z, mz = z$feature_mzmed, ppm = 10, tolerance = 0) |>
+            applyProcessing()
+    }
+}) |>
+    concatenateSpectra() |>
+    scalePeaks(by = max) 
+
+
+idx_db <- paste0(lipid_database_rank1$lipid_name_unique,
+                     lipid_database_rank1$adduct) %in%
+    paste0(mtched_data$target_lipid_name_unique,
+           mtched_data$target_adduct)
+                
+adductCharge <- function(x) {
+    MetaboCoreUtils:::.process_adduct_arg(x, "charge")
+}
+
+## theoretical isopattern 
+ip <- isopattern(
+        isotopes, check_chemform(isotopes,
+                                 mtched_data$target_adduct_formula)$new_formula,
+        threshold = 0.001, charge = 1, rel_to = 0
+    ) # charge need to be updated if the adducts have more than 1
+
+## similarity calculation
+isopattern_to_spectra <- function(x) {
+    df <- data.frame(msLevel = 1L, formula = names(x))
+    df$mz <- lapply(x, function(z) z[, 1L])
+    df$intensity <- lapply(x, function(z) z[, 2L])
+    Spectra(df)
+}
+
+theoretical_spectra <- isopattern_to_spectra(ip)
+fts_ori <- mtched_data$feature_id
+fts_uniq <- iso_spectra$feature_id
+iso_spectra <- iso_spectra[match(fts_ori, fts_uniq)]
+mtched_data$isopeak_count <- lengths(iso_spectra)
+mtched_data$isopeak_sim <- diag(compareSpectra(iso_spectra, theoretical_spectra,
+                                   ppm = 20))
+mtched_data
+```
+
+The plotting can take a bit of time (and space), so do it only if needed.
+
+```{r}
+# plot 
+dr <- file.path("figures/iso_pattern_check/")
+dir.create(dr, showWarnings = FALSE, recursive = TRUE)
+
+for (i in seq_len(nrow(mtched_data))) {
+  
+  cmp <- paste0(mtched_data$target_lipid_name_unique[i],
+                "_", mtched_data$target_adduct[i])
+  
+  cmp <- gsub("[():/ +]", "", cmp)
+
+  out_file <- file.path(dr, paste0(cmp, "_", iso_spectra$feature_id[i], ".png"))
+  png(filename = out_file, width = 8, height = 8, units = "cm", res = 600, pointsize = 4)
+  plotSpectraMirror(iso_spectra[i],
+                    theoretical_spectra[i], ppm = 20,
+                    main = paste(cmp, iso_spectra$feature_id[i], sep = " - "))
+  
+  dev.off()
+}
+
+## if you want to check for a specific feature/lipid, i would advise to ctrl+F 
+## for the feature in the folder and then visually check which lipid (in the
+## file name)
+```
+
 
 Before checking for feature duplication (which is mostly an issue of the 
 database or can easily be resolved based on score)
@@ -1401,25 +1530,25 @@ indicate an issue with the processing above. bigger problem
 sum(duplicated(paste0(mtched_data$target_lipid_name_unique, 
                       mtched_data$target_Adduct, sep = "_"))) 
 ## this above is necessary as some adduct are both rank 1 for the same lipid.
-## I have 12, that's a problem. 
 amblip <- mtched_data[paste0(mtched_data$target_lipid_name_unique,
                              mtched_data$target_Adduct, sep = "_") %in%
             paste0(mtched_data$target_lipid_name_unique[duplicated(paste0(mtched_data$target_lipid_name_unique,
                                                                           mtched_data$target_Adduct, sep = "_"))],
                                mtched_data$target_Adduct[duplicated(paste0(mtched_data$target_lipid_name_unique, 
                                                                            mtched_data$target_Adduct, sep = "_"))],
-                               sep = "_"), ]
+                               sep = "_"), c("feature_id", "mzmed", "rtmed", "target_lipid_name_unique",
+                           "target_Adduct", "ppm_error", "score_rt","target_rank", "target_mz", "target_rt_adjusted", "score", "isopeak_count", "isopeak_sim")]
 
-amblip
+amblip # how many ? 
 
-# well it's actually very different fts 
-## ok so after checking a lot of them are just proper ambiguity. reducing the 
-## ppm threshold would help to be honest. but otherwise it's either score
-## based deicsion or manually (but even manually sometimes we just can tell
-## when it's really betweeen 2 features.)
+
+## please sara check the results and tll me how i can automatize the decision 
+## here.
+## I know it's probably a lot, but I am guessing there is a way to easily 
+## remove some just based on the scoring so don't feel to overwhelmed, look
+## at some example of ambiguity and try to see what strategy would makwe sense
 
 ## for now i will keep the one with the highest score 
-
 mtched_data <- mtched_data[order(mtched_data$score), ]
 mtched_data <- mtched_data[!duplicated(paste0(mtched_data$target_lipid_name_unique, mtched_data$target_Adduct, sep = "_")), ]
 ```
@@ -1432,7 +1561,7 @@ fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
 sum(duplicated(mtched_data$feature_id))
 table_amb <- mtched_data[mtched_data$feature_id %in% fids_ambiguous,
                          c("feature_id", "mzmed", "rtmed", "target_lipid_name_unique",
-                           "target_Adduct", "ppm_error", "score_rt","target_rank", "target_mz", "target_rt_adjusted")]
+                           "target_Adduct", "ppm_error", "score_rt","target_rank", "target_mz", "target_rt_adjusted", "score", "isopeak_count", "isopeak_sim")]
 table_amb <- table_amb[order(table_amb$feature_id), ]
 ##export
 rownames(table_amb) <- NULL
@@ -1443,21 +1572,78 @@ write_xlsx(table_amb, path = "features-matching-multiple-lipids.xlsx")
 library(pander)
 pandoc.table(table_amb, split.table = Inf, style = "rmarkdown")
 
-## when checking honestly, i do not have a great way to deal with this. 
-## it's either the rt between the 2 lipids are sooo close < 4 seconds, which is less than the peak width so there's just now way ## and in this case i would group the annotation 
-## in another case we have a bit larger difference in rt (still very small though), and in that case i would keep the one that matches the best in rt. 
-## we could increase the rt threshold and make some peak match to a further one (as we saw in some case we have a large shift), and then again filter the ambiguity based on rt score.
-## but honestly if the RT is SO different HOW do we know if this is really the right compound.., without MS2 confirmation this is a reach and i would not trust it. 
-## one confirmation  could be, the adduct we are checking below. we could check this, afterward on in final only keep the ambiguity where we can found more adduct. this would confirm the RT. Sara let's discuss this. i kinda like that idea. 
+## please sara check the results with isopattern and tell me how I can
+## automatise, both based on isotope pattern similarity and score difference 
+## AND the adduct matching that i will do below. 
 ## 
 ## ## for now below i just keep the one with the best rt score. will change that based on our discussion
 sorted_data <- mtched_data[order(mtched_data$feature_id, mtched_data$score_rt), ]
-mtched_data_unique <- sorted_data[!duplicated(sorted_data$feature_id), ]
 ```
+
+below is me testing for automatisation, NOT WORKING FOR NOW as we did not 
+decide on any strategy at the moment. 
+
+```{r, eval = FALSE}
+sorted_data <- mtched_data[order(mtched_data$feature_id, abs(mtched_data$score_rt)), ]
+
+# Initialize new columns
+sorted_data$lipid_annotation <- sorted_data$target_lipid_name_unique
+sorted_data$ambiguous <- FALSE  # Default to FALSE
+sorted_data$keep_row <- TRUE    # Helper to remove duplicates later
+
+### 2. LOOP THROUGH AMBIGUOUS FEATURES
+### some notes 
+### need to also think what to do if more than 2 match. 
+for (i in fids_ambiguous) {
+  idxs <- which(sorted_data$feature_id == i)
+  rt_diffs <- abs(sorted_data$score_rt[idxs])
+  ## no acutally create the RT-adjusted difference of the candidates
+  rt_diffs <- abs(diff(sorted_data$target_rt_adjusted[idxs]))
+  # LOGIC A: If all candidates are very close (< 4s), the actually threshold cna be discussed, or the rt diff between the 2 compound we are annotating.
+  if (all(rt_diffs < 4)) {
+    # Combine the names
+    combined_name <- paste(unique(sorted_data$target_lipid_name_unique[idxs]), collapse = ";\n")
+    sorted_data$lipid_annotation[idxs[1]] <- combined_name
+    
+  } else { 
+    # LOGIC B: If not all close, keep the best one.
+    # Because we sorted by abs(score_rt) at the top, idxs[1] IS the best score.
+    # The name is already there, so we just need to flag it.
+    
+    # "Add a column ambiguous, and fill TRUE for this feature"
+    sorted_data$ambiguous[idxs[1]] <- TRUE
+  }
+  
+  # Mark the "loser" rows (duplicates) for removal
+  if (length(idxs) > 1) {
+    sorted_data$keep_row[idxs[-1]] <- FALSE
+  }
+}
+
+### 3. CLEANUP
+# Filter to keep only the best/merged rows
+final_data <- sorted_data[sorted_data$keep_row == TRUE, ]
+
+# Remove the helper column if desired
+final_data$keep_row <- NULL
+
+# Check the result
+library(pander)
+# Display just the ambiguous ones that were processed to verify
+pandoc.table(head(final_data[final_data$feature_id %in% fids_ambiguous, 
+             c("feature_id", "lipid_annotation", "score_rt", "ambiguous")]), 
+             split.table = Inf, style = "rmarkdown")
+```
+
+
+```{r}
+## summary of coverage (accurate now)
+length(unique(mtched_data$target_lipid_name_unique)) / length(unique(lipid_database$lipid_name_unique)) * 100
+```
+
 
 ## Matching adducts 
 
-testing another matching
 
 - matching rtmed of the feature definiton, we expect adducts to have the same
 rt.
@@ -2261,7 +2447,6 @@ rowData(res)$qc_cv <- assay(res_qc, "ISnorm_filled") |>
                rowRsd()
 ```
 
-FROM HERE statistics metabonaut
 
 # Overlaping features
 
@@ -2297,6 +2482,10 @@ binary_data <-apply(result, MARGIN = 2, as.integer)
 upset(as.data.frame(binary_data), nset = 6, sets = colnames(result), keep.order = TRUE)
 ```
 
+
+
+bELOW IS THE CODE THAT WILL BE DONE after we merge pos and neg together 
+before we need to group the adducts for the same compound. 
 Number of Features in common between the devices.
 
 # Differential abundance analysis
