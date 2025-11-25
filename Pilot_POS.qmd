@@ -1616,6 +1616,8 @@ par(mfrow = c(1, 2))
 plot(ccc)
 plot(cc)
 
+## please sara check the results and tll me how i can automatize the decision 
+## here.
 ## I know it's probably a lot, but I am guessing there is a way to easily 
 ## remove some just based on the scoring so don't feel to overwhelmed, look
 ## at some example of ambiguity and try to see what strategy would make sense
