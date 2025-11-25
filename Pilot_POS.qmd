@@ -394,7 +394,7 @@ deuterated LysoPC, Sphingomelyn and Carnitine.
 #param_pd <- CentWaveParam(peakwidth = c(4, 8), ppm = 10, integrate = 2,
 #                          snthresh = 2) # these were the initial parameters
 param_pd <- CentWaveParam(peakwidth = c(4, 8), ppm = 10, integrate = 2,
-                          snthresh = 2, firstBaselineCheck = FALSE). # should I increase the snthresh??
+                          snthresh = 2, firstBaselineCheck = FALSE) # should I increase the snthresh??
 
 #' Evaluate on the dLysoPC ion
 dLysoPC_test <- findChromPeaks(eic_deuteratedLysoPC, param = param_pd)
@@ -1109,7 +1109,7 @@ sum(!rowMeans(assay(res), na.rm = TRUE) > 1500) #503 removed features
 
 ## Save mse_pos and res object
 
-```{r}
+```{r, eval=FALSE}
 # save the mse_pos preprocessed object
 saveMsObject(mse_pos, AlabasterParam(path = file.path("objects/preprocessed_mse_pos")))
 #readMsObject(XcmsExperiment(), AlabasterParam(path = file.path("objects/preprocessed_mse_pos"))) -> mse_pos
@@ -1290,10 +1290,56 @@ abline(0, 1, lty = 2, col = "#00000040")
 The Black line is build with the 592 compounds of the database and the red dots are the reference
 lipids (17 between endogenous and deuterated)
 
+# Annotate/ match
+-   maybe separate the QCs into another object or do that later.
+
+```{r}
+#' extract results as a SummarizedExperiment
+res <- quantify(mse_pos, method = "sum", filled = FALSE)
+res
+
+assays(res)$raw_filled <- featureValues(mse_pos, method = "sum",
+                                        filled = TRUE)
+```
+
+```{r}
+# Filter the res object setting a threshold of 1.5*10^3
+res_filtered <- assay(res)[rowMeans(assay(res), na.rm = TRUE) > 1500, ]
+
+sum(!rowMeans(assay(res), na.rm = TRUE) > 1500) #1156 removed features
+```
 
 # Annotate/ match
 
 Match features (query) against (aligned) database (target).
+DO nOT run for now.... this is a test for carnitines, a total of 19 carnitines were detected same as the ones detected by profinder
+```{r, eval = FALSE}
+# TGs annotation 
+lipid_database_CAR <- lipid_database[lipid_database$`LIPID SUBCLASS [ABBREV]` == "Carnitines [CAR]", ]
+
+lipid_database_CAR <- lipid_database_CAR[lipid_database_CAR$rank == 1, ]
+## Get the reference/databse data as a data.frame
+target <- as.data.frame(lipid_database_CAR)
+target$mz <- as.numeric(target$mz)
+
+## Configure the matching between features (query) and database (target)
+param_match <- MzRtParam(tolerance = 0.001,
+                         ppm = 20,
+                         toleranceRt = 5. #+/-5 sec 
+                         ) ## maybe adapt to settings from the original approach
+## Perform the matching; define also the column names in query and target that
+## contain the values to be matched (i.e. the m/z and retention time values)
+mtch <- matchValues(query, target,
+                    param = param_match,
+                    mzColname = c("mzmed", "mz"),
+                    rtColname = c("rtmed", "rt_adjusted"))
+mtch
+
+mtch <- mtch[whichQuery(mtch)]
+mtched_data <- matchedData(mtch) |>
+    as.data.frame()  ## can do some stuff with that table
+```
+
 DO nOT run for now
 ```{r, eval = FALSE}
 # TGs annotation 
@@ -1343,22 +1389,23 @@ rownames(table_amb) <- NULL
 library(pander)
 pandoc.table(table_amb, split.table = Inf, style = "rmarkdown")
 
-#12 amb and 56 obs whe using amonium as predominant adduct 
-#12 amb more ppm error from 3 to 18ppm and 72 obs when acetamidine is predominant adduct
-#we have 136 lipids in the databse
+#16 amb and 59 obs whe using amonium as predominant adduct 
+#20 amb more ppm error from 3 to 18ppm and 81 obs when acetamidine is predominant adduct
+#we have 136 TG lipids in the databse
 write_xlsx(mtched_data, path = "TGs-Amonium.xlsx")
 ```
 
 CAN BE DELETED
 
 ```{r, eval = FALSE}
+```{r, eval=FALSE}
 #examples amb TGs
-d <- featureChromatograms(mse_pos, features = "FT17527") #TG(53:4)acetamidina no isotopic patter in qualitative 
+d <- featureChromatograms(mse_pos, features = "FT20530") #TG(53:4)acetamidina no isotopic patter in qualitative 
 plot(d)
 d1 <- chromatogram(mse_pos, mz = c(927.804, 927.822), rt = c(830, 845)) 
 plot(d1)
 
-d_nh4 <- featureChromatograms(mse_pos, features = "FT16255") #TG(53:4)amonium isotopic pattern in qualitative
+d_nh4 <- featureChromatograms(mse_pos, features = "FT") #TG(53:4)amonium isotopic pattern in qualitative
 plot(d_nh4)
 d_nh4_1 <- chromatogram(mse_pos, mz = c(886.785, 886.792), rt = c(810,840)) 
 plot(d_nh4_1)
@@ -1373,7 +1420,7 @@ plot(d)
 plot(d_nh4)
 
 
-t <- featureChromatograms(mse_pos, features = "FT16322") #TG(53:3)amonium 
+t <- featureChromatograms(mse_pos, features = "FT") #TG(53:3)amonium 
 plot(t)
 t1 <- chromatogram(mse_pos, mz = c(888.798, 888.804), rt = c(835,850)) 
 plot(t1)
@@ -1856,17 +1903,8 @@ plot(tmp_eic)
 
 
 #subset the ISTD
-
 sara <- subset(lipid_database_rank1, grepl("ISTD", ORIGIN, ignore.case = TRUE))
-# we don have a match with Tg istd and we should have it 
-
-chromatogram(mse_pos, mz = c(482.29, 482.31)) -> test
-plot(test)
-# check the feautrea that match 2 compounds. check score, plotSpectraMirror.
-# plot using the mtch object.
-# scoring and othe rinfo check the mtch_data
-
-## need tofilter them out somehow.
+# we don have a match with TG istd and we should have it ERROR
 
 
 ## import information from mtch_data dataframe to res object using the feature ID present in both table.
