@@ -1112,10 +1112,11 @@ sum(!rowMeans(assay(res), na.rm = TRUE) > 1500) #503 removed features
 ```{r, eval=FALSE}
 # save the mse_pos preprocessed object
 saveMsObject(mse_pos, AlabasterParam(path = file.path("objects/preprocessed_mse_pos")))
-#readMsObject(XcmsExperiment(), AlabasterParam(path = file.path("objects/preprocessed_mse_pos"))) -> mse_pos
+readMsObject(XcmsExperiment(), AlabasterParam(path = file.path("objects/preprocessed_mse_pos"))) -> mse_pos
 # save the SummarizedExperiemnt
 res@metadata <- list()
 saveObject(res, file.path("objects/preprocessed_res")) 
+readObject(file.path("objects/preprocessed_res"))
 ```
 
 # Database correction
@@ -1290,9 +1291,6 @@ abline(0, 1, lty = 2, col = "#00000040")
 The Black line is build with the 592 compounds of the database and the red dots are the reference
 lipids (17 between endogenous and deuterated)
 
-# Annotate/ match
--   maybe separate the QCs into another object or do that later.
-
 ```{r}
 #' extract results as a SummarizedExperiment
 res <- quantify(mse_pos, method = "sum", filled = FALSE)
@@ -1314,7 +1312,7 @@ sum(!rowMeans(assay(res), na.rm = TRUE) > 1500) #1156 removed features
 Match features (query) against (aligned) database (target).
 DO nOT run for now.... this is a test for carnitines, a total of 19 carnitines were detected same as the ones detected by profinder
 ```{r, eval = FALSE}
-# TGs annotation 
+# CAR annotation 
 lipid_database_CAR <- lipid_database[lipid_database$`LIPID SUBCLASS [ABBREV]` == "Carnitines [CAR]", ]
 
 lipid_database_CAR <- lipid_database_CAR[lipid_database_CAR$rank == 1, ]
@@ -1435,7 +1433,7 @@ Match features (query) against (aligned) database (target).
 query <- as.data.frame(rowData(res))
 query$feature_id <- rownames(rowData(res))
 ## Subset the lipid library for rank 1 adducts only 
-lipid_database_rank1 <- lipid_database[lipid_database$rank == 1, ] #242 annotations with both param_pd
+lipid_database_rank1 <- lipid_database[lipid_database$rank == 1, ] 
 
 ## Get the reference/databse data as a data.frame
 target <- as.data.frame(lipid_database_rank1)
@@ -1444,7 +1442,7 @@ target$mz <- as.numeric(target$mz)
 ## Configure the matching between features (query) and database (target)
 param_match <- MzRtParam(tolerance = 0.001, # change this to 0 
                          ppm = 20, ## need to think about reducing this threshold, maybe not 
-                         toleranceRt = 10 #+/-10 sec , could increase if base confirmation on adduct presence 10 
+                         toleranceRt = 10 #+/-10 sec 
                          ) 
 mtch <- matchValues(query, target,
                     param = param_match,
@@ -1537,6 +1535,8 @@ mtched_data$isopeak_count <- lengths(iso_spectra)
 mtched_data$isopeak_sim <- diag(compareSpectra(iso_spectra, theoretical_spectra,
                                    ppm = 20))
 mtched_data
+
+mtched_data$mtch_idx <- seq_len(nrow(mtched_data))
 ```
 
 The plotting can take a bit of time (and space), so do it only if needed.
@@ -1567,6 +1567,18 @@ for (i in seq_len(nrow(mtched_data))) {
 ## file name)
 ```
 
+inital filtering please explain 
+I decided to stay with the compounds that have at least 1 isotopic pattern and also checked that the lipids with less than 0.78 similarity are not good at all
+
+```{r}
+idx <- which(mtched_data$isopeak_count == 1 | mtched_data$isopeak_sim < 0.78)
+idx_rm <- mtched_data$mtch_idx[idx]
+length(idx_rm)
+
+
+mtched_data <- mtched_data[!mtched_data$mtch_idx %in% idx_rm, ] 
+```
+
 
 Before checking for feature duplication (which is mostly an issue of the 
 database or can easily be resolved based on score)
@@ -1583,21 +1595,46 @@ amblip <- mtched_data[paste0(mtched_data$target_lipid_name_unique,
                                                                           mtched_data$target_Adduct, sep = "_"))],
                                mtched_data$target_Adduct[duplicated(paste0(mtched_data$target_lipid_name_unique, 
                                                                            mtched_data$target_Adduct, sep = "_"))],
-                               sep = "_"), c("feature_id", "mzmed", "rtmed", "target_lipid_name_unique",
-                           "target_Adduct", "ppm_error", "score_rt","target_rank", "target_mz", "target_rt_adjusted", "score", "isopeak_count", "isopeak_sim")]
+                               sep = "_"), c("feature_id", "target_mz", "mzmed", "target_rt_adjusted","rtmed", "target_lipid_name_unique",
+                           "target_Adduct", "ppm_error", "score_rt","target_rank",  "score", "isopeak_count", "isopeak_sim", "mtch_idx")]
 
-amblip # how many ? 
+amblip # how many ? 328 
 
 
-## please sara check the results and tll me how i can automatize the decision 
-## here.
+## please sara check the results and tell me how i can automatize the decision 
+## here.Isopeak_sim below 0.8 not to good, select lower RT score also the higher isopeak_sim, the best 
+
+ccc <- featureChromatograms(mse_pos, features = "FT03616")
+cc <- featureChromatograms(mse_pos, features = "FT03617")
+par(mfrow = c(1, 2))
+plot(ccc)
+plot(cc)
+
+ccc <- featureChromatograms(mse_pos, features = "FT09672") # For this lipid, both features have a low 0.6 isopeak_sim, maybe we can create a list for the cases where both features have a low score
+cc <- featureChromatograms(mse_pos, features = "FT09673")
+par(mfrow = c(1, 2))
+plot(ccc)
+plot(cc)
+
 ## I know it's probably a lot, but I am guessing there is a way to easily 
 ## remove some just based on the scoring so don't feel to overwhelmed, look
-## at some example of ambiguity and try to see what strategy would makwe sense
+## at some example of ambiguity and try to see what strategy would make sense
 
 ## for now i will keep the one with the highest score 
-mtched_data <- mtched_data[order(mtched_data$score), ]
-mtched_data <- mtched_data[!duplicated(paste0(mtched_data$target_lipid_name_unique, mtched_data$target_Adduct, sep = "_")), ]
+#mtched_data <- mtched_data[order(mtched_data$score), ]
+#mtched_data <- mtched_data[!duplicated(paste0(mtched_data$target_lipid_name_unique, mtched_data$target_Adduct, sep = "_")), ]
+
+idx <- which(amblip$isopeak_count == 1 & amblip$isopeak_sim < 0.78)
+idx_rm <- amblip$mtch_idx[idx]
+length(idx_rm)
+
+
+mtched_data <- mtched_data[!mtched_data$mtch_idx %in% idx_rm, ] # filter out matched data, here we still having 50 compounds with just 1 isotopic pattern and 258 lipids with less than 0.79 isopeak_sim
+
+
+sum(duplicated(paste0(mtched_data$target_lipid_name_unique, 
+                      mtched_data$target_Adduct, sep = "_"))) 
+
 ```
 
 The table below shows the ambiguous (multi-matching) features.
@@ -1608,7 +1645,7 @@ fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
 sum(duplicated(mtched_data$feature_id))
 table_amb <- mtched_data[mtched_data$feature_id %in% fids_ambiguous,
                          c("feature_id", "mzmed", "rtmed", "target_lipid_name_unique",
-                           "target_Adduct", "ppm_error", "score_rt","target_rank", "target_mz", "target_rt_adjusted", "score", "isopeak_count", "isopeak_sim")]
+                           "target_Adduct", "ppm_error", "score_rt","target_rank", "target_mz", "target_rt_adjusted", "score", "isopeak_count", "isopeak_sim", "mtch_idx")]
 table_amb <- table_amb[order(table_amb$feature_id), ]
 ##export
 rownames(table_amb) <- NULL
@@ -1626,6 +1663,8 @@ pandoc.table(table_amb, split.table = Inf, style = "rmarkdown")
 ## ## for now below i just keep the one with the best rt score. will change that based on our discussion
 sorted_data <- mtched_data[order(mtched_data$feature_id, mtched_data$score_rt), ]
 ```
+
+
 
 below is me testing for automatisation, NOT WORKING FOR NOW as we did not 
 decide on any strategy at the moment. 
@@ -1867,92 +1906,18 @@ cat("All chromatograms saved in:", dr, "\n")
 Can we delete what's below ? sara i will let you deal with that. 
 
 ```{r, eval = FALSE}
-## find features IDs of ambiguous matches
-tmp <- table(mtch$feature_id)
-tmp <- tmp[tmp > 1]
-fids <- names(tmp)
-
-## Check the first one
-tmp1 <- mtched_data[mtched_data$feature_id == fids[1],
-                   c("feature_id", "rtmed", "mzmed", "target_lipid name",
-                     "ppm_error", "score_rt", "target_rt_adjusted",
-                     "target_rt_sd")] |>
-  as.data.frame()
-tmp_eic1 <- featureChromatograms(mse_pos, features = fids[1L])
-plot(tmp_eic1)
-
-tmp2 <- mtched_data[mtched_data$feature_id == fids[2],
-                     c("feature_id", "rtmed", "mzmed", "target_lipid name",
-                       "ppm_error", "score_rt", "target_rt_adjusted",
-                       "target_rt_sd")] |>
-  as.data.frame()
-tmp_eic2 <- featureChromatograms(mse_pos, features = fids[2L])
-plot(tmp_eic2)
-
-par(mfrow = c(2, 1))
-plot(tmp_eic1)
-plot(tmp_eic2)
-
-tmp <- mtched_data[mtched_data$feature_id %in% fids,
-                     c("feature_id", "rtmed", "mzmed", "target_lipid name",
-                       "ppm_error", "score_rt", "target_rt_adjusted",
-                       "target_rt_sd")] |>
-  as.data.frame()
-tmp_eic <- featureChromatograms(mse_pos, features = fids[5])
-plot(tmp_eic)
-
 
 #subset the ISTD
 sara <- subset(lipid_database_rank1, grepl("ISTD", ORIGIN, ignore.case = TRUE))
 # we don have a match with TG istd and we should have it ERROR
-
-
-## import information from mtch_data dataframe to res object using the feature ID present in both table.
-mtched_data$`target_lipid name`
-rownames(mtched_data)
-
 ```
 
 ## Plots with the annotated compounds (mtched_data), the feature abundance of each sample, can be found in assay(res)
 
 ```{r}
 ## remove duplicated form the
-length(unique(mtched_data$target_lipid_name_unique)) ## number of lipid matched, ONLY 206
-## I have 268 with QCs
-length(unique(mtched_data$target_LIPID.CATEGORY..ABBREV.))
+length(unique(mtched_data$target_lipid_name_unique)) ## number of lipid matched, 420
 
-# Lipid Distribution barplot
-# Count data
-counts <- table(mtched_data$target_LIPID.CATEGORY..ABBREV.)
-bar_colors <- c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854")
-
-# Rename categories for readability
-names(counts) <- c("Fatty Acyls [FA]",
-                   "Glycerolipids [GL]",
-                   "Glycerophospholipids [GP]",
-                   "Sphingolipids [SP]",
-                   "Sterol Lipids [ST]")
-
-# Adjust plot margins and font size
-par(mar = c(5, 7, 4, 2))  # increase left margin for labels
-
-bp <- barplot(counts,
-              horiz = TRUE,
-              col = bar_colors,
-              main = "Lipid Distribution",
-              xlab = "Number of Lipids",
-              las = 1,
-              cex.names = 0.9,
-              border = NA)
-
-text(counts, bp, labels = counts, pos = 4, cex = 0.8, col = "black")
-legend("topright",
-       legend = names(counts),
-       fill = bar_colors,
-       title = "Lipid Category",
-       cex = 0.6,
-       border = NA,
-       bty = "n")
 ```
 
 -   Donut chart showing the lipid class with the total quantity of lipids
@@ -2032,6 +1997,48 @@ legend("topright",
 -   
 
 # Data normalization 
+move the chunck that describes the annotated_res object 
+```{r}
+factors <- ifelse(grepl("W", colnames(res)), 2.5,
+             ifelse(grepl("P", colnames(res)), 1.08, 1))
+assay(res, "raw_corr") <- sweep(assay(res), MARGIN = 2, 
+                                STATS = factors, FUN = "*")
+assay(res, "corr_filled") <- sweep(assay(res, "raw_filled"),
+                                       MARGIN = 2, STATS = factors, FUN = "*")
+
+print("Assays now in res object:")
+print(names(assays(res)))
+
+## Check the changes in one sample (CAN BE DELETED)
+# cbind(
+#   original = assay(res, "raw")["FT00001", "D10W_pos.mzML"],
+#   scaled   = assay(res, "raw_corr")["FT00001", "D10W_pos.mzML"]
+# )
+
+
+# Below i create a subset of the res object with only annotated features
+mtched_features_list <- mtched_data_unique$feature_id
+annotated_res <- res[rownames(res) %in% mtched_data_unique$feature_id, ] #only 279 id out of 299, aprox 20 duplicates
+rowData(annotated_res) <- cbind(rowData(annotated_res),
+                                 mtched_data_unique[match(rownames(annotated_res),
+                                                   mtched_data_unique$feature_id),
+                                             c("target_lipid.name",
+                                               "target_LIPID.CATEGORY..ABBREV.",
+                                               "target_LIPID.SUBCLASS..ABBREV.",
+                                               "target_Adduct", "target_IS_norm"
+                                             )])
+## above if we have different lengths, it's because of duplicated features in the annotation table.
+
+# Below we keep the res object but append annotation info for the annotated features
+rowData(res) <- cbind(rowData(res),
+                         mtched_data_unique[match(rownames(res),
+                                           mtched_data_unique$feature_id),
+                                     c("target_lipid.name",
+                                       "target_LIPID.CATEGORY..ABBREV.",
+                                       "target_LIPID.SUBCLASS..ABBREV.",
+                                       "target_Adduct", "target_IS_norm"
+                                       )])
+```
 
 ## Initial quality assessment
 
@@ -2135,47 +2142,12 @@ Here before we impute the missing values we have to normalize per volume as
 follows: The abundance of all W-DBS samples should be multiply per 2.5 and
 Plasma samples per 1.08
 
-```{r}
-factors <- ifelse(grepl("W", colnames(res)), 2.5,
-             ifelse(grepl("P", colnames(res)), 1.08, 1))
-assay(res, "raw_corr") <- sweep(assay(res), MARGIN = 2, 
-                                STATS = factors, FUN = "*")
-assay(res, "corr_filled") <- sweep(assay(res, "raw_filled"),
-                                       MARGIN = 2, STATS = factors, FUN = "*")
-
-print("Assays now in res object:")
-print(names(assays(res)))
-
-## Check the changes in one sample (CAN BE DELETED)
-# cbind(
-#   original = assay(res, "raw")["FT00001", "D10W_pos.mzML"],
-#   scaled   = assay(res, "raw_corr")["FT00001", "D10W_pos.mzML"]
-# )
 
 
-# Below i create a subset of the res object with only annotated features
-mtched_features_list <- mtched_data_unique$feature_id
-annotated_res <- res[rownames(res) %in% mtched_data_unique$feature_id, ] #only 279 id out of 299, aprox 20 duplicates
-rowData(annotated_res) <- cbind(rowData(annotated_res),
-                                 mtched_data_unique[match(rownames(annotated_res),
-                                                   mtched_data_unique$feature_id),
-                                             c("target_lipid.name",
-                                               "target_LIPID.CATEGORY..ABBREV.",
-                                               "target_LIPID.SUBCLASS..ABBREV.",
-                                               "target_Adduct", "target_IS_norm"
-                                             )])
-## above if we have different lengths, it's because of duplicated features in the annotation table.
 
-# Below we keep the res object but append annotation info for the annotated features
-rowData(res) <- cbind(rowData(res),
-                         mtched_data_unique[match(rownames(res),
-                                           mtched_data_unique$feature_id),
-                                     c("target_lipid.name",
-                                       "target_LIPID.CATEGORY..ABBREV.",
-                                       "target_LIPID.SUBCLASS..ABBREV.",
-                                       "target_Adduct", "target_IS_norm"
-                                       )])
-```
+
+
+HERE WAS BEFORE
 
 
 ```{r}
