@@ -1088,12 +1088,6 @@ param1 <- PeakDensityParam(sampleGroups = group , minFraction = 0.5,
                            binSize = 0.01, ppm = 10,
                            bw = 2)
 
-## phili code 
-# param1 <- PeakDensityParam(sampleGroups = rep(1, length(mse_pos)) , minFraction = 0.5,
-#                            binSize = 0.01, ppm = 10,
-#                            bw = 2)
-
-
 eic_is_corr <- groupChromPeaks(eic_is, param = param1)
 
 exp_rt <- vector("numeric", length = nrow(eic_is_corr))
@@ -1237,6 +1231,8 @@ abline(v = min(fit$fitted.values), col = "blue", lwd = 1, lty = 2)
 abline(v = max(fit$fitted.values), col = "blue", lwd = 1, lty =2)
 grid()
 abline(0, 1, lty = 2, col = "#00000040")
+
+# plot library 592 compounds rt  raw vs adj. then (on top) add the ref_rt vs exp_rt (20compounds)
 ```
 The Black line is build with the 592 compounds of the database and the red dots 
 are the reference lipids (17 between endogenous and deuterated)
@@ -1518,9 +1514,8 @@ for (i in seq_len(nrow(mtched_data))) {
 ## file name)
 ```
 
-initial filtering please explain 
-I decided to stay with the compounds that have at least 1 isotopic pattern and
-also checked that the lipids with less than 0.78 similarity are not good at all
+inital filtering please explain 
+We decided to stay with the compounds that have at least 2 isotopic peak and also more than 0.78 similarity 
 
 ```{r}
 ## number of lipids matching > 1 feature
@@ -1660,7 +1655,7 @@ cat("Removing ", length(rm_vector), " rows with lower adduct counts.\n")
 mtched_data <- mtched_data[-rm_vector, ]
 
 sum(duplicated(paste0(mtched_data$target_lipid_name_unique, 
-                      mtched_data$target_Adduct, sep = "_"))) 
+                      mtched_data$target_Adduct, sep = "_"))) #DELETE
 
 key <- paste(mtched_data$target_lipid_name_unique, 
              mtched_data$target_adduct, sep = "_")
@@ -1948,10 +1943,9 @@ counts <- table(mtched_data$target_LIPID.CATEGORY..ABBREV.)
 names(counts) <- c("Fatty Acyls [FA]",
                    "Glycerolipids [GL]",
                    "Glycerophospholipids [GP]",
-                   "Sphingolipids [SP]",
-                   "Sterol Lipids [ST]")
+                   "Sphingolipids [SP]") #,"Sterol Lipids [ST]"
 
-bar_colors <- c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854")
+bar_colors <- c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3")#, "#a6d854"
 labels <- counts
 par(mar = c(1, 1, 2, 1))
 
@@ -1977,7 +1971,7 @@ legend("topright",
 
 ```{r}
 # pie chart for lipid subclass. HERE ADD A NEW COLUMN WITH THE SHORT NAME
-counts1 <- table(mtched_data$`target_LIPID SUBCLASS [ABBREV]`)
+counts1 <- table(mtched_data$`target_LIPID.SUBCLASS..ABBREV.`)
 
 n_cat <- length(counts1)
 base_colors <- brewer.pal(9, "Set1")
@@ -2592,4 +2586,4 @@ if (any(rowData(res)$significant.vams)) {
 }
 ```
 
-Cant hen ahve a table of significant features, build a heatmap,....
+Cant hen have a table of significant features, build a heatmap,....
