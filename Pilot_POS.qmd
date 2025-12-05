@@ -1632,7 +1632,7 @@ indicate an issue with the processing above. bigger problem
 cols_amb <- c("feature_id", "target_mz", "mzmed", "target_rt_adjusted",
               "rtmed", "target_lipid_name_unique", "target_adduct",
               "ppm_error", "score_rt", "target_rank",  "score", 
-              "isopeak_count", "isopeak_sim", "adduct_ratio")
+              "isopeak_count", "isopeak_sim", "adduct_ratio", "ntch_idx")
 
 # Create a key for Lipid + Adduct
 key <- paste(mtched_data$target_lipid_name_unique, 
@@ -1848,26 +1848,83 @@ key <- paste(mtched_data$target_lipid_name_unique,
 is_duplicated <- key %in% key[duplicated(key)]
 amblip <- mtched_data[is_duplicated, cols_amb]
 amblip
+amblip$keep_row <- TRUE
 
 ## fts amb
 fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
 table_amb <- mtched_data[mtched_data$feature_id %in% fids_ambiguous,
-                         c("feature_id", "mzmed", "rtmed", "target_lipid_name_unique",
-                           "target_Adduct", "ppm_error", "score_rt","target_rank", "target_mz", "target_rt_adjusted", "score", "isopeak_count", "isopeak_sim", "adduct_ratio", "target_LIPID.CATEGORY..ABBREV.", "target_LIPID.SUBCLASS..ABBREV.")]
+                         cols_amb]
 table_amb <- table_amb[order(table_amb$feature_id), ]
 table_amb
+table_amb$keep_row <- TRUE
 
-#merge amlipid and table_amb
+write_xlsx(table_amb, path = "feature_ambiguity_resolution.xlsx")
+write_xlsx(amblip, path = "lipid_ambiguity_resolution.xlsx")
 ```
 
-I guess this table and the lipid ambiguity could be exported and the users can
-manually check. 
+please fix the ambiguity manually in the excel files above by changing to 
+FALSE the rows you want to remove. 
+The lipid ambiguity must be a 1:1 match.
+the feature can be a 1:many match but we will then just merge the annotation into one. 
+
+```{r}
+# Remove rows based on manual curation
+# Lipid Ambiguity
+lipid_amb_res <- read_excel("lipid_ambiguity_resolution.xlsx")
+mtch_to_be_rm <- lipid_amb_res$ntch_idx[!lipid_amb_res$keep_row]
+mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm, ]
+# Feature Ambiguity
+feature_amb_res <- read_excel("feature_ambiguity_resolution.xlsx")
+mtch_to_be_rm_ft <- feature_amb_res$ntch_idx[!feature_amb_res$keep_row]
+mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm_ft, ]
+
+## check for duplicates again
+mtched_data$nb_annotations <- 1
+key <- paste(mtched_data$target_lipid_name_unique, 
+             mtched_data$target_adduct, sep = "_")
+is_duplicated <- key %in% key[duplicated(key)]
+if (any(is_duplicated)) {
+  warning("There are still duplicated Lipid + Adduct entries after manual curation. Please fix this")
+} else {
+  message("No duplicated Lipid + Adduct entries remain.")
+}
+fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
+if (length(fids_ambiguous) > 0) {
+  warning("There are still duplicated Feature entries after manual curation. They will be merged into one annotation.")
+  # Merge annotations for duplicated features
+  for (i in unique(fids_ambiguous)) {
+    idxs <- which(mtched_data$feature_id == i)
+    if (length(idxs) > 1) {
+      # Combine lipid names and adducts
+      combined_lipid_names <- paste(unique(mtched_data$target_lipid_name_unique[idxs]), collapse = "; ")
+      combined_adducts <- paste(unique(mtched_data$target_adduct[idxs]), collapse = "; ")
+      
+      # Update the first occurrence
+      mtched_data$target_lipid_name_unique[idxs[1]] <- combined_lipid_names
+      mtched_data$target_adduct[idxs[1]] <- combined_adducts
+      
+      # Remove other occurrences
+      mtched_data <- mtched_data[-idxs[-1], ]
+      # Update the number of annotations
+      mtched_data$nb_annotations[idxs[1]] <- length(idxs)
+    }
+  }
+} else {
+  message("No duplicated Feature entries remain.")
+
+## final table 
+mtched_data
+```
+
 
 ```{r}
 ## summary of coverage (accurate now)
-length(unique(mtched_data$target_lipid_name_unique)) / 
-  length(unique(lipid_database$lipid_name_unique)) * 100
+length(unique(mtched_data$target_lipid_name_unique)) / 592 * 100 
+## i think this number might be a bit biased negatively because we merge annotations.
+sum(mtched_data$nb_annotations)/592 * 100
 ```
+
+
 
 ```{r,eval= FALSE}
 df_subset <- subset(mtched_data, grepl("ISTD", target_ORIGIN, ignore.case = TRUE))
