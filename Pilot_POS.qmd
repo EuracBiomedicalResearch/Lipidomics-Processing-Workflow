@@ -277,7 +277,7 @@ fdata <- fData(eic_is)
 
 fData(eic_is)[c("CAR", "LysoPC", "dLysoPC", "dLysoPE", "LPC", "SM",
                 "dPG", "dSM", "PC", "dPC", "dPE", "SM1",
-                "dDG", "HexCer", "TG", "dTG", "dCE"),
+                "dDG", "HexCer", "TG", "dTG", "dCE", "TG1"),
               c("short_name", "mz", "rt", "rtmin", "rtmax")] |>
     kable(format = "pipe")
 ```
@@ -1005,8 +1005,6 @@ grid()
 abline(0, 1)
 ```
 
-Figure X. Detected vs. filled-in signal.
-
 ```{r}
 #' extract results as a SummarizedExperiment
 res <- quantify(mse_pos, method = "sum", filled = FALSE)
@@ -1020,7 +1018,7 @@ assays(res)$raw_filled <- featureValues(mse_pos, method = "sum",
 # Filter the res object setting a threshold of 1.5*10^3
 res_filtered <- assay(res)[rowMeans(assay(res), na.rm = TRUE) > 1500, ]
 
-sum(!rowMeans(assay(res), na.rm = TRUE) > 1500) #503 removed features
+sum(!rowMeans(assay(res), na.rm = TRUE) > 1500) #1156 removed features
 ```
 
 ## Save mse_pos and res object
@@ -1858,6 +1856,8 @@ table_amb <- mtched_data[mtched_data$feature_id %in% fids_ambiguous,
                            "target_Adduct", "ppm_error", "score_rt","target_rank", "target_mz", "target_rt_adjusted", "score", "isopeak_count", "isopeak_sim", "adduct_ratio", "target_LIPID.CATEGORY..ABBREV.", "target_LIPID.SUBCLASS..ABBREV.")]
 table_amb <- table_amb[order(table_amb$feature_id), ]
 table_amb
+
+#merge amlipid and table_amb
 ```
 
 I guess this table and the lipid ambiguity could be exported and the users can
@@ -1921,7 +1921,7 @@ Can we delete what's below ? sara i will let you deal with that.
 ```{r, eval = FALSE}
 
 #subset the ISTD
-sara <- subset(lipid_database_rank1, grepl("ISTD", ORIGIN, ignore.case = TRUE))
+sara <- subset(lipid_db_r1, grepl("ISTD", ORIGIN, ignore.case = TRUE))
 # we don have a match with TG istd and we should have it ERROR
 ```
 
@@ -1929,7 +1929,7 @@ sara <- subset(lipid_database_rank1, grepl("ISTD", ORIGIN, ignore.case = TRUE))
 
 ```{r}
 ## remove duplicated form the
-length(unique(mtched_data$target_lipid_name_unique)) ## number of lipid matched, 420
+length(unique(mtched_data$target_lipid_name_unique)) ## number of lipid matched, 283
 
 ```
 
@@ -1943,9 +1943,9 @@ counts <- table(mtched_data$target_LIPID.CATEGORY..ABBREV.)
 names(counts) <- c("Fatty Acyls [FA]",
                    "Glycerolipids [GL]",
                    "Glycerophospholipids [GP]",
-                   "Sphingolipids [SP]") #,"Sterol Lipids [ST]"
+                   "Sphingolipids [SP]","Sterol Lipids [ST]") #
 
-bar_colors <- c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3")#, "#a6d854"
+bar_colors <- c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854")#
 labels <- counts
 par(mar = c(1, 1, 2, 1))
 
