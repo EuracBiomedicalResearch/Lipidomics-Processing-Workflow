@@ -172,7 +172,7 @@ mse_neg <- mse_neg[sampleData(mse_neg)$sample_type != "Blank"]
 mse_neg <- mse_neg[order(sampleData(mse_neg)$injection_index), ]
 
 ##only phili - subset to make analysis faster
-mse_neg <- mse_neg[sampleData(mse_neg)$sample_type == "QC"]
+# mse_neg <- mse_neg[sampleData(mse_neg)$sample_type == "QC"]
 ```
 
 \[Phili: Here i would explain maybe some column names so that other people
@@ -841,7 +841,7 @@ group_mse <- sampleData(mse_neg)$sample_type
 group_mse[group_mse =="QC"] <- NA
 group_mse <- as.factor(group_mse)
 #' group for phili
-group_mse <- rep(1, length(mse_neg))
+# group_mse <- rep(1, length(mse_neg))
 param_cor <- PeakDensityParam(sampleGroups = group_mse, bw = 2)
 param_cor
 ```
@@ -1047,7 +1047,7 @@ group <- eic_is$sample_type
 group[group =="QC"] <- NA
 
 # for phili
-group <- rep(1, ncol(eic_is))
+# group <- rep(1, ncol(eic_is))
 param1 <- PeakDensityParam(sampleGroups = group , minFraction = 0.5,
                            binSize = 0.01, ppm = 10,
                            bw = 2)
