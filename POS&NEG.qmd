@@ -1,0 +1,35 @@
+---
+title: "POS&NEG"
+format: html
+editor: visual
+---
+
+## What to do after we have a res object for positive and negative ionization mode?
+
+  Put both objects together and add an extra column that specify the ionization mode of detection 
+
+```{r}
+
+```
+
+  Rule to eliminate duplicates: look in the data the duplicated entries for lipid name and pick up the entry that has the higher abundance, make sure that the retention times are similar 
+
+  Then perform univariate and multivariate analysis? not sure if is this what we want 
+  
+  
+  
+## 
+
+
+```{r}
+
+
+```
+
+You can add options to executable code like this
+
+```{r}
+
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
