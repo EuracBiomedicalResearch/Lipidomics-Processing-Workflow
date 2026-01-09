@@ -1009,6 +1009,8 @@ res@metadata <- list()
 saveObject(res, file.path("objects/preprocessed_res_neg"))
 ```
 
+The chunk before is if preprocessing was already run and we just want to load
+the objects again and continue the rest of the analysis from here.
 ```{r}
 #| eval: false
 mse_neg <- readMsObject(XcmsExperiment(), AlabasterParam(path = file.path("objects/preprocessed_mse_neg")))
@@ -1798,7 +1800,6 @@ cat("All chromatograms saved in:", outdir, "\n")
 ```{r}
 ## remove duplicated form the
 length(unique(mtched_data$target_lipid_name_unique)) ## number of lipid matched, 283
-
 ```
 
 
