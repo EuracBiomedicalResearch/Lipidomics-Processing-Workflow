@@ -98,7 +98,7 @@ sample_type have to be included. Also neg_ data need to have all the files
 in .mzml that where included in the excel file.
 
 ```{r}
-#| eval: false
+#| eval: true
 # Load neg data
 seq_neg <- read_xlsx(paste0("seq_neg.xlsx"),
                  col_names = TRUE) |> as.data.frame()
@@ -122,7 +122,7 @@ dbDisconnect(con)
 
 
 ```{r}
-#| eval: false
+#| eval: true
 library(MsBackendSql)
 library(RSQLite)
 dbf <- normalizePath(file.path("NEG_data", "pilot_neg.sqlite"))
@@ -137,7 +137,7 @@ mse_neg <- linkSampleData(
 Below we show how to load from MetaboLights as an alternative to mzml files.
 
 ```{r}
-#| eval: true
+#| eval: false
 param <- MetaboLightsParam(mtblsId = "MTBLS10722",
                            assayName = "a_MTBLS10722_LC-MS_negative_reverse-phase_metabolite_profiling.txt",
                            filePattern = ".mzML")
@@ -1039,7 +1039,7 @@ rownames(fData(eic_is)) <- intern_standard$short_name
 fdata <- fData(eic_is)
 ```
 
-# Database correction.
+# Database correction
 
 ```{r}
 #' Default parameter for the grouping and apply them to the test ions BPC
@@ -1811,7 +1811,7 @@ TO BE DELETED
 eg1 <- chromatogram(mse_neg, mz = c(499.035, 499.044)) #LPE(0:0/18:0)
 plot(eg1)
 
-eg2 <- chromatogram(mse_neg, mz = c(510.390, 510.440), rt = c(200, 230)) #LPC(O-0:0/18:0)
+eg2 <- chromatogram(mse_neg, mz = c(828.562, 828.569), rt = c(360, 380)) #dPI
 plot(eg2)
 
 eg3 <- chromatogram(mse_neg, mz = c(510.380, 510.388), rt = c(175, 190)) # LPC(O-0:0/18:1) // LPC(P-0:0/18:0) only 1 peak?
@@ -1829,13 +1829,14 @@ featureDefinitions(eg5)
 ```
 
 ```{r}
-|# eval: false
+# eval: false
 #plot some features
-a <- featureChromatograms(mse_neg, features = "FT01791") #FA(20:3) #Error in .i2index(features, ids = rownames(featureDefinitions(x)), "features") : 'features' out of bounds
+a <- featureChromatograms(mse_neg, features = "FT13941") 
 plot(a)
 featureDefinitions(a)
-a1 <- chromatogram(mse_neg, mz = c(929.833, 929.836)) #TG(53:3)
+a1 <- chromatogram(mse_neg, mz = c(929.833, 929.836))
 plot(a1)
+r <- featureData(a1)
 b <- featureChromatograms(mse_neg, features = "FT03107")
 par(mfrow = c(1, 2))
 plot(a)
@@ -1872,12 +1873,11 @@ plot(k, main = "Gráfico k")
 # Donnut chart of lipid distribution
 counts <- table(mtched_data$target_LIPID.CATEGORY..ABBREV.)
 
-names(counts) <- c("Fatty Acyls [FA]",
-                   "Glycerolipids [GL]",
+names(counts) <- c("Glycerolipids [GL]",
                    "Glycerophospholipids [GP]",
                    "Sphingolipids [SP]")
 
-bar_colors <- c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3")
+bar_colors <- c("#fc8d62", "#8da0cb", "#e78ac3")
 labels <- counts
 par(mar = c(1, 1, 2, 1))
 
@@ -1903,7 +1903,7 @@ legend("topright",
 
 ```{r}
 # pie chart for lipid subclass. HERE ADD A NEW COLUMN WITH THE SHORT NAME
-counts1 <- table(mtched_data$`target_LIPID SUBCLASS [ABBREV]`)
+counts1 <- table(mtched_data$target_LIPID.SUBCLASS..ABBREV.)
 
 n_cat <- length(counts1)
 base_colors <- brewer.pal(9, "Set1")
@@ -1963,11 +1963,11 @@ print(names(assays(res)))
 
 
 # Below i create a subset of the res object with only annotated features
-mtched_features_list <- mtched_data_unique$feature_id
-annotated_res <- res[rownames(res) %in% mtched_data_unique$feature_id, ] #only 279 id out of 299, aprox 20 duplicates
+mtched_features_list <- mtched_data$feature_id
+annotated_res <- res[rownames(res) %in% mtched_data$feature_id, ] #only 279 id out of 299, aprox 20 duplicates
 rowData(annotated_res) <- cbind(rowData(annotated_res),
-                                 mtched_data_unique[match(rownames(annotated_res),
-                                                   mtched_data_unique$feature_id),
+                                 mtched_data[match(rownames(annotated_res),
+                                                   mtched_data$feature_id),
                                              c("target_lipid.name",
                                                "target_LIPID.CATEGORY..ABBREV.",
                                                "target_LIPID.SUBCLASS..ABBREV.",
@@ -1977,8 +1977,8 @@ rowData(annotated_res) <- cbind(rowData(annotated_res),
 
 # Below we keep the res object but append annotation info for the annotated features
 rowData(res) <- cbind(rowData(res),
-                         mtched_data_unique[match(rownames(res),
-                                           mtched_data_unique$feature_id),
+                         mtched_data[match(rownames(res),
+                                           mtched_data$feature_id),
                                      c("target_lipid.name",
                                        "target_LIPID.CATEGORY..ABBREV.",
                                        "target_LIPID.SUBCLASS..ABBREV.",
