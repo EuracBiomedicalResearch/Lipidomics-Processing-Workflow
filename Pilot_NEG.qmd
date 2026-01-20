@@ -113,6 +113,9 @@ Store the MS data into a SQLite database.
 ## Only run once
 library(MsBackendSql)
 library(RSQLite)
+
+register(SerialParam())
+
 dbf <- normalizePath(file.path("NEG_data", "pilot_neg.sqlite"))
 if (file.exists(dbf)) unlink(dbf)
 con <- dbConnect(SQLite(), dbf)
@@ -339,7 +342,7 @@ for (i in seq_len(nrow(eic_is))) {
 
 ```{r}
 #| eval: true
-#| fig.cap: "Example: EIC of three selected deuterated lipids."
+#| fig.cap: "Example: EIC of two selected deuterated lipids."
 # Chromatogram example of three lipids from the list that was imported before
 eic_FA <- eic_is["dFA"]
 eic_PI <- eic_is["dPI"]
@@ -522,26 +525,9 @@ the first two peaks have been detected properly in all sample, but this does
 not happen with the Carnitine (not even after changing the signal to noise
 ratio, or opening the window for the m/z or rt)
 
-## Refinment of chromatographic peaks
+## Refinment of chromatographic peaks DO NOT PERFORM refinement
 
-```{r}
-#| eval: false
-#' set up the parameter
-param_msp <- MergeNeighboringPeaksParam(expandRt = 2.5, expandMz = 0.0015,
-                                        minProp = 0.75)
-```
 
-```{r}
-#| eval: false
-#' Apply on whole dataset
-mse_neg <- refineChromPeaks(mse_neg, param = param_msp, chunkSize = cores_nb)
-```
-
-```{r}
-#| eval: false
-chromPeakData(mse_neg)$merged |>
-                         table()
-```
 
 Evaluate the results of the chromatographic peak detection on EICs of e.g.
 internal standards or other compounds/ions known to be present in the samples.
@@ -1002,8 +988,10 @@ sum(!rowMeans(assay(res), na.rm = TRUE) > 1500)
 ```{r}
 #| eval: true
 # save the mse_neg preprocessed object
-saveMsObject(mse_neg,
-AlabasterParam(path = file.path("objects/preprocessed_mse_neg")))
+mse_neg@spectra <- setBackend(mse_neg@spectra, MsBackendMemory()) #I need it because I am storing the data in the backend
+save(mse_neg,file="objects/preprocessed_mse_neg")
+#saveMsObject(mse_neg,
+#AlabasterParam(path = file.path("objects/preprocessed_mse_neg"))) #!!!Error: failed to save '@spectra' of MsExperiment No method to save a backend of type "MsBackendOfflineSql" available yet
 # save the SummarizedExperiemnt
 res@metadata <- list()
 saveObject(res, file.path("objects/preprocessed_res_neg"))
@@ -1011,8 +999,8 @@ saveObject(res, file.path("objects/preprocessed_res_neg"))
 
 ```{r}
 #| eval: false
-mse_neg <- readMsObject(XcmsExperiment(), AlabasterParam(path = file.path("objects/preprocessed_mse_neg")))
-res <- readObject(file.path("objects/preprocessed_res_neg"))
+#mse_neg <- readMsObject(XcmsExperiment(), AlabasterParam(path = file.path("objects/preprocessed_mse_neg")))
+#res <- readObject(file.path("objects/preprocessed_res_neg"))
 
 intern_standard <- read_xlsx("neg_splashlipidomix_list.xlsx") |>
     as.data.frame()
@@ -1332,7 +1320,7 @@ ip <- isopattern(
     isotopes,
     chem_checked$new_formula,
     threshold = 0.001,
-    charge = 1,  ##  hardcoded 1 could be a problem
+    charge = -1,  ##  hardcoded 1 could be a problem
     rel_to = 0
 )
 
@@ -1474,7 +1462,7 @@ ip <- isopattern(
     isotopes,
     chem_checked$new_formula,
     threshold = 0.001,
-    charge = 1,  ##  hardcoded 1 could be a problem
+    charge = -1,  ##  hardcoded 1 could be a problem
     rel_to = 0
 )
 theoretical_spectra <- isopattern_to_spectra(ip)
@@ -1632,7 +1620,7 @@ length(sum(is_duplicated))
 fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
 sum(duplicated(mtched_data$feature_id))
 ```
-## Dealing with SM1 SM2
+## Dealing with Sn1 Sn2
 
 ```{r}
 # A helper to extract the "Base Name" of a lipid (ignoring the 0:0 position)
@@ -1726,16 +1714,18 @@ key <- paste(mtched_data$target_lipid_name_unique,
 is_duplicated <- key %in% key[duplicated(key)]
 amblip <- mtched_data[is_duplicated, cols_amb]
 amblip
+amblip$keep_row <- TRUE
 
 ## fts amb
 fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
 table_amb <- mtched_data[mtched_data$feature_id %in% fids_ambiguous,
-                         c("feature_id", "mzmed", "rtmed", "target_lipid_name_unique",
-                           "target_Adduct", "ppm_error", "score_rt","target_rank", "target_mz", "target_rt_adjusted", "score", "isopeak_count", "isopeak_sim", "adduct_ratio", "target_LIPID.CATEGORY..ABBREV.", "target_LIPID.SUBCLASS..ABBREV.")]
+                         cols_amb]
 table_amb <- table_amb[order(table_amb$feature_id), ]
 table_amb
+table_amb$keep_row <- TRUE
 
-#merge amlipid and table_amb
+write_xlsx(table_amb, path = "feature_ambiguity_resolution_neg.xlsx")
+write_xlsx(amblip, path = "lipid_ambiguity_resolution_neg.xlsx")
 ```
 
 I guess this table and the lipid ambiguity could be exported and the users can

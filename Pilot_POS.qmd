@@ -174,7 +174,7 @@ col_sample <- col_sample_type[sampleData(mse_pos)$sample_type]
 
 ## Chromatographic data visualization
 
-Basic peak chromatogram (BPC) plot of all samples (colored by sample_type), including QCs.
+Base peak chromatogram (BPC) plot of all samples (colored by sample_type), including QCs.
 
 ```{r, eval=run_plot}
 #| fig-cap: "BPC of all samples colored by phenotype"
@@ -501,7 +501,7 @@ After applying the cinematographic peak detection over the entire dataset, we no
 ## Refinment of chromatographic peaks
 
 [Phili: I am testing for removal of refinment, this should help for the
-compounds annotation that elute very close to eachothers]
+compounds annotation that elute very close to each others]
 
 ```{r, eval=FALSE}
 #' set up the parameter
@@ -1852,11 +1852,11 @@ the feature can be a 1:many match but we will then just merge the annotation int
 # Remove rows based on manual curation
 # Lipid Ambiguity
 lipid_amb_res <- read_excel("lipid_ambiguity_resolution.xlsx")
-mtch_to_be_rm <- lipid_amb_res$ntch_idx[!lipid_amb_res$keep_row]
+mtch_to_be_rm <- lipid_amb_res$ntch_idx[lipid_amb_res$keep_row] #!lipid_amb_res$keep_row
 mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm, ]
 # Feature Ambiguity
 feature_amb_res <- read_excel("feature_ambiguity_resolution.xlsx")
-mtch_to_be_rm_ft <- feature_amb_res$ntch_idx[!feature_amb_res$keep_row]
+mtch_to_be_rm_ft <- feature_amb_res$ntch_idx[feature_amb_res$keep_row]
 mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm_ft, ]
 
 ## check for duplicates again
