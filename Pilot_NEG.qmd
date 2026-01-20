@@ -152,7 +152,7 @@ mse_neg <- readMsObject(MsExperiment(),
 Some variable mapping needs to be done when importing from MetaboLights
 
 ```{r}
-#| eval: true
+#| eval: false
 # Filter for the pilot study
 mse_neg <- mse_neg[sampleData(mse_neg)$`Factor Value[Cohort]` == "Cohort_study"]
 
@@ -956,6 +956,8 @@ sum(is.na(featureValues(mse_neg))) /
 
 ```{r}
 #| fig-cap: "Detected vs. filled-in signal."
+
+QC_samples <- which(sampleData(mse_neg)$sample_type == "QC")
 #' Get only detected signal in QC samples
 vals_detect <- featureValues(mse_neg, filled = FALSE)[, QC_samples]
 
@@ -1002,16 +1004,22 @@ sum(!rowMeans(assay(res), na.rm = TRUE) > 1500)
 ```{r}
 #| eval: true
 # save the mse_neg preprocessed object
-saveMsObject(mse_neg,
-AlabasterParam(path = file.path("objects/preprocessed_mse_neg")))
+spectra(mse_neg) <- setBackend(spectra(mse_neg), MsBackendMemory())
+spectra(mse_neg) <- applyProcessing(spectra(mse_neg))
+saveMsObject(mse_neg, AlabasterParam(path = file.path("objects/preprocessed_mse_neg")))
+save(mse_neg, file = file.path("objects/preprocessed_mse_neg.RData")) ## just in case 
 # save the SummarizedExperiemnt
 res@metadata <- list()
 saveObject(res, file.path("objects/preprocessed_res_neg"))
 ```
 
+The chunk before is if preprocessing was already run and we just want to load
+the objects again and continue the rest of the analysis from here.
 ```{r}
 #| eval: false
-mse_neg <- readMsObject(XcmsExperiment(), AlabasterParam(path = file.path("objects/preprocessed_mse_neg")))
+#mse_neg <- readMsObject(XcmsExperiment(), AlabasterParam(path = file.path("objects/preprocessed_mse_neg")))
+# the saving did not work for some reason. fro now just saved as Rdata object
+load("objects/preprocessed_mse_neg.RData")
 res <- readObject(file.path("objects/preprocessed_res_neg"))
 
 intern_standard <- read_xlsx("neg_splashlipidomix_list.xlsx") |>
@@ -1236,9 +1244,10 @@ lipids (7 deuterated)
 
 
 # Annotate/ match
--   maybe separate the QCs into another object or do that later.
 
 ## rank1 matching
+
+Match features (query) against (aligned) database (target).
 
 ```{r}
 ## Prepare Query (Experimental Features)
@@ -1271,7 +1280,7 @@ mtch <- mtch[whichQuery(mtch)]
 mtched_data <- as.data.frame(matchedData(mtch))
 mtched_data$feature_id <- sub("\\..*$", "", rownames(mtched_data))
 
-## Quick stats (Optional)
+## Quick stats
 cat("Unique Features Matched:", length(unique(mtched_data$feature_id)), "\n")
 cat("Database Coverage (%):",
     length(unique(mtched_data$target_lipid_name_unique)) /
@@ -1325,14 +1334,14 @@ iso_spectra <- spectrapply(csp, function(z) {
 
 ## CALCULATE THEORETICAL PATTERNS
 ## Check formulas
-chem_checked <- check_chemform(isotopes, mtched_data$target_adduct_formula) #ERROR Error in if (chemforms[i] == "") { : argument is of length zero
+chem_checked <- check_chemform(isotopes, mtched_data$target_adduct_formula)
 
 ## Generate patterns (Vectorized by charge)
 ip <- isopattern(
     isotopes,
     chem_checked$new_formula,
     threshold = 0.001,
-    charge = 1,  ##  hardcoded 1 could be a problem
+    charge = -1,  ##  here hardcoed -1 for negative mode
     rel_to = 0
 )
 
@@ -1370,7 +1379,7 @@ The plotting can take a bit of time (and space), so do it only if needed.
 
 ```{r}
 # plot
-dr <- file.path("figures/iso_pattern_check_neg/")
+dr <- file.path("figures/iso_pattern_check/")
 dir.create(dr, showWarnings = FALSE, recursive = TRUE)
 
 for (i in seq_len(nrow(mtched_data))) {
@@ -1406,10 +1415,11 @@ sum(duplicated(paste0(mtched_data$target_lipid_name_unique,
 sum(duplicated(mtched_data$feature_id))
 ```
 
+
 ## Matching Adducts (Rank > 1)
 
 - Returning the max abundance for each adduct
-  can be found in the featureValues(mse_pos) and the rownames are the feature ids
+  can be found in the featureValues(mse_neg) and the rownames are the feature ids
 - a ratio of adduct detected/ total number of adducts possible for that lipid.
 
 ```{r}
@@ -1469,7 +1479,7 @@ iso_spectra <- spectrapply(csp, function(z) {
 }) |>
     concatenateSpectra() |>
     scalePeaks(by = max)
-chem_checked <- check_chemform(isotopes, adduct_hits$target_adduct_formula) #ERROR
+chem_checked <- check_chemform(isotopes, adduct_hits$target_adduct_formula)
 ip <- isopattern(
     isotopes,
     chem_checked$new_formula,
@@ -1513,7 +1523,7 @@ indicate an issue with the processing above. bigger problem
 cols_amb <- c("feature_id", "target_mz", "mzmed", "target_rt_adjusted",
               "rtmed", "target_lipid_name_unique", "target_adduct",
               "ppm_error", "score_rt", "target_rank",  "score",
-              "isopeak_count", "isopeak_sim", "adduct_ratio")
+              "isopeak_count", "isopeak_sim", "adduct_ratio", "ntch_idx")
 
 # Create a key for Lipid + Adduct
 key <- paste(mtched_data$target_lipid_name_unique,
@@ -1561,6 +1571,7 @@ mtched_data <- mtched_data[rows_to_keep, ]
 message("Removed ", sum(!rows_to_keep), " rows with significantly worse RT scores.")
 nrow(mtched_data)
 ```
+
 
 ```{r}
 ## check amblip again
@@ -1632,6 +1643,7 @@ length(sum(is_duplicated))
 fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
 sum(duplicated(mtched_data$feature_id))
 ```
+
 ## Dealing with SM1 SM2
 
 ```{r}
@@ -1717,6 +1729,7 @@ mtched_data <- final_resolved_data
 mtched_data$ntch_idx <- seq_len(nrow(mtched_data))
 ```
 
+
 ## final amb check
 
 ```{r}
@@ -1726,25 +1739,82 @@ key <- paste(mtched_data$target_lipid_name_unique,
 is_duplicated <- key %in% key[duplicated(key)]
 amblip <- mtched_data[is_duplicated, cols_amb]
 amblip
+amblip$keep_row <- TRUE
 
 ## fts amb
 fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
 table_amb <- mtched_data[mtched_data$feature_id %in% fids_ambiguous,
-                         c("feature_id", "mzmed", "rtmed", "target_lipid_name_unique",
-                           "target_Adduct", "ppm_error", "score_rt","target_rank", "target_mz", "target_rt_adjusted", "score", "isopeak_count", "isopeak_sim", "adduct_ratio", "target_LIPID.CATEGORY..ABBREV.", "target_LIPID.SUBCLASS..ABBREV.")]
+                         cols_amb]
 table_amb <- table_amb[order(table_amb$feature_id), ]
 table_amb
+table_amb$keep_row <- TRUE
 
-#merge amlipid and table_amb
+write_xlsx(table_amb, path = "feature_ambiguity_resolution.xlsx")
+write_xlsx(amblip, path = "lipid_ambiguity_resolution.xlsx")
 ```
 
-I guess this table and the lipid ambiguity could be exported and the users can
-manually check.
+please fix the ambiguity manually in the excel files above by changing to
+FALSE the rows you want to remove.
+The lipid ambiguity must be a 1:1 match.
+the feature can be a 1:many match but we will then just merge the annotation into one.
+
+```{r}
+# Remove rows based on manual curation
+# Lipid Ambiguity
+lipid_amb_res <- read_excel("lipid_ambiguity_resolution.xlsx")
+mtch_to_be_rm <- lipid_amb_res$ntch_idx[!lipid_amb_res$keep_row]
+mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm, ]
+# Feature Ambiguity
+feature_amb_res <- read_excel("feature_ambiguity_resolution.xlsx")
+mtch_to_be_rm_ft <- feature_amb_res$ntch_idx[!feature_amb_res$keep_row]
+mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm_ft, ]
+
+## check for duplicates again
+mtched_data$nb_annotations <- 1
+key <- paste(mtched_data$target_lipid_name_unique,
+             mtched_data$target_adduct, sep = "_")
+is_duplicated <- key %in% key[duplicated(key)]
+if (any(is_duplicated)) {
+  warning("There are still duplicated Lipid + Adduct entries after manual curation. Please fix this")
+} else {
+  message("No duplicated Lipid + Adduct entries remain.")
+}
+fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
+if (length(fids_ambiguous) > 0) {
+  warning("There are still duplicated Feature entries after manual curation. They will be merged into one annotation.")
+  # Merge annotations for duplicated features
+  for (i in unique(fids_ambiguous)) {
+    idxs <- which(mtched_data$feature_id == i)
+    if (length(idxs) > 1) {
+      # Combine lipid names and adducts
+      combined_lipid_names <- paste(unique(mtched_data$target_lipid_name_unique[idxs]), collapse = "; ")
+      combined_adducts <- paste(unique(mtched_data$target_adduct[idxs]), collapse = "; ")
+
+      # Update the first occurrence
+      mtched_data$target_lipid_name_unique[idxs[1]] <- combined_lipid_names
+      mtched_data$target_adduct[idxs[1]] <- combined_adducts
+
+      # Remove other occurrences
+      mtched_data <- mtched_data[-idxs[-1], ]
+      # Update the number of annotations
+      mtched_data$nb_annotations[idxs[1]] <- length(idxs)
+    }
+  }
+} else {
+  message("No duplicated Feature entries remain.")
+}
+
+## final table
+mtched_data
+```
+
+
 
 ```{r}
 ## summary of coverage (accurate now)
-length(unique(mtched_data$target_lipid_name_unique)) /
-  length(unique(lipid_database$lipid_name_unique)) * 100
+length(unique(mtched_data$target_lipid_name_unique)) / 592 * 100
+## i think this number might be a bit biased negatively because we merge annotations.
+sum(mtched_data$nb_annotations)/592 * 100 # is that right ? 
 ```
 
 ```{r}
@@ -1798,7 +1868,6 @@ cat("All chromatograms saved in:", outdir, "\n")
 ```{r}
 ## remove duplicated form the
 length(unique(mtched_data$target_lipid_name_unique)) ## number of lipid matched, 283
-
 ```
 
 

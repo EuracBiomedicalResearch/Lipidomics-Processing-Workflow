@@ -1304,37 +1304,6 @@ pandoc.table(table_amb, split.table = Inf, style = "rmarkdown")
 write_xlsx(mtched_data, path = "TGs-Amonium.xlsx")
 ```
 
-CAN BE DELETED
-
-```{r, eval = FALSE}
-#examples amb TGs
-d <- featureChromatograms(mse_pos, features = "FT20530") #TG(53:4)acetamidina no isotopic patter in qualitative
-plot(d)
-d1 <- chromatogram(mse_pos, mz = c(927.804, 927.822), rt = c(830, 845))
-plot(d1)
-
-d_nh4 <- featureChromatograms(mse_pos, features = "FT") #TG(53:4)amonium isotopic pattern in qualitative
-plot(d_nh4)
-d_nh4_1 <- chromatogram(mse_pos, mz = c(886.785, 886.792), rt = c(810,840))
-plot(d_nh4_1)
-
-
-par(mfrow = c(1, 2))
-plot(d1)
-plot(d_nh4_1)
-
-par(mfrow = c(1, 2))
-plot(d)
-plot(d_nh4)
-
-
-t <- featureChromatograms(mse_pos, features = "FT") #TG(53:3)amonium
-plot(t)
-t1 <- chromatogram(mse_pos, mz = c(888.798, 888.804), rt = c(835,850))
-plot(t1)
-
-```
-
 ## rank1 matching
 
 Match features (query) against (aligned) database (target).
@@ -1892,7 +1861,7 @@ if (length(fids_ambiguous) > 0) {
   }
 } else {
   message("No duplicated Feature entries remain.")
-
+}
 ## final table
 mtched_data
 ```
@@ -1904,7 +1873,6 @@ length(unique(mtched_data$target_lipid_name_unique)) / 592 * 100
 ## i think this number might be a bit biased negatively because we merge annotations.
 sum(mtched_data$nb_annotations)/592 * 100
 ```
-
 
 
 ```{r,eval= FALSE}
@@ -1957,7 +1925,6 @@ cat("All chromatograms saved in:", dr, "\n")
 Can we delete what's below ? sara i will let you deal with that.
 
 ```{r, eval = FALSE}
-
 #subset the ISTD
 sara <- subset(lipid_db_r1, grepl("ISTD", ORIGIN, ignore.case = TRUE))
 # we don have a match with TG istd and we should have it ERROR
@@ -2541,7 +2508,6 @@ result[1:5, ]
 binary_data <-apply(result, MARGIN = 2, as.integer)
 upset(as.data.frame(binary_data), nset = 6, sets = colnames(result), keep.order = TRUE)
 ```
-
 
 
 bELOW IS THE CODE THAT WILL BE DONE after we merge pos and neg together
