@@ -12,7 +12,6 @@ run_plot <- FALSE
 So we organize a bit what is left to do. Also `!!!` can be found in the text
 for more context or issues.
 
--   Improve annotation strategy.
 
 -   Add figure and table captions (I have been adding them to the plots I think we are going to keep)
 
@@ -24,7 +23,7 @@ for more context or issues.
 
 Goals:
 
--   Develop a vendor-independent, open-source and one-step targeted lipid
+-   Develop an open-source and one-step targeted lipid
     processing and annotation workflow for high-confidence lipidomics.
 
 -   Automated RT correction, improving accuracy and reproducibility.
@@ -39,7 +38,9 @@ Goals:
     1)<https://doi.org/10.1016/j.microc.2025.113760>
     2)<https://doi.org/10.1021/acs.jproteome.5c00480>
 
-1) The aim of this study was to explore the potential of three BμS devices for
+# Data description
+
+The aim of this study was to explore the potential of three BμS devices for
 reliable untargeted lipidomic profiling using reversed-phase ultra-high
 performance liquid chromatography coupled with quadrupole-time-of-flight mass
 spectrometry (RP-UHPLC-MS). Such devices –from the traditional non-volumetric
@@ -52,9 +53,11 @@ extraction protocol and a single-step data processing and lipid annotation
 using a targeted peak extraction strategy based on a human plasma lipid
 database (https://doi.org/10.1016/j.jlr.2024.100671)
 
-## Load needed libraries
+# Load needed libraries
 
+Our workflow is built on the following dependencies:
 ```{r, eval=TRUE}
+## Data Import and handling
 library(knitr)
 library(readxl)
 library(MsExperiment)
@@ -62,11 +65,18 @@ library(MsIO)
 library(alabaster.se)
 library(MsBackendMetaboLights)
 library(SummarizedExperiment)
+library(dbplyr)
+
+## Preprocessing of LC-MS data
 library(xcms)
 library(Spectra)
 library(MetaboCoreUtils)
-library(limma)
-library(matrixStats)
+
+## Statistical analysis
+library(limma).    # SLO not sure if we need this
+library(matrixStats) # SLO not sure if we need this
+
+## Visualisation
 library(pander)
 library(RColorBrewer)
 library(pheatmap)
@@ -74,21 +84,35 @@ library(vioplot)
 library(ggplot2)
 library(ggfortify)
 library(gridExtra)
+library(UpSetR)
+
+## Annotation
 library(BiocFileCache)
-library(dbplyr)
 library(AnnotationHub)
 library(CompoundDb)
 library(MetaboAnnotation)
 library(ggVennDiagram)
-library(UpSetR)
 ```
 
-## Data Import
+# 1. Data Import
 
-Load the raw mzML data from a lipidomics study. The dataset includes venous blood samples from 10 healthy individuals collecting using the following BuS devices: M-VAMS, C-qDBS, W-DBS,
-as well as plasma samples.
+This section describes how to import raw .mzML files from a lipidomics study.
+This dataset includes venous blood samples collected from 10 healthy individuals using the following BuS devices: M-VAMS, C-qDBS, W-DBS, as well as plasma samples.
+The data can be loaded using one of the three options described below.
 
-OPTION 1: Create a file named seq_pos.xlsx containing the injection order, sample name, and sample type. Also a folder named POS_data must contain all .mzML files listed in the excel file.
+### 1.1. Import Locally Stored Data
+
+If the data are stored locally, the following steps must be completed:
+-Create a sequence file named seq_pos.xlsx.
+This file must contain the following columns:
+Injection order,Sample name and Sample type
+-Create a folder named POS_data.
+-Place all corresponding .mzML files inside the POS_data folder.
+It is essential that:
+-The file names exactly match the sample names listed in seq_pos.xlsx.
+-All files correspond to positive ionization mode (POS).
+
+Once the files are properly organized, the data are ready to be imported
 
 ```{r, eval=TRUE}
 # Load pos data
@@ -104,7 +128,7 @@ mse_pos <- readMsExperiment(spectraFiles = spectra_files_pos,
 sampleData(mse_pos)
 ```
 
-OPTION 2: Load the dataset directly from MetaboLights as an alternative to mzml files.
+### 1.2.  Load the dataset directly from MetaboLights.
 
 ```{r, eval=FALSE}
 param <- MetaboLightsParam(mtblsId = "MTBLS10722",
@@ -118,7 +142,7 @@ mse_pos <- readMsObject(MsExperiment(),
                         simplify = TRUE)
 ```
 
-Some variable mapping needs to be done when importing from MetaboLights
+When importing data from MetaboLights, certain variables must be mapped to ensure correct assignment of sample metadata and experimental information.
 
 ```{r, eval=FALSE}
 # Filter for the pilot study
@@ -146,8 +170,10 @@ mse_pos <- mse_pos[order(sampleData(mse_pos)$injection_index), ]
 \[Phili: Here i would explain maybe some column names so that other people
 understand what is in them\]
 
-Adjust the number of cores based on your machine. Suggested to use 1 or 2 below
-your higher capacity.
+## 1.3. Load the data from Metabolomics workbench
+
+
+Adjust the number of processing cores according to the available system resources. It is recommended to use one or two cores fewer than the maximum capacity of the machine to ensure stable performance.
 
 ```{r, eval=TRUE}
 cores_nb <- 4  # Ajust here
@@ -170,11 +196,11 @@ names(col_sample_type) <- c("QC",   # grey
 col_sample <- col_sample_type[sampleData(mse_pos)$sample_type]
 ```
 
-# Dataset investigation
+## Dataset investigation
 
 ## Chromatographic data visualization
 
-Basic peak chromatogram (BPC) plot of all samples (colored by sample_type), including QCs.
+Generate a base peak chromatogram (BPC) plot for all samples, colored according to sample_type, including quality control (QC) samples.
 
 ```{r, eval=run_plot}
 #| fig-cap: "BPC of all samples colored by phenotype"
@@ -193,7 +219,7 @@ legend("topright", col = col_sample_type,
 #dev.off()
 ```
 
-Filter the data based on the retention time (RT) observed on the BPC. In this data set we filter from 10 to 950 sec.
+Filter the data based on the retention time (RT) observed on the BPC. In this dataset we filter from 10 to 950 sec.
 
 ```{r}
 #' Filter the data based on retention time
@@ -241,7 +267,9 @@ pheatmap(ticmap, annotation_col = ann,
 
 ## Extracted ion chromatograms (EIC)
 
-Upload the list of the reference lipids (for this study: internal standards form SPLAH LIPIDOMIX and also some endogenous compounds), that will be used to make RT shift correction. RT must be in seconds.
+Upload the list of the reference lipids set (LRS) that will be used for (RT) shift correction.
+For this study, the RLS includes internal standards form SPLASH® LIPIDOMIX® as well as selected endogenous compounds.
+Retention times must be provided in seconds.
 
 ```{r load-is, eval=TRUE, warning = FALSE}
 #| tbl.cap: "Set of reference lipids, including deuterated lipids from SPLASH LIPIDOMIX and some deuterated compounds that are in high abundance in plasma."
@@ -302,7 +330,7 @@ for (i in seq_len(nrow(eic_is))) {
 ```
 
 
-[Phili: do we need to keep this below ? now i have saved them locally]
+[Phili: do we need to keep this below ? now i have saved them locally] # SLO plot them for the tutorial?
 
 ```{r, eval=TRUE}
 #|fig.cap: "Example: EIC of three selected deuterated lipids."
@@ -342,9 +370,9 @@ legend("topright", col = col_sample_type, legend = names(col_sample_type),
 #dev.off()
 ```
 
-# Data preprocessing
+# 2. Data preprocessing
 
-## Chromatographic peak detection
+## 2.1 Chromatographic peak detection
 
 We use the deuterated LysoPC of the first sample to extract the *m/z*,
 calculate the absolute difference and expressed in ppm.
@@ -501,7 +529,7 @@ After applying the cinematographic peak detection over the entire dataset, we no
 ## Refinment of chromatographic peaks
 
 [Phili: I am testing for removal of refinment, this should help for the
-compounds annotation that elute very close to eachothers]
+compounds annotation that elute very close to each others]
 
 ```{r, eval=FALSE}
 #' set up the parameter
@@ -580,7 +608,7 @@ data.frame(
 
 A similar number of chromatographic peaks was identified across the different samples in the dataset. In all cases, W-DBS showed the lowest number of features, Which is expected because a smaller sample volume was injected; consequently, lower-intensity features were not detected in W-DBS samples.
 
-## Retention time alignment
+## 2.2. Retention time alignment
 
 To evaluate the presence of a shift we extract and plot below the BPC from the
 QC samples.
@@ -804,7 +832,7 @@ list(all_raw = rowSds(rt_raw, na.rm = TRUE),
 grid()
 ```
 
-## Correspondence
+## 2.3. Correspondence
 
 The goal of the correspondence analysis is to identify chromatographic peaks
 that originate from the same types of ions in all samples of an experiment and
@@ -933,7 +961,7 @@ for (i in seq_len(nrow(eic_isp))) {
 }
 ```
 
-## Gap filling
+## 2.4 Gap filling
 
 We next examine how prevalent missing values are in our present dataset:
 
@@ -1060,7 +1088,7 @@ fData(eic_is)[c("CAR", "LysoPC", "dLysoPC", "dLysoPE", "LPC", "SM",
 ```
 
 
-# Database correction
+# 3. Database correction
 Here we apply a 6th degree Polynomial model to correct the database RT based on the RT shift observed on the reference lipid list
 
 ```{r, eval=TRUE}
@@ -1217,7 +1245,7 @@ are the reference lipids (17 between endogenous and deuterated)
 
 
 
-# Annotate/ match
+# 4. Annotate/ match
 
 Match features (query) against (aligned) database (target).
 DO NOT run for now.... this is a test for carnitines, a total of 19 carnitines were detected same as the ones detected by profinder
@@ -1304,7 +1332,7 @@ pandoc.table(table_amb, split.table = Inf, style = "rmarkdown")
 write_xlsx(mtched_data, path = "TGs-Amonium.xlsx")
 ```
 
-## rank1 matching
+## 4.1. Rank1 matching
 
 Match features (query) against (aligned) database (target).
 
@@ -1355,7 +1383,7 @@ were matched to at least one lipid in the database. In total
 total `r nrow(target)` compounds/lipids in the database).
 
 
-## Calculate isotope pattern similarity
+## 4.2. Calculate isotope pattern similarity
 
 ```{r}
 library(enviPat)
@@ -1475,7 +1503,7 @@ sum(duplicated(mtched_data$feature_id))
 ```
 
 
-## Matching Adducts (Rank > 1)
+## 4.3. Matching Adducts (Rank > 1)
 
 - Returning the max abundance for each adduct
   can be found in the featureValues(mse_pos) and the rownames are the feature ids
@@ -1703,7 +1731,7 @@ fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
 sum(duplicated(mtched_data$feature_id))
 ```
 
-## Dealing with SM1 SM2
+## 4.4. Dealing with Sn1 Sn2
 
 ```{r}
 # A helper to extract the "Base Name" of a lipid (ignoring the 0:0 position)
@@ -1716,12 +1744,12 @@ get_lipid_base <- function(names) {
   return(clean)
 }
 
-# A helper to check if a name is SM2 (starts with 0:0/ or contains (0:0/)
+# A helper to check if a name is Sn2 (starts with 0:0/ or contains (0:0/)
 is_sm2 <- function(name) {
   grepl("0:0/", name, fixed = TRUE)
 }
 
-# A helper to check if a name is SM1 (ends with /0:0 or contains /0:0))
+# A helper to check if a name is Sn1 (ends with /0:0 or contains /0:0))
 is_sm1 <- function(name) {
   grepl("/0:0", name, fixed = TRUE)
 }
@@ -1763,8 +1791,8 @@ for (species in unique_species) {
 
     } else {
       # No Separation (Only 1 peak found)
-      # We have one feature matching BOTH SM1 and SM2.
-      # Rule: Keep SM1, Remove SM2.
+      # We have one feature matching BOTH Sn1 and Sn2.
+      # Rule: Keep Sn1, Remove Sn2.
 
       for (i in idx) {
         if (is_sm2(df_clean$target_lipid_name_unique[i])) {
@@ -1789,7 +1817,7 @@ mtched_data$ntch_idx <- seq_len(nrow(mtched_data))
 ```
 
 
-## final amb check
+## 4.5. Final amb check
 
 ```{r}
 ## lipid amb
@@ -1821,11 +1849,11 @@ the feature can be a 1:many match but we will then just merge the annotation int
 # Remove rows based on manual curation
 # Lipid Ambiguity
 lipid_amb_res <- read_excel("lipid_ambiguity_resolution.xlsx")
-mtch_to_be_rm <- lipid_amb_res$ntch_idx[!lipid_amb_res$keep_row]
+mtch_to_be_rm <- lipid_amb_res$ntch_idx[lipid_amb_res$keep_row] #!lipid_amb_res$keep_row
 mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm, ]
 # Feature Ambiguity
 feature_amb_res <- read_excel("feature_ambiguity_resolution.xlsx")
-mtch_to_be_rm_ft <- feature_amb_res$ntch_idx[!feature_amb_res$keep_row]
+mtch_to_be_rm_ft <- feature_amb_res$ntch_idx[feature_amb_res$keep_row]
 mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm_ft, ]
 
 ## check for duplicates again
@@ -1930,7 +1958,7 @@ sara <- subset(lipid_db_r1, grepl("ISTD", ORIGIN, ignore.case = TRUE))
 # we don have a match with TG istd and we should have it ERROR
 ```
 
-## Plots with the annotated compounds (mtched_data), the feature abundance of each sample, can be found in assay(res)
+## 4.6. Plots with the annotated compounds (mtched_data), the feature abundance of each sample, can be found in assay(res)
 
 ```{r}
 ## remove duplicated form the
@@ -2040,9 +2068,10 @@ rowData(annotated_res) <- cbind(rowData(annotated_res),
                                  mtched_data[match(rownames(annotated_res),
                                                    mtched_data$feature_id),
                                              c("target_lipid.name",
-                                               "target_LIPID.CATEGORY..ABBREV.",
-                                               "target_LIPID.SUBCLASS..ABBREV.",
-                                               "target_Adduct", "target_IS_norm"
+                                              "target_LIPID.CATEGORY..ABBREV.",
+                                              "target_LIPID.SUBCLASS..ABBREV.",
+                                              "target_Adduct",
+                                              "target_IS_norm"
                                              )])
 ## above if we have different lengths, it's because of duplicated features in the annotation table.
 
