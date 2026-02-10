@@ -1484,7 +1484,7 @@ ip <- isopattern(
     isotopes,
     chem_checked$new_formula,
     threshold = 0.001,
-    charge = 1,  ##  hardcoded 1 could be a problem
+    charge = - 1,  ##  hardcoded 1 could be a problem
     rel_to = 0
 )
 theoretical_spectra <- isopattern_to_spectra(ip)
@@ -1749,6 +1749,7 @@ table_amb <- table_amb[order(table_amb$feature_id), ]
 table_amb
 table_amb$keep_row <- TRUE
 
+library(writexl)
 write_xlsx(table_amb, path = "feature_ambiguity_resolution.xlsx")
 write_xlsx(amblip, path = "lipid_ambiguity_resolution.xlsx")
 ```
@@ -1860,7 +1861,6 @@ for (i in rownames(df_subset)) {
 }
 
 cat("All chromatograms saved in:", outdir, "\n")
-
 ```
 
 ## Plots with the annotated compounds (mtched_data), the feature abundance of each sample, can be found in assay(res)
