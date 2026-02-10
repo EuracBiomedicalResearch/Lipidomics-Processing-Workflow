@@ -1,5 +1,5 @@
 ---
-title: "R_lipidomicsOptimization"
+title: "R_lipidomicsValidation"
 format: html
 ---
 
@@ -12,6 +12,7 @@ run_plot <- FALSE
 So we organize a bit what is left to do. Also `!!!` can be found in the text
 for more context or issues.
 
+-   Improve annotation strategy.
 
 -   Add figure and table captions (I have been adding them to the plots I think we are going to keep)
 
@@ -23,7 +24,7 @@ for more context or issues.
 
 Goals:
 
--   Develop an open-source and one-step targeted lipid
+-   Develop a vendor-independent, open-source and one-step targeted lipid
     processing and annotation workflow for high-confidence lipidomics.
 
 -   Automated RT correction, improving accuracy and reproducibility.
@@ -38,9 +39,7 @@ Goals:
     1)<https://doi.org/10.1016/j.microc.2025.113760>
     2)<https://doi.org/10.1021/acs.jproteome.5c00480>
 
-# Data description
-
-The aim of this study was to explore the potential of three BμS devices for
+1) The aim of this study was to explore the potential of three BμS devices for
 reliable untargeted lipidomic profiling using reversed-phase ultra-high
 performance liquid chromatography coupled with quadrupole-time-of-flight mass
 spectrometry (RP-UHPLC-MS). Such devices –from the traditional non-volumetric
@@ -53,11 +52,9 @@ extraction protocol and a single-step data processing and lipid annotation
 using a targeted peak extraction strategy based on a human plasma lipid
 database (https://doi.org/10.1016/j.jlr.2024.100671)
 
-# Load needed libraries
+## Load needed libraries
 
-Our workflow is built on the following dependencies:
 ```{r, eval=TRUE}
-## Data Import and handling
 library(knitr)
 library(readxl)
 library(MsExperiment)
@@ -65,18 +62,11 @@ library(MsIO)
 library(alabaster.se)
 library(MsBackendMetaboLights)
 library(SummarizedExperiment)
-library(dbplyr)
-
-## Preprocessing of LC-MS data
 library(xcms)
 library(Spectra)
 library(MetaboCoreUtils)
-
-## Statistical analysis
-library(limma).    # SLO not sure if we need this
-library(matrixStats) # SLO not sure if we need this
-
-## Visualisation
+library(limma)
+library(matrixStats)
 library(pander)
 library(RColorBrewer)
 library(pheatmap)
@@ -84,51 +74,243 @@ library(vioplot)
 library(ggplot2)
 library(ggfortify)
 library(gridExtra)
-library(UpSetR)
-
-## Annotation
 library(BiocFileCache)
+library(dbplyr)
 library(AnnotationHub)
 library(CompoundDb)
 library(MetaboAnnotation)
 library(ggVennDiagram)
+library(UpSetR)
 ```
 
-# 1. Data Import
+## Data Import
 
-This section describes how to import raw .mzML files from a lipidomics study.
-This dataset includes venous blood samples collected from 10 healthy individuals using the following BuS devices: M-VAMS, C-qDBS, W-DBS, as well as plasma samples.
-The data can be loaded using one of the three options described below.
+Load the raw mzML data from a lipidomics study. The dataset includes venous blood samples from 10 healthy individuals collecting using the following BuS devices: M-VAMS, C-qDBS, W-DBS,
+as well as plasma samples.
 
-### 1.1. Import Locally Stored Data
-
-If the data are stored locally, the following steps must be completed:
--Create a sequence file named seq_pos.xlsx.
-This file must contain the following columns:
-Injection order,Sample name and Sample type
--Create a folder named POS_data.
--Place all corresponding .mzML files inside the POS_data folder.
-It is essential that:
--The file names exactly match the sample names listed in seq_pos.xlsx.
--All files correspond to positive ionization mode (POS).
-
-Once the files are properly organized, the data are ready to be imported
+OPTION 1: Create a file named seq_pos.xlsx containing the injection order, sample name, and sample type. Also a folder named POS_data must contain all .mzML files listed in the excel file.
 
 ```{r, eval=TRUE}
 # Load pos data
-seq_pos <- read_xlsx(paste0("seq_pos.xlsx"),
+seq_pos <- read_xlsx(paste0("seq_posE.xlsx"),
                  col_names = TRUE) |> as.data.frame()
-seq_pos$polarity <- "pos"    # create a column named polarity
 
-spectra_files_pos <- file.path("POS_data", seq_pos$`file_name`)
+spectra_files_pos <- file.path("POS_dataE", seq_pos$`file_name`)
+length(spectra_files_pos)
+file.exists(spectra_files_pos)
 
-mse_pos <- readMsExperiment(spectraFiles = spectra_files_pos,
-                            sampleData = seq_pos)
+#mse_pos <- readMsExperiment(spectraFiles = spectra_files_pos,
+#                            sampleData = seq_pos)
 
-sampleData(mse_pos)
+#sampleData(mse_pos)
 ```
 
-### 1.2.  Load the dataset directly from MetaboLights.
+DO NOT RUN
+```{r}
+# This code helps to check that the .mzML data are not corrupted and show the number of spectra per file
+library(mzR)
+
+archivos <- list.files(
+  "/Users/saralondonoosorio/Documents/GitHub/CEMBIO-EURAC/POS_dataE",
+  "\\.mzML$",
+  full.names = TRUE
+)
+
+resultado <- data.frame(
+  archivo = basename(archivos),
+  n_espectros = NA,
+  estado = NA
+)
+
+for (i in seq_along(archivos)) {
+  res <- tryCatch({
+    mz <- openMSfile(archivos[i])
+    n <- length(peaks(mz))
+    close(mz)
+    c(n, "OK")
+  }, error = function(e) {
+    c(NA, paste("ERROR:", e$message))
+  })
+  
+  resultado$n_espectros[i] <- as.numeric(res[1])
+  resultado$estado[i] <- res[2]
+}
+
+print(resultado)
+
+```
+
+
+To delete when i figure out how it works (el error aqui es que se sobrescribe la table que se exporta por cada batch y cuando intento solucionar esto para que la version de MSnbase que tengo no soporta los otros comandos alternos que me da)
+```{r}
+#| eval: false
+## Only run once
+library(MsBackendSql)
+library(RSQLite)
+library(BiocParallel)
+library(MSnbase)
+
+register(SerialParam())
+
+dbf_posE <- file.path("POS_dataE", "Exercise_pos.sqlite")
+if (file.exists(dbf_posE)) unlink(dbf_posE)
+lote_size <- 217L # batch size
+
+lotes <- split(
+  spectra_files_pos,
+  ceiling(seq_along(spectra_files_pos) / lote_size)
+)
+
+import_lote <- function(archivos, sqlite_path) {
+ con <- dbConnect(SQLite(), sqlite_path)
+  on.exit({
+    try(dbDisconnect(con), silent = TRUE)
+    gc()
+  }, add = TRUE)
+
+  createMsBackendSqlDatabase(
+    con,
+    archivos,
+    backend   = MsBackendMzR(),
+    chunksize = 1L
+  )
+}
+
+for (i in seq_along(lotes)) {
+  message("Importando lote ", i, " / ", length(lotes)) 
+  import_lote( 
+    archivos = lotes[[i]], sqlite_path = dbf_posE ) 
+  gc() 
+  Sys.sleep(2) 
+  }
+```
+
+Otro intento creando multiples sql databases y luego intentando unirlas al final 
+```{r}
+#| eval: false
+## Only run once
+library(MsBackendSql)
+library(RSQLite)
+library(BiocParallel)
+library(MSnbase)
+
+register(SerialParam())
+
+dbf_posE <- file.path("POS_dataE", "pilot_pos.sqlite")
+if (file.exists(dbf_posE)) unlink(dbf_posE)
+lote_size <- 15L # batch size
+
+lotes <- split(
+  spectra_files_pos,
+  ceiling(seq_along(spectra_files_pos) / lote_size)
+)
+# 2️⃣ Inicializar backend final
+backend_final <- NULL
+
+# 3️⃣ Procesar por lotes
+for (i in seq_along(lotes)) {
+  message("📦 Importando lote ", i, " / ", length(lotes))
+  
+  # Crear backend temporal para el lote
+  backend_tmp <- MsBackendMzR(lotes[[i]])  # ✅ esta es la forma correcta en 2.34.1
+  
+  # Concatenar con el backend final
+  if (is.null(backend_final)) {
+    backend_final <- backend_tmp
+  } else {
+    backend_final <- rbind(backend_final, backend_tmp)
+  }
+  
+  rm(backend_tmp)
+  gc()
+  Sys.sleep(1)
+}
+
+# 4️⃣ Exportar todo a SQLite una sola vez
+backend_final$exportSQLite(dbf_posE)
+message("✅ Importación completa. SQLite creada en: ", dbf_posE)
+```
+
+```{r}
+library(MSnbase)
+library(readxl)
+
+# 1️⃣ Leer archivos desde Excel
+seq_pos <- read_xlsx("seq_posE.xlsx", col_names = TRUE) |> as.data.frame()
+files <- file.path("POS_dataE", seq_pos$`file_name`)
+
+# Directorio para SQLite por lote
+sqlite_dir <- "POS_dataE/sqlite_lotes"
+if (!dir.exists(sqlite_dir)) dir.create(sqlite_dir)
+
+# Tamaño de lote
+lote_size <- 15L
+lotes <- split(files, ceiling(seq_along(files)/lote_size))
+
+# ----------------------------
+# 2️⃣ Crear SQLite por lote (archivo por archivo)
+# ----------------------------
+sqlite_files <- character(length(lotes))
+
+for (i in seq_along(lotes)) {
+  message("📦 Procesando lote ", i, " / ", length(lotes))
+  
+  # Crear backend vacío para concatenar archivos del lote
+  backend_lote <- NULL
+  
+  for (f in lotes[[i]]) {
+    backend_tmp <- MsBackendMzR(f)  # un archivo a la vez
+    
+    if (is.null(backend_lote)) {
+      backend_lote <- backend_tmp
+    } else {
+      backend_lote <- rbind(backend_lote, backend_tmp)
+    }
+    
+    rm(backend_tmp)
+    gc()
+  }
+  
+  # Exportar SQLite del lote
+  sqlite_lote <- file.path(sqlite_dir, paste0("lote_", i, ".sqlite"))
+  sqlite_files[i] <- sqlite_lote
+  backend_lote$exportSQLite(sqlite_lote)
+  
+  rm(backend_lote)
+  gc()
+}
+
+# ----------------------------
+# 3️⃣ Combinar todos los SQLite en un backend final
+# ----------------------------
+all_backends <- lapply(sqlite_files, MsBackendSql)
+backend_final <- do.call(rbind, all_backends)
+
+# Exportar SQLite final combinado
+dbf_posE <- "POS_dataE/Exercise_pos.sqlite"
+backend_final$exportSQLite(dbf_posE)
+
+message("✅ Importación completa. SQLite final: ", dbf_posE)
+
+
+```
+
+
+YES
+```{r}
+#| eval: true
+library(MsBackendSql)
+library(RSQLite)
+dbfE <- normalizePath(file.path("POS_dataE", "pilot_pos.sqlite"))
+
+s <- Spectra(dbname = dbfE, source = MsBackendOfflineSql(), drv = SQLite())
+s$base_file <- basename(s$dataOrigin)
+mse_pos <- MsExperiment(spectra = s, sampleData = seq_pos)
+mse_pos <- linkSampleData(
+  mse_pos, with = "sampleData.file_name = spectra.base_file")
+```
+
+OPTION 2: Load the dataset directly from MetaboLights as an alternative to mzml files.
 
 ```{r, eval=FALSE}
 param <- MetaboLightsParam(mtblsId = "MTBLS10722",
@@ -142,7 +324,7 @@ mse_pos <- readMsObject(MsExperiment(),
                         simplify = TRUE)
 ```
 
-When importing data from MetaboLights, certain variables must be mapped to ensure correct assignment of sample metadata and experimental information.
+Some variable mapping needs to be done when importing from MetaboLights
 
 ```{r, eval=FALSE}
 # Filter for the pilot study
@@ -162,15 +344,16 @@ mse_pos <- mse_pos[sampleData(mse_pos)$sample_type != "Blank"]
 
 ## reorder the sample based on injection order
 mse_pos <- mse_pos[order(sampleData(mse_pos)$injection_index), ]
+
+##only phili - subset to make analysis faster
+# mse_pos <- mse_pos[sampleData(mse_pos)$sample_type == "QC"]
 ```
 
 \[Phili: Here i would explain maybe some column names so that other people
 understand what is in them\]
 
-## 1.3. Load the data from Metabolomics workbench
-
-
-Adjust the number of processing cores according to the available system resources. It is recommended to use one or two cores fewer than the maximum capacity of the machine to ensure stable performance.
+Adjust the number of cores based on your machine. Suggested to use 1 or 2 below
+your higher capacity.
 
 ```{r, eval=TRUE}
 cores_nb <- 4  # Ajust here
@@ -181,28 +364,29 @@ if (.Platform$OS.type == "unix") {
 }
 ```
 
-Define color according the sample_type defined in the excel file: M-VAMS, C-qDBS, W-DBS, QC, Plasma
+Define color according the sample_type defined in the excel file: QC, Exercise and Resting
 
 ```{r,eval=TRUE}
-col_sample_type <- brewer.pal(9, name = "Set1")[c(9, 2, 1, 3, 4)]
+col_sample_type <- brewer.pal(9, name = "Set1")[c(9, 2, 3)]
 names(col_sample_type) <- c("QC",   # grey
-                          "M-VAMS", # blue
-                          "W-DBS",  # red
-                          "C-qDBS", # green
-                          "Plasma") # purple
+                          "Exercise", # blue
+                          "Resting") # green
 col_sample <- col_sample_type[sampleData(mse_pos)$sample_type]
 ```
 
-## Dataset investigation
+# Dataset investigation
 
 ## Chromatographic data visualization
 
-Generate a base peak chromatogram (BPC) plot for all samples, colored according to sample_type, including quality control (QC) samples.
+Base peak chromatogram (BPC) plot of all samples (colored by sample_type), including QCs.
+This step failed on Mac even if mse_pos object was upload succesfully
 
 ```{r, eval=run_plot}
 #| fig-cap: "BPC of all samples colored by phenotype"
 #' Extract and plot BPC for full data
 bpc <- chromatogram(mse_pos, aggregationFun = "max")
+
+#png("BPC_pos.png", width = 2000, height = 1500, res = 300)
 
 plot(bpc, col = paste0(col_sample, 80), main = "BPC", lwd = 1.5)
 grid()
@@ -210,15 +394,17 @@ legend("topright", col = col_sample_type,
        legend = names(col_sample_type), lty = 1, lwd = 2, cex=0.6,
        horiz = TRUE,
        bty = "n")
+
+#dev.off()
 ```
 
-Filter the data based on the retention time (RT) observed on the BPC. In this 
-data set we filter from 10 to 950 sec.
+Filter the data based on the retention time (RT) observed on the BPC. In this data set we filter from 10 to 950 sec.
 
 ```{r}
 #' Filter the data based on retention time
 mse_pos <- filterRt(mse_pos, c(10, 950))
 ```
+
 
 ```{r, eval=run_plot}
 #| fig-cap: "BPC after filtering retention time."
@@ -248,17 +434,19 @@ ann <- data.frame(sample_type = sampleData(mse_pos)[, "sample_type"])
 rownames(ann) <- rownames(ticmap)
 
 #' Plot heatmap
+#png("heatmap_pos.png", width = 2000, height = 1500, res = 300)
+
 pheatmap(ticmap, annotation_col = ann,
          annotation_colors = list(sample_type = col_sample_type),
          show_colnames = FALSE,
          show_rownames = FALSE)
+
+#dev.off()
 ```
 
 ## Extracted ion chromatograms (EIC)
 
-Upload the list of the reference lipids set (LRS) that will be used for (RT) shift correction.
-For this study, the RLS includes internal standards form SPLASH® LIPIDOMIX® as well as selected endogenous compounds.
-Retention times must be provided in seconds.
+Upload the list of the reference lipids (for this study: internal standards form SPLAH LIPIDOMIX and also some endogenous compounds), that will be used to make RT shift correction. RT must be in seconds.
 
 ```{r load-is, eval=TRUE, warning = FALSE}
 #| tbl.cap: "Set of reference lipids, including deuterated lipids from SPLASH LIPIDOMIX and some deuterated compounds that are in high abundance in plasma."
@@ -319,7 +507,7 @@ for (i in seq_len(nrow(eic_is))) {
 ```
 
 
-[Phili: do we need to keep this below ? now i have saved them locally] # SLO plot them for the tutorial?
+[Phili: do we need to keep this below ? now i have saved them locally]
 
 ```{r, eval=TRUE}
 #|fig.cap: "Example: EIC of three selected deuterated lipids."
@@ -359,9 +547,9 @@ legend("topright", col = col_sample_type, legend = names(col_sample_type),
 #dev.off()
 ```
 
-# 2. Data preprocessing
+# Data preprocessing
 
-## 2.1 Chromatographic peak detection
+## Chromatographic peak detection
 
 We use the deuterated LysoPC of the first sample to extract the *m/z*,
 calculate the absolute difference and expressed in ppm.
@@ -518,22 +706,22 @@ After applying the cinematographic peak detection over the entire dataset, we no
 ## Refinment of chromatographic peaks
 
 [Phili: I am testing for removal of refinment, this should help for the
-compounds annotation that elute very close to eachothers, I want ot keep it in the generic file but also plot some deuterated and see wehter they got merged or not, if they got merged we can remove the refinment step, if not we can keep it and show the results of the refinment step on the deuterated lipids]
+compounds annotation that elute very close to each others]
 
 ```{r, eval=FALSE}
 #' set up the parameter
-# param_msp <- MergeNeighboringPeaksParam(expandRt = 2.5, expandMz = 0.0015,
-#                                         minProp = 0.75)
+param_msp <- MergeNeighboringPeaksParam(expandRt = 2.5, expandMz = 0.0015,
+                                        minProp = 0.75)
 ```
 
 ```{r, eval=FALSE}
 #' Apply on whole dataset
-# mse_pos <- refineChromPeaks(mse_pos, param = param_msp, chunkSize = cores_nb)
+mse_pos <- refineChromPeaks(mse_pos, param = param_msp, chunkSize = cores_nb)
 ```
 
 ```{r, eval=FALSE}
-# chromPeakData(mse_pos)$merged |>
-#                          table()
+chromPeakData(mse_pos)$merged |>
+                         table()
 ```
 
 Evaluate the results of the chromatographic peak detection on EICs of e.g.
@@ -597,7 +785,7 @@ data.frame(
 
 A similar number of chromatographic peaks was identified across the different samples in the dataset. In all cases, W-DBS showed the lowest number of features, Which is expected because a smaller sample volume was injected; consequently, lower-intensity features were not detected in W-DBS samples.
 
-## 2.2. Retention time alignment
+## Retention time alignment
 
 To evaluate the presence of a shift we extract and plot below the BPC from the
 QC samples.
@@ -821,7 +1009,7 @@ list(all_raw = rowSds(rt_raw, na.rm = TRUE),
 grid()
 ```
 
-## 2.3. Correspondence
+## Correspondence
 
 The goal of the correspondence analysis is to identify chromatographic peaks
 that originate from the same types of ions in all samples of an experiment and
@@ -881,6 +1069,11 @@ param_cor <- PeakDensityParam(sampleGroups = group_mse,
                               minFraction = 0.5, binSize = 0.01, ppm = 10,
                               bw = 2)
 
+## for phili tests, to be removed later:
+# param_cor <- PeakDensityParam(sampleGroups = rep(1, length(mse_pos)),
+# minFraction = 0.5, binSize = 0.01, ppm = 10,
+# bw = 2)
+
 #' Apply to whole data
 mse_pos <- groupChromPeaks(mse_pos, param = param_cor)
 ```
@@ -907,15 +1100,11 @@ This corresponds to non-deuterated LysoPC and we can see that it can
 distinguish between the two peaks.
 
 ```{r, eval=run_plot}
-eic_is <- chromatogram(mse_pos,
-                       rt = as.matrix(intern_standard[, c("rtmin", "rtmax")]),
-                       mz = as.matrix(intern_standard[, c("mzmin", "mzmax")]))
 #| fig-cap: "Evaluation of the correspondance results in 17 EICs in the IS list."
 # Loop to go through all rows of the eic_is object and plot independent after correspondance analysis
 for (i in seq_len(nrow(eic_is))) {
   eic <- eic_is[i,]
-  png(paste0(dr, rownames(fData(eic_is))[i], "_correspondance.png"), ## check if the path breaks
-      width = 800, height = 600, res = 120)
+  #png add
   plot(eic,
        main = rownames(fData(eic_is))[i], #use the rawnames as tittles
        cex.axis = 0.8,
@@ -924,11 +1113,32 @@ for (i in seq_len(nrow(eic_is))) {
   )
   grid()
  abline(v = fData(eic_is)$rt[i], col = "red", lty = 3)
-    dev.off()
+}
+
+#paramw <-
+# Assuming mse_pos is your raw data object (XCMSnExp) ERROR
+mse_posp <- findChromPeaks(mse_pos, param = param)
+
+# Extract chromatograms again with peaks included ERROR
+eic_isp <- chromatogram(mse_posp,
+                       rt = as.matrix(intern_standard[, c("rtmin", "rtmax")]),
+                       mz = as.matrix(intern_standard[, c("mzmin", "mzmax")]))
+
+for (i in seq_len(nrow(eic_isp))) {
+  eicp <- eic_isp[i, ]
+  plotChromPeakDensity(
+    eicp, param = param_cor,
+    col = paste0(col_sample, "80"),
+    peakCol = col_sample[chromPeaks(mse_pos)[, "sample"]], # peaks now exist
+    peakBg = paste0(col_sample[chromPeaks(mse_pos)[, "sample"]], 20),
+    peakPch = 16
+  )
+  grid()
+  abline(v = fData(eic_icp)$rt[i], col = "red", lty = 3)
 }
 ```
 
-## 2.4 Gap filling
+## Gap filling
 
 We next examine how prevalent missing values are in our present dataset:
 
@@ -1004,8 +1214,7 @@ sum(!rowMeans(assay(res), na.rm = TRUE) > 1500) #1156 removed features
 
 ```{r, eval=FALSE}
 # save the mse_pos preprocessed object
-saveMsObject(mse_pos,
- AlabasterParam(path = file.path("objects/preprocessed_mse_pos")))
+saveMsObject(mse_pos, AlabasterParam(path = file.path("objects/preprocessed_mse_pos")))
 # save the SummarizedExperiemnt
 res@metadata <- list()
 saveObject(res, file.path("objects/preprocessed_res"))
@@ -1015,9 +1224,10 @@ saveObject(res, file.path("objects/preprocessed_res"))
 
 you can run the code below if you want to skip preprocessing. (do not forget
 to run the library loading code at the beginning of the script)
-[I would keep this code in the script, maybe change it into a function]
+
 
 ```{r, eval=FALSE, warning = FALSE}
+
 readMsObject(XcmsExperiment(), AlabasterParam(path = file.path("objects/preprocessed_mse_pos"))) -> mse_pos
 readObject(file.path("objects/preprocessed_res")) -> res
 
@@ -1055,7 +1265,7 @@ fData(eic_is)[c("CAR", "LysoPC", "dLysoPC", "dLysoPE", "LPC", "SM",
 ```
 
 
-# 3. Database correction
+# Database correction
 Here we apply a 6th degree Polynomial model to correct the database RT based on the RT shift observed on the reference lipid list
 
 ```{r, eval=TRUE}
@@ -1212,13 +1422,94 @@ are the reference lipids (17 between endogenous and deuterated)
 
 
 
-# 4. Annotate/ match
+# Annotate/ match
 
 Match features (query) against (aligned) database (target).
-[explain the strategy]
+DO NOT run for now.... this is a test for carnitines, a total of 19 carnitines were detected same as the ones detected by profinder
+
+```{r, eval = FALSE}
+# CAR annotation
+lipid_database_CAR <- lipid_database[lipid_database$`LIPID SUBCLASS [ABBREV]` == "Carnitines [CAR]", ]
+
+lipid_database_CAR <- lipid_database_CAR[lipid_database_CAR$rank == 1, ]
+## Get the reference/databse data as a data.frame
+target <- as.data.frame(lipid_database_CAR)
+target$mz <- as.numeric(target$mz)
+
+## Configure the matching between features (query) and database (target)
+param_match <- MzRtParam(tolerance = 0.001,
+                         ppm = 20,
+                         toleranceRt = 5. #+/-5 sec
+                         ) ## maybe adapt to settings from the original approach
+## Perform the matching; define also the column names in query and target that
+## contain the values to be matched (i.e. the m/z and retention time values)
+mtch <- matchValues(query, target,
+                    param = param_match,
+                    mzColname = c("mzmed", "mz"),
+                    rtColname = c("rtmed", "rt_adjusted"))
+mtch
+
+mtch <- mtch[whichQuery(mtch)]
+mtched_data <- matchedData(mtch) |>
+    as.data.frame()  ## can do some stuff with that table
+```
+
+DO NOT run for now
+```{r, eval = FALSE}
+# TGs annotation
+lipid_database_TG <- lipid_database[lipid_database$`LIPID SUBCLASS [ABBREV]` == "Triglycerides [TG]", ]
+
+lipid_database_TG$rank[
+  lipid_database_TG$Adduct == "Adduct[M+NH4]+"
+] <- 1
+
+lipid_database_TG$rank[
+  lipid_database_TG$Adduct == "Adduct[M+C2H7N2]+"
+] <- 2
+
+lipid_database_TG2 <- lipid_database_TG[lipid_database_TG$rank == 1, ]
+## Get the reference/databse data as a data.frame
+target <- as.data.frame(lipid_database_TG2)
+target$mz <- as.numeric(target$mz)
+
+## Configure the matching between features (query) and database (target)
+param_match <- MzRtParam(tolerance = 0.001,
+                         ppm = 20,
+                         toleranceRt = 5 #+/-5 sec
+                         ) ## maybe adapt to settings from the original approach
+## Perform the matching; define also the column names in query and target that
+## contain the values to be matched (i.e. the m/z and retention time values)
+mtch <- matchValues(query, target,
+                    param = param_match,
+                    mzColname = c("mzmed", "mz"),
+                    rtColname = c("rtmed", "rt_adjusted"))
+mtch
+
+mtch <- mtch[whichQuery(mtch)]
+mtched_data <- matchedData(mtch) |>
+    as.data.frame()  ## can do some stuff with that table
+
+## Get the features that match multiple targets
+fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
 
 
-## 4.1. Rank1 matching
+# table_amb
+table_amb <- mtched_data[mtched_data$feature_id %in% fids_ambiguous,
+                         c("feature_id", "mzmed", "rtmed", "target_lipid.name",
+                           "target_Adduct", "ppm_error", "score_rt",
+                           "target_rank")]
+table_amb <- table_amb[order(table_amb$feature_id, table_amb$rtmed), ]
+rownames(table_amb) <- NULL
+library(pander)
+pandoc.table(table_amb, split.table = Inf, style = "rmarkdown")
+
+#16 amb and 59 obs whe using amonium as predominant adduct
+#20 amb more ppm error from 3 to 18ppm and 81 obs when acetamidine is predominant adduct
+#we have 136 TG lipids in the databse
+write_xlsx(mtched_data, path = "TGs-Amonium.xlsx")
+```
+
+## rank1 matching
 
 Match features (query) against (aligned) database (target).
 
@@ -1269,7 +1560,7 @@ were matched to at least one lipid in the database. In total
 total `r nrow(target)` compounds/lipids in the database).
 
 
-## 4.2. Calculate isotope pattern similarity
+## Calculate isotope pattern similarity
 
 ```{r}
 library(enviPat)
@@ -1389,7 +1680,7 @@ sum(duplicated(mtched_data$feature_id))
 ```
 
 
-## 4.3. Matching Adducts (Rank > 1)
+## Matching Adducts (Rank > 1)
 
 - Returning the max abundance for each adduct
   can be found in the featureValues(mse_pos) and the rownames are the feature ids
@@ -1617,7 +1908,7 @@ fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
 sum(duplicated(mtched_data$feature_id))
 ```
 
-## 4.4. Dealing with Sn1 Sn2
+## Dealing with SM1 SM2
 
 ```{r}
 # A helper to extract the "Base Name" of a lipid (ignoring the 0:0 position)
@@ -1630,12 +1921,12 @@ get_lipid_base <- function(names) {
   return(clean)
 }
 
-# A helper to check if a name is Sn2 (starts with 0:0/ or contains (0:0/)
+# A helper to check if a name is SM2 (starts with 0:0/ or contains (0:0/)
 is_sm2 <- function(name) {
   grepl("0:0/", name, fixed = TRUE)
 }
 
-# A helper to check if a name is Sn1 (ends with /0:0 or contains /0:0))
+# A helper to check if a name is SM1 (ends with /0:0 or contains /0:0))
 is_sm1 <- function(name) {
   grepl("/0:0", name, fixed = TRUE)
 }
@@ -1677,8 +1968,8 @@ for (species in unique_species) {
 
     } else {
       # No Separation (Only 1 peak found)
-      # We have one feature matching BOTH Sn1 and Sn2.
-      # Rule: Keep Sn1, Remove Sn2.
+      # We have one feature matching BOTH SM1 and SM2.
+      # Rule: Keep SM1, Remove SM2.
 
       for (i in idx) {
         if (is_sm2(df_clean$target_lipid_name_unique[i])) {
@@ -1703,7 +1994,7 @@ mtched_data$ntch_idx <- seq_len(nrow(mtched_data))
 ```
 
 
-## 4.5. Final amb check
+## final amb check
 
 ```{r}
 ## lipid amb
@@ -1844,7 +2135,7 @@ sara <- subset(lipid_db_r1, grepl("ISTD", ORIGIN, ignore.case = TRUE))
 # we don have a match with TG istd and we should have it ERROR
 ```
 
-## 4.6. Plots with the annotated compounds (mtched_data), the feature abundance of each sample, can be found in assay(res)
+## Plots with the annotated compounds (mtched_data), the feature abundance of each sample, can be found in assay(res)
 
 ```{r}
 ## remove duplicated form the
@@ -1928,7 +2219,6 @@ legend("topright",
 -
 
 # Data normalization
-
 move the chunck that describes the annotated_res object
 ```{r}
 factors <- ifelse(grepl("W", colnames(res)), 2.5,
@@ -1941,6 +2231,11 @@ assay(res, "corr_filled") <- sweep(assay(res, "raw_filled"),
 print("Assays now in res object:")
 print(names(assays(res)))
 
+## Check the changes in one sample (CAN BE DELETED)
+# cbind(
+#   original = assay(res, "raw")["FT00001", "D10W_pos.mzML"],
+#   scaled   = assay(res, "raw_corr")["FT00001", "D10W_pos.mzML"]
+# )
 
 
 # Below i create a subset of the res object with only annotated features
@@ -1950,10 +2245,9 @@ rowData(annotated_res) <- cbind(rowData(annotated_res),
                                  mtched_data[match(rownames(annotated_res),
                                                    mtched_data$feature_id),
                                              c("target_lipid.name",
-                                              "target_LIPID.CATEGORY..ABBREV.",
-                                              "target_LIPID.SUBCLASS..ABBREV.",
-                                              "target_Adduct",
-                                              "target_IS_norm"
+                                               "target_LIPID.CATEGORY..ABBREV.",
+                                               "target_LIPID.SUBCLASS..ABBREV.",
+                                               "target_Adduct", "target_IS_norm"
                                              )])
 ## above if we have different lengths, it's because of duplicated features in the annotation table.
 
@@ -2069,6 +2363,9 @@ The only thing missing is this:
 Here before we impute the missing values we have to normalize per volume as
 follows: The abundance of all W-DBS samples should be multiply per 2.5 and
 Plasma samples per 1.08
+
+
+
 
 
 
@@ -2289,6 +2586,81 @@ res_df <- data.frame(
 
 kable(res_df, format = "pipe")
 ```
+## test median scaling
+
+```{r}
+#' Compute median and generate normalization factor
+mdns <- apply(assay(annotated_res, "ISnorm_filled"), MARGIN = 2,
+              median, na.rm = TRUE )
+nf_mdn <- mdns / median(mdns)
+
+#' divide dataset by median of median and create a new assay.
+assays(annotated_res)$median_scaling <- sweep(assay(annotated_res,
+                                                    "ISnorm_filled"),
+                                              MARGIN = 2, nf_mdn, '/')
+assays(annotated_res)$median_scaling_imputed <- sweep(assay(annotated_res,
+                                                            "ISnorm_filled_imputed"),
+                                                      MARGIN = 2,
+                                  nf_mdn, '/')
+```
+
+Intensity evaluation
+
+```{r}
+par(mfrow = c(2, 1), mar = c(3.5, 4.5, 2.5, 1))
+
+boxplot(rowRla(assay(annotated_res, "raw_filled"), group = annotated_res$sample_type),
+        cex = 0.5, pch = 16, ylab = "RLA", border = col_sample,
+        col = paste0(col_sample, 80), cex.main = 1, outline = FALSE,
+        xaxt = "n", main = "Raw data", boxwex = 1)
+grid(nx = NA, ny = NULL)
+legend("topright", inset = c(0, -0.2), col = col_sample_type,
+       legend = names(col_sample_type), lty=1, lwd = 2, xpd = TRUE,
+       ncol = 3, cex = 0.7, bty = "n")
+abline(h = 0, lty=3, lwd = 1, col = "black")
+
+boxplot(rowRla(assay(annotated_res, "median_scaling"), group = annotated_res$sample_type),
+        cex = 0.5, pch = 16, ylab = "RLA", border = col_sample,
+        col = paste0(col_sample, 80), boxwex = 1, outline = FALSE,
+        xaxt = "n", main = "Normallized data", cex.main = 1)
+axis(side = 1, at = seq_len(ncol(annotated_res)), labels = annotated_res$sample_name)
+grid(nx = NA, ny = NULL)
+abline(h = 0, lty = 3, lwd = 1, col = "black")
+```
+
+fix RLA plot before and after normalization - plot also intensity of IS before
+and after normalization (log 2)
+
+Coefficient of variation
+
+```{r}
+#' Calculate the CV values
+index_study <- annotated_res$sample_type %in% c("M-VAMS", "W-DBS", "C-qDBS", "Plasma")
+index_QC <- annotated_res$sample_type == "QC"
+
+sample_res <- cbind(
+    QC_raw = rowRsd(assay(annotated_res, "raw_filled")[, index_QC],
+                    na.rm = TRUE, mad = TRUE),
+    QC_norm = rowRsd(assay(annotated_res, "median_scaling")[, index_QC],
+                     na.rm = TRUE, mad = TRUE),
+    Study_raw = rowRsd(assay(annotated_res, "raw_filled")[, index_study],
+                       na.rm = TRUE, mad = TRUE),
+    Study_norm = rowRsd(assay(annotated_res, "median_scaling")[, index_study],
+                        na.rm = TRUE, mad = TRUE)
+)
+
+#' Summarize the values across features
+res_df <- data.frame(
+    QC_raw = quantile(sample_res[, "QC_raw"], na.rm = TRUE),
+    QC_norm = quantile(sample_res[, "QC_norm"], na.rm = TRUE),
+    Study_raw = quantile(sample_res[, "Study_raw"], na.rm = TRUE),
+    Study_norm = quantile(sample_res[, "Study_norm"], na.rm = TRUE)
+)
+
+kable(res_df, format = "pipe")
+```
+mm the median scaling seem to actually flatten the study sample variation...
+but it is quiote high so not sure hwat to think. I'll continue without fro now.
 
 From there on i guess we don't need QCs anymore
 
@@ -2307,11 +2679,120 @@ rowData(res)$qc_cv <- assay(res_qc, "ISnorm_filled") |>
                rowRsd()
 ```
 
-## Save output
+
+# Overlaping features
 
 ```{r}
+#create a logical matrix to be able to make the upsetplot
+df_logical <- !is.na(assay(res, "raw_filled"))
 
+# Extract group code (letter before "_pos.mzML")
+code <- sub(".*([MWCP])_pos\\.mzML$", "\\1", colnames(df_logical))
+
+# Map codes to descriptive names
+code_map <- c(
+  M = "M-VAMS",
+  C = "C-qDBS",
+  W = "W-DBS",
+  P = "Plasma"
+)
+groups <- code_map[code]
+
+# Collapse by group using 70% threshold
+result <- sapply(unique(groups), function(g) {
+  # number of samples in this group
+  n <- sum(groups == g)
+  # proportion of TRUEs across samples in this group
+  rowMeans(df_logical[, groups == g, drop = FALSE]) >= 0.7
+})
+
+# Result: logical matrix compounds x groups
+result[1:5, ]
+
+#make the upsetplot
+binary_data <-apply(result, MARGIN = 2, as.integer)
+upset(as.data.frame(binary_data), nset = 6, sets = colnames(result), keep.order = TRUE)
 ```
 
-# references 
 
+bELOW IS THE CODE THAT WILL BE DONE after we merge pos and neg together
+before we need to group the adducts for the same compound.
+Number of Features in common between the devices.
+
+# Differential abundance analysis
+
+```{r}
+#' Define the colors for the plot
+col_sample <- col_sample_type[res$sample_type]
+
+#' Log transform and scale the data for PCA analysis
+vals <- assay(res, "ISnorm_filled_imputed") |>
+    t() |>
+    log2() |>
+    scale(center = TRUE, scale = TRUE)
+pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
+
+vals_st <- cbind(vals, sample_type = res$sample_type)
+autoplot(pca_res, data = vals_st , colour = 'sample_type', scale = 0) +
+    scale_color_manual(values = col_sample_type)
+```
+
+PCA of the data after normalization and quality control, without QCs
+- Plotting with highlighting different colors would be good.
+
+The samples clearly separate by study group on PCA indicating that there are
+differences in the metabolite profiles between the groups, specially Plasma
+and de BuS devices are separated by the first component.
+
+```{r}
+#' Define the linear model to be applied to the data
+p.cut <- 0.05     # cut-off for significance.
+m.cut <- 0.5      # cut-off for log2 fold change
+
+age <- res$age
+sample_type <- factor(res$sample_type)
+design <- model.matrix(~ sample_type) ## here need to add  + sex, but that is not in the current metadata..
+
+#' Fit the linear model to the data, explaining metabolite
+#' concentrations by phenotype and age.
+fit <- lmFit(log2(assay(res, "ISnorm_filled_imputed")), design = design)
+fit <- eBayes(fit)
+```
+
+Below plot stuff for each, this is random code, it runs but i don't know if
+this is interesting or not.
+
+```{r}
+tmp <- data.frame(
+    coef.vams = fit$coefficients[, "sample_typeM-VAMS"],
+    pvalue.vams = fit$p.value[, "sample_typeM-VAMS"],
+    adjp.vams = p.adjust(fit$p.value[, "sample_typeM-VAMS"], method = "BH"),
+    avg.vams = rowMeans(
+        log2(assay(res, "ISnorm_filled_imputed")[, res$sample_type == "M-VAMS"])),
+    avg.CTR = rowMeans(
+        log2(assay(res, "ISnorm_filled_imputed")[, res$sample_type == "C-qDBS"]))
+)
+tmp$significant.vams <- tmp$adjp.vams < 0.05
+#' Add the results to the object's rowData
+rowData(res) <- cbind(rowData(res), tmp)
+```
+
+the thing above can be build for each device. and a heatmap can be build on it.
+
+```{r}
+#' Plot volcano plot of the statistical results
+par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
+plot(rowData(res)$coef.vams, -log10(rowData(res)$adjp.vams),
+     xlab = expression(log[2]~difference),
+     ylab = expression(-log[10]~p[BH]), pch = 16, col = "#00000060",
+     cex.main = 1.5, cex.lab = 1.5, cex.axis = 1.3)
+grid()
+abline(h = -log10(0.05), col = "#0000ffcc")
+if (any(rowData(res)$significant.vams)) {
+    points(rowData(res)$coef.vams[rowData(res)$significant.vams],
+           -log10(rowData(res)$adjp.vams[rowData(res)$significant.vams]),
+           col = "#0000ffcc")
+}
+```
+
+Cant hen have a table of significant features, build a heatmap,....

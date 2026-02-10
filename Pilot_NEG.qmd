@@ -113,6 +113,9 @@ Store the MS data into a SQLite database.
 ## Only run once
 library(MsBackendSql)
 library(RSQLite)
+
+register(SerialParam())
+
 dbf <- normalizePath(file.path("NEG_data", "pilot_neg.sqlite"))
 if (file.exists(dbf)) unlink(dbf)
 con <- dbConnect(SQLite(), dbf)
@@ -339,7 +342,7 @@ for (i in seq_len(nrow(eic_is))) {
 
 ```{r}
 #| eval: true
-#| fig.cap: "Example: EIC of three selected deuterated lipids."
+#| fig.cap: "Example: EIC of two selected deuterated lipids."
 # Chromatogram example of three lipids from the list that was imported before
 eic_FA <- eic_is["dFA"]
 eic_PI <- eic_is["dPI"]
@@ -522,26 +525,9 @@ the first two peaks have been detected properly in all sample, but this does
 not happen with the Carnitine (not even after changing the signal to noise
 ratio, or opening the window for the m/z or rt)
 
-## Refinment of chromatographic peaks
+## Refinment of chromatographic peaks DO NOT PERFORM refinement
 
-```{r}
-#| eval: false
-#' set up the parameter
-param_msp <- MergeNeighboringPeaksParam(expandRt = 2.5, expandMz = 0.0015,
-                                        minProp = 0.75)
-```
 
-```{r}
-#| eval: false
-#' Apply on whole dataset
-mse_neg <- refineChromPeaks(mse_neg, param = param_msp, chunkSize = cores_nb)
-```
-
-```{r}
-#| eval: false
-chromPeakData(mse_neg)$merged |>
-                         table()
-```
 
 Evaluate the results of the chromatographic peak detection on EICs of e.g.
 internal standards or other compounds/ions known to be present in the samples.
@@ -582,7 +568,7 @@ for (i in seq_len(nrow(eic_is))) {
     col = paste0(col_sample, 80)
   )
   grid()
-  # abline(v = median(rtime(eic)), col = "red", lty = 3) ## i have fixed that 3 times now please check the pos code.
+  abline(v = fData(eic_is)$rt[i], col = "red", lty = 3)
   dev.off()
 }
 ```
@@ -1019,8 +1005,8 @@ the objects again and continue the rest of the analysis from here.
 #| eval: false
 #mse_neg <- readMsObject(XcmsExperiment(), AlabasterParam(path = file.path("objects/preprocessed_mse_neg")))
 # the saving did not work for some reason. fro now just saved as Rdata object
-load("objects/preprocessed_mse_neg.RData")
-res <- readObject(file.path("objects/preprocessed_res_neg"))
+#load("objects/preprocessed_mse_neg.RData")
+#res <- readObject(file.path("objects/preprocessed_res_neg"))
 
 intern_standard <- read_xlsx("neg_splashlipidomix_list.xlsx") |>
     as.data.frame()
@@ -1484,7 +1470,7 @@ ip <- isopattern(
     isotopes,
     chem_checked$new_formula,
     threshold = 0.001,
-    charge = - 1,  ##  hardcoded 1 could be a problem
+    charge = -1,  ##  hardcoded 1 could be a problem
     rel_to = 0
 )
 theoretical_spectra <- isopattern_to_spectra(ip)
@@ -1643,8 +1629,7 @@ length(sum(is_duplicated))
 fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
 sum(duplicated(mtched_data$feature_id))
 ```
-
-## Dealing with SM1 SM2
+## Dealing with Sn1 Sn2
 
 ```{r}
 # A helper to extract the "Base Name" of a lipid (ignoring the 0:0 position)
@@ -1750,8 +1735,8 @@ table_amb
 table_amb$keep_row <- TRUE
 
 library(writexl)
-write_xlsx(table_amb, path = "feature_ambiguity_resolution.xlsx")
-write_xlsx(amblip, path = "lipid_ambiguity_resolution.xlsx")
+write_xlsx(table_amb, path = "feature_ambiguity_resolution_neg.xlsx")
+write_xlsx(amblip, path = "lipid_ambiguity_resolution_neg.xlsx")
 ```
 
 please fix the ambiguity manually in the excel files above by changing to
@@ -1762,16 +1747,16 @@ the feature can be a 1:many match but we will then just merge the annotation int
 ```{r}
 # Remove rows based on manual curation
 # Lipid Ambiguity
-lipid_amb_res <- read_excel("lipid_ambiguity_resolution.xlsx")
-mtch_to_be_rm <- lipid_amb_res$ntch_idx[!lipid_amb_res$keep_row]
-mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm, ]
+lipid_amb_res <- read_excel("lipid_ambiguity_resolution_neg.xlsx")
+mtch_to_be_rm <- lipid_amb_res$ntch_idx[lipid_amb_res$keep_row]
+mtched_data <- mtched_data[mtched_data$ntch_idx %in% mtch_to_be_rm, ]
 # Feature Ambiguity
-feature_amb_res <- read_excel("feature_ambiguity_resolution.xlsx")
-mtch_to_be_rm_ft <- feature_amb_res$ntch_idx[!feature_amb_res$keep_row]
-mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm_ft, ]
+feature_amb_res <- read_excel("feature_ambiguity_resolution_neg.xlsx")
+mtch_to_be_rm_ft <- feature_amb_res$ntch_idx[feature_amb_res$keep_row]
+mtched_data <- mtched_data[mtched_data$ntch_idx %in% mtch_to_be_rm_ft, ]
 
 ## check for duplicates again
-mtched_data$nb_annotations <- 1
+mtched_data$nb_annotations <- 1 # !!! tenía 193 en mtched_data
 key <- paste(mtched_data$target_lipid_name_unique,
              mtched_data$target_adduct, sep = "_")
 is_duplicated <- key %in% key[duplicated(key)]
