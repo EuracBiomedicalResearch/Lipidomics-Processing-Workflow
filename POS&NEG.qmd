@@ -1,12 +1,12 @@
 ---
 title: "POS&NEG"
 format: html
-editor: visual
+editor: source
 ---
 
 ## What to do after we have a res object for positive and negative ionization mode?
 
-  Put both objects together and add an extra column that specify the ionization mode of detection 
+Put both objects together and add an extra column that specify the ionization mode of detection 
 
 ```{r}
 
@@ -15,21 +15,63 @@ editor: visual
   Rule to eliminate duplicates: look in the data the duplicated entries for lipid name and pick up the entry that has the higher abundance, make sure that the retention times are similar 
 
   Then perform univariate and multivariate analysis? not sure if is this what we want 
-  
-  
-  
-## 
 
+# Downstream analysis:
 
-```{r}
-
-
-```
-
-You can add options to executable code like this
+# Overlaping features
 
 ```{r}
+#create a logical matrix to be able to make the upsetplot
+df_logical <- !is.na(assay(res, "raw_filled"))
 
+# Extract group code (letter before "_pos.mzML")
+code <- sub(".*([MWCP])_pos\\.mzML$", "\\1", colnames(df_logical))
+
+# Map codes to descriptive names
+code_map <- c(
+  M = "M-VAMS",
+  C = "C-qDBS",
+  W = "W-DBS",
+  P = "Plasma"
+)
+groups <- code_map[code]
+
+# Collapse by group using 70% threshold
+result <- sapply(unique(groups), function(g) {
+  # number of samples in this group
+  n <- sum(groups == g)
+  # proportion of TRUEs across samples in this group
+  rowMeans(df_logical[, groups == g, drop = FALSE]) >= 0.7
+})
+
+# Result: logical matrix compounds x groups
+result[1:5, ]
+
+#make the upsetplot
+binary_data <-apply(result, MARGIN = 2, as.integer)
+upset(as.data.frame(binary_data), nset = 6, sets = colnames(result), keep.order = TRUE)
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+## Data distribution 
+
+```{r}
+#' Define the colors for the plot
+col_sample <- col_sample_type[res$sample_type]
+
+#' Log transform and scale the data for PCA analysis
+vals <- assay(res, "ISnorm_filled_imputed") |>
+    t() |>
+    log2() |>
+    scale(center = TRUE, scale = TRUE)
+pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
+
+vals_st <- cbind(vals, sample_type = res$sample_type)
+autoplot(pca_res, data = vals_st , colour = 'sample_type', scale = 0) +
+    scale_color_manual(values = col_sample_type)
+```
+
+PCA of the data after normalization and quality control, without QCs
+- Plotting with highlighting different colors would be good.
+
+  
+  
