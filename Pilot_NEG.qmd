@@ -1846,7 +1846,6 @@ for (i in rownames(df_subset)) {
 }
 
 cat("All chromatograms saved in:", outdir, "\n")
-
 ```
 
 ## Plots with the annotated compounds (mtched_data), the feature abundance of each sample, can be found in assay(res)
