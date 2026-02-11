@@ -1,0 +1,5 @@
+Test: BLK-02
+Status: ERROR/VALIDATION_FAILED
+Error message: All rows of the input data contain missing values. Unable to impute missing values.
+Input size: 2x5
+Parameters: a=0.3000, b=0.7000, k=2

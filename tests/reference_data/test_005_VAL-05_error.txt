@@ -1,0 +1,5 @@
+Test: VAL-05
+Status: ERROR/VALIDATION_FAILED
+Error message: Output argument "datossinNaN" (and possibly others) not assigned a value in the execution with "reemplazarNaN3" function.
+Input size: 2x3
+Parameters: a=0.4000, b=1.2000, k=2

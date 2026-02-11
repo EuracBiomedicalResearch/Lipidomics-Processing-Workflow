@@ -1,0 +1,7 @@
+Test: EDG-05
+Status: SUCCESS
+Input size: 2x3
+Output size: 2x3
+Parameters: a=0.4000, b=0.7000, k=5
+NaN in input: 1
+NaN in output: 0
