@@ -883,8 +883,8 @@ apply_volume_correction <- function(se, sample_pattern_factors,
     factors[idx] <- sample_pattern_factors[[pattern]]
   }
 
-  assay(se, new_assay_name) <- sweep(assay(se, assay_name),
-                                     MARGIN = 2, STATS = factors, FUN = "*")
+  mat <- as.matrix(assay(se, assay_name))
+  assay(se, new_assay_name) <- sweep(mat, MARGIN = 2, STATS = factors, FUN = "*")
   return(se)
 }
 
