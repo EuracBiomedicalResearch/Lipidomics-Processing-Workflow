@@ -80,13 +80,13 @@ The other parameter SHOULD be adjusted while the workflop is being run.
 # ============================================================================
 
 # Analysis polarity: "pos" or "neg"
-POLARITY <- "pos"
+POLARITY <- "neg"
 
 # Data source: "local", "sqlite", or "metaboLights"
 # - "local": Load from local .mzML files in POS_data/ or NEG_data/
 # - "sqlite": Load from pre-built SQLite database (faster for repeated analyses)
 # - "metaboLights": Download directly from MetaboLights repository (MTBLS10722)
-DATA_SOURCE <- "local"
+DATA_SOURCE <- "sqlite"
 
 # MetaboLights study ID (only used if DATA_SOURCE = "metaboLights")
 MTBLS_ID <- "MTBLS10722"
@@ -100,7 +100,7 @@ CORES_NB <- 4
 
 # Retention time filter range (seconds) - adjust based on your BPC
 RT_FILTER_MIN <- 10
-RT_FILTER_MAX <- 950  # Use 800 for negative mode typically
+RT_FILTER_MAX <- 800  # Use 800 for negative mode typically
 
 # Chromatographic peak detection parameters
 PEAK_WIDTH <- c(4, 8)  # min and max peak width in seconds
@@ -552,7 +552,10 @@ mse_save_path <- file.path(folders$objects,
 res_save_path <- file.path(folders$objects,
                            paste0("preprocessed_res_", POLARITY))
 
-saveMsObject(mse, AlabasterParam(path = mse_save_path))
+#mse@spectra <- setBackend(mse@spectra, MsBackendMemory()) #Run this when you have the SQLite
+#spectra(mse) <- setBackend(spectra(mse), MsBackendMemory())
+save(mse, file= "mse_save_path")
+#saveMsObject(mse, AlabasterParam(path = mse_save_path))
 res@metadata <- list()
 saveObject(res, res_save_path)
 ```
@@ -560,26 +563,28 @@ saveObject(res, res_save_path)
 ---
 # Skip Preprocessing (Optional)
 
-Use this section to load previously saved objects if preprocessing was already 
+Use this section to load previously saved objects if prepossessing was already 
 done.
 
 ```{r load-preprocessed}
 #| label: load-preprocessed
 #| eval: false
 # Load package and colourm,.. 
-# Uncomment to load saved objects
-# mse_save_path <- file.path(folders$objects, paste0("preprocessed_mse_", POLARITY))
-# res_save_path <- file.path(folders$objects, paste0("preprocessed_res_", POLARITY))
-#
-# mse <- readMsObject(XcmsExperiment(), AlabasterParam(path = mse_save_path))
-# res <- readObject(res_save_path)
-#
+ #Uncomment to load saved objects
+# !!!loading packages is missing
+
+ mse_save_path <- file.path(folders$objects, paste0("preprocessed_mse_", POLARITY))
+ res_save_path <- file.path(folders$objects, paste0("preprocessed_res_", POLARITY))
+
+ mse <- readMsObject(XcmsExperiment(), AlabasterParam(path = mse_save_path))
+ res <- readObject(res_save_path)
+
 # # Reload internal standards
-# intern_standard <- prepare_reference_lipids(IS_FILE)
-# eic_is <- extract_is_eics(mse, intern_standard)
-# fdata <- fData(eic_is)
-#
-# message("✓ Loaded preprocessed objects")
+ intern_standard <- prepare_reference_lipids(IS_FILE)
+ eic_is <- extract_is_eics(mse, intern_standard)
+ fdata <- fData(eic_is)
+
+ message("✓ Loaded preprocessed objects")
 ```
 
 ---
@@ -815,7 +820,7 @@ ambiguities <- export_ambiguity_tables(mtched_data)
 
 Two Excel files have been created:
 
-1. **`lipid_ambiguity_resolution.xlsx`**: Cases where one lipid matches multiple features
+1. **`lipid_ambiguity_resolution.xlsx`**: Cases where one lipid matches multiple features (DEFAULT TABLE HAS VERDADERO in the keep_row)
 2. **`feature_ambiguity_resolution.xlsx`**: Cases where one feature matches multiple lipids
     Here if ambiguity are not resolved they will be merged. 
 
@@ -832,32 +837,34 @@ Two Excel files have been created:
 #| label: apply-curation
 
 # Uncomment after manual curation is complete
-# lipid_amb_res <- read_excel("lipid_ambiguity_resolution.xlsx")
-# mtch_to_be_rm <- lipid_amb_res$ntch_idx[!lipid_amb_res$keep_row]
-# mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm, ]
-#
-# feature_amb_res <- read_excel("feature_ambiguity_resolution.xlsx")
-# mtch_to_be_rm_ft <- feature_amb_res$ntch_idx[!feature_amb_res$keep_row]
-# mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm_ft, ]
-#
-# # Merge remaining duplicated features
-# mtched_data$nb_annotations <- 1
-# fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
-# for (i in unique(fids_ambiguous)) {
-#   idxs <- which(mtched_data$feature_id == i)
-#   if (length(idxs) > 1) {
-#     combined_names <- paste(unique(mtched_data$target_lipid_name_unique[idxs]),
-#                             collapse = "; ")
-#     combined_adducts <- paste(unique(mtched_data$target_adduct[idxs]),
-#                               collapse = "; ")
-#     mtched_data$target_lipid_name_unique[idxs[1]] <- combined_names
-#     mtched_data$target_adduct[idxs[1]] <- combined_adducts
-#     mtched_data <- mtched_data[-idxs[-1], ]
-#     mtched_data$nb_annotations[idxs[1]] <- length(idxs)
-#   }
-# }
-#
-# message("Final matched lipids: ", nrow(mtched_data))
+ lipid_amb_res <- read_excel("lipid_ambiguity_resolution.xlsx")
+ lipid_amb_res$keep_row <- as.logical(lipid_amb_res$keep_row)
+ mtch_to_be_rm <- lipid_amb_res$ntch_idx[!lipid_amb_res$keep_row]
+ mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm, ]
+
+ feature_amb_res <- read_excel("feature_ambiguity_resolution.xlsx")
+feature_amb_res$keep_row <- as.logical(feature_amb_res$keep_row)
+ mtch_to_be_rm_ft <- feature_amb_res$ntch_idx[!feature_amb_res$keep_row]
+ mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm_ft, ]
+
+ # Merge remaining duplicated features
+ mtched_data$nb_annotations <- 1
+ fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
+ for (i in unique(fids_ambiguous)) {
+   idxs <- which(mtched_data$feature_id == i)
+   if (length(idxs) > 1) {
+     combined_names <- paste(unique(mtched_data$target_lipid_name_unique[idxs]),
+                             collapse = "; ")
+     combined_adducts <- paste(unique(mtched_data$target_adduct[idxs]),
+                               collapse = "; ")
+     mtched_data$target_lipid_name_unique[idxs[1]] <- combined_names
+     mtched_data$target_adduct[idxs[1]] <- combined_adducts
+     mtched_data <- mtched_data[-idxs[-1], ]
+     mtched_data$nb_annotations[idxs[1]] <- length(idxs)
+   }
+ }
+
+ message("Final matched lipids: ", nrow(mtched_data))
 ```
 
 ## Annotation Summary
@@ -1062,6 +1069,13 @@ saveObject(res_final, file.path(folders$objects, paste0("final_res_", POLARITY))
 sessionInfo()
 ```
 
+# !!!coments
+I ave couple comments in the mean time: 
+-for gap filling what should we consider as a huge percentage to put a warning
+-In line 621, checkpoint (the red line do not overlap with the expected peak possition)
+-for line 622 and 623 should we write what is the R2 and residuals expected
+-Can we delete the note that appears on line 705 (electron mass)
+-for the isotopic pattern plots, I am not seeing any peaks on the raw data (I mean on top)
 ---
 
 # References
