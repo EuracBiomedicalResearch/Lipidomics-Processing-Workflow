@@ -53,6 +53,17 @@
 #' # SummarizedExperiment input
 #' result_se <- imputeBlockKNN(se, a = 0.4, b = 0.7, k = 5)
 #' }
+# Resolve the directory of this script at source() time so that
+# .knnimpute_rcpp can find knn_impute.cpp regardless of the caller's
+# working directory.
+.script_dir <- local({
+  for (i in seq_len(sys.nframe())) {
+    f <- sys.frame(i)$ofile
+    if (!is.null(f)) return(dirname(normalizePath(f)))
+  }
+  "."
+})
+
 #' @rdname imputeBlockKNN
 setGeneric("imputeBlockKNN", function(datos, a, b, k, ...) {
   standardGeneric("imputeBlockKNN")
@@ -251,13 +262,7 @@ setMethod(
     stop("Rcpp package is required. Install with: install.packages('Rcpp')")
   }
 
-  cpp_file <- file.path(
-    dirname(sys.frame(1)$ofile %||% "imputeBlockKNN.R"),
-    "knn_impute.cpp"
-  )
-  if (!file.exists(cpp_file)) {
-    cpp_file <- "knn_impute.cpp"
-  }
+  cpp_file <- file.path(.script_dir, "knn_impute.cpp")
 
   if (!exists("knn_impute_rcpp", mode = "function", envir = .GlobalEnv)) {
     Rcpp::sourceCpp(cpp_file)
