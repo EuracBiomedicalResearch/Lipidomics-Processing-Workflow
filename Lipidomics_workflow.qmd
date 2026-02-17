@@ -70,7 +70,7 @@ Before running, prepare these files:
 # Configuration
 
 Set the analysis polarity here. This single parameter controls the entire workflow.
-The other parameter SHOULD be adjusted while the workflop is being run. 
+The other parameter SHOULD be adjusted while the workflop is being run.
 
 ```{r config}
 #| label: configuration
@@ -212,40 +212,40 @@ seq_data$polarity <- POLARITY
 if (DATA_SOURCE == "local") {
   # ---- OPTION 1: Load from local mzML files ----
   message("Loading data from local mzML files...")
-  
+
   spectra_files <- file.path(folders$data, seq_data$file_name)
-  
+
   # Check files exist
   missing_files <- spectra_files[!file.exists(spectra_files)]
   if (length(missing_files) > 0) {
     stop("Missing files:\n", paste(missing_files, collapse = "\n"))
   }
-  
+
   mse <- readMsExperiment(spectraFiles = spectra_files, sampleData = seq_data)
-  
+
 } else if (DATA_SOURCE == "sqlite") {
   # ---- OPTION 2: Load from SQLite database ----
   # To create a database from mzML files first, run: source("R/create_sqlite_database.R")
-  
+
   # Use provided path or default based on polarity
   if (is.null(SQLITE_DB)) {
     SQLITE_DB <- file.path(folders$data, paste0("pilot_", POLARITY, ".sqlite"))
   }
-  
+
   mse <- load_from_sqlite(SQLITE_DB, seq_data)
-  
+
 } else if (DATA_SOURCE == "metaboLights") {
   # ---- OPTION 3: Load from MetaboLights ----
   # This loads data directly from the MetaboLights repository.
   # You need to configure the column_mapping for your specific study.
-  
+
   # Define assay name based on polarity (specific to MTBLS10722)
   assay_name <- if (POLARITY == "pos") {
     "a_MTBLS10722_LC-MS_positive_reverse-phase_metabolite_profiling.txt"
   } else {
     "a_MTBLS10722_LC-MS_negative_reverse-phase_metabolite_profiling.txt"
   }
-  
+
   # Column mapping for MTBLS10722 - adjust for other studies
   # To find column names, visit: https://www.ebi.ac.uk/metabolights/{MTBLS_ID}
   # and examine the assay file chosen above (a_*.txt)
@@ -255,7 +255,7 @@ if (DATA_SOURCE == "local") {
     sample_type = "Factor Value[Sample type]",
     injection_index = "Comment[injection_index]"
   )
-  
+
   mse <- load_from_metaboLights(
     mtbls_id = MTBLS_ID,
     assay_name = assay_name,
@@ -265,7 +265,7 @@ if (DATA_SOURCE == "local") {
     exclude_sample_types = "Blank",
     polarity = POLARITY
   )
-  
+
 } else {
   stop("Invalid DATA_SOURCE: '", DATA_SOURCE, "'. Use 'local', 'sqlite', or 'metaboLights'.")
 }
@@ -293,7 +293,7 @@ palette_sample_type <- create_color_palette(
       "W-DBS" = "#E41A1C",
       "C-qDBS" = "#4DAF4A",
       "Plasma" = "#984EA3"
-    ) 
+    )
 )
 
 # You can create additional palettes for other columns, e.g.:
@@ -377,12 +377,12 @@ Check the EIC plots saved in **`r folders$eic_istd`**.
 - The red dashed line indicates the expected RT
 - Each peak should be detected in most/all samples
 - Note any compounds that show poor signal or unexpected RT shifts
-- Note Peak Width. 
+- Note Peak Width.
 :::
 
 ---
 
-Add ppm code? 
+Add ppm code?
 
 # Data Preprocessing
 
@@ -530,7 +530,20 @@ mse <- fillChromPeaks(mse, param = ChromPeakAreaParam(), chunkSize = CORES_NB)
 na_after <- sum(is.na(featureValues(mse))) / length(featureValues(mse)) * 100
 
 message("Gap filling: ", round(na_before, 1), "% -> ", round(na_after, 1), "% NA")
+
+# Warning for high initial NA percentage
+if (na_before > 50) {
+  warning("High initial missing value percentage (", round(na_before, 1),
+          "%). Consider reviewing peak detection parameters or sample quality.")
+}
 ```
+
+::: {.callout-note}
+## Gap Filling Guidance
+- **< 30% NA before filling**: Good - typical for well-detected features
+- **30-50% NA before filling**: Acceptable - may indicate lower abundance compounds
+- **> 50% NA before filling**: Review peak detection parameters or sample quality
+:::
 
 ## Extract Results and Save
 
@@ -552,10 +565,14 @@ mse_save_path <- file.path(folders$objects,
 res_save_path <- file.path(folders$objects,
                            paste0("preprocessed_res_", POLARITY))
 
-#mse@spectra <- setBackend(mse@spectra, MsBackendMemory()) #Run this when you have the SQLite
-#spectra(mse) <- setBackend(spectra(mse), MsBackendMemory())
-save(mse, file= "mse_save_path")
-#saveMsObject(mse, AlabasterParam(path = mse_save_path))
+# If SQLite backend is used, convert to in-memory before saving
+if (DATA_SOURCE == "sqlite") {
+  spectra(mse) <- setBackend(spectra(mse), MsBackendMemory())
+  save(mse, file = paste0(mse_save_path, ".RData"))
+} else {
+  saveMsObject(mse, AlabasterParam(path = mse_save_path))
+}
+
 res@metadata <- list()
 saveObject(res, res_save_path)
 ```
@@ -563,20 +580,25 @@ saveObject(res, res_save_path)
 ---
 # Skip Preprocessing (Optional)
 
-Use this section to load previously saved objects if prepossessing was already 
+Use this section to load previously saved objects if prepossessing was already
 done.
 
 ```{r load-preprocessed}
 #| label: load-preprocessed
 #| eval: false
-# Load package and colourm,.. 
- #Uncomment to load saved objects
-# !!!loading packages is missing
+ source("R/lipid_helpers.R")
+ load_lipid_packages(verbose = TRUE)
+ folders <- setup_folders(polarity = POLARITY)
 
  mse_save_path <- file.path(folders$objects, paste0("preprocessed_mse_", POLARITY))
  res_save_path <- file.path(folders$objects, paste0("preprocessed_res_", POLARITY))
 
- mse <- readMsObject(XcmsExperiment(), AlabasterParam(path = mse_save_path))
+ # Load mse: .RData file (from SQLite workflow) or Alabaster directory
+ if (file.exists(paste0(mse_save_path, ".RData"))) {
+   load(paste0(mse_save_path, ".RData"))  # loads 'mse'
+ } else {
+   mse <- readMsObject(XcmsExperiment(), AlabasterParam(path = mse_save_path))
+ }
  res <- readObject(res_save_path)
 
 # # Reload internal standards
@@ -623,9 +645,10 @@ summary(rt_fit$fit)
 ## 📋 USER CHECKPOINT: RT Correction Model
 Review the diagnostic plots in **`r folders$ref_lipid`**.
 
-- The red line should overlap with expected peak positions
-- Check R² value
-- Examine residuals for systematic patterns
+- Red points (reference lipids) should align closely with the fitted curve
+- **R² > 0.95** is expected for a good fit; values below 0.90 indicate poor calibration
+- **Residuals** should be randomly distributed around zero with no systematic patterns
+- Typical residual range: ±10 seconds; larger deviations suggest outlier reference compounds
 :::
 
 ## Load and Correct Lipid Database
@@ -726,9 +749,9 @@ plot_isotope_patterns(
 Review the mirror plots in **`r folders$iso_pattern`**.
 
 - Experimental (top) should match theoretical (bottom) patterns
-- Check compounds with similarity scores near the threshold, adjust threshold
-  if needed
-- Note any false positive matches
+- Check compounds with similarity scores near the threshold; adjust
+ `ISOPEAK_SIM_THRESHOLD` if needed
+- Note any false positive matches where patterns clearly don't align
 :::
 
 ## Adduct Matching (Rank > 1)
@@ -822,7 +845,7 @@ Two Excel files have been created:
 
 1. **`lipid_ambiguity_resolution.xlsx`**: Cases where one lipid matches multiple features (DEFAULT TABLE HAS VERDADERO in the keep_row)
 2. **`feature_ambiguity_resolution.xlsx`**: Cases where one feature matches multiple lipids
-    Here if ambiguity are not resolved they will be merged. 
+    Here if ambiguity are not resolved they will be merged.
 
 **Action Required:**
 - Open each file
@@ -837,34 +860,34 @@ Two Excel files have been created:
 #| label: apply-curation
 
 # Uncomment after manual curation is complete
- lipid_amb_res <- read_excel("lipid_ambiguity_resolution.xlsx")
- lipid_amb_res$keep_row <- as.logical(lipid_amb_res$keep_row)
- mtch_to_be_rm <- lipid_amb_res$ntch_idx[!lipid_amb_res$keep_row]
- mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm, ]
+lipid_amb_res <- read_excel("lipid_ambiguity_resolution.xlsx")
+lipid_amb_res$keep_row <- as.logical(lipid_amb_res$keep_row)
+mtch_to_be_rm <- lipid_amb_res$ntch_idx[!lipid_amb_res$keep_row]
+mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm, ]
 
- feature_amb_res <- read_excel("feature_ambiguity_resolution.xlsx")
+feature_amb_res <- read_excel("feature_ambiguity_resolution.xlsx")
 feature_amb_res$keep_row <- as.logical(feature_amb_res$keep_row)
- mtch_to_be_rm_ft <- feature_amb_res$ntch_idx[!feature_amb_res$keep_row]
- mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm_ft, ]
+mtch_to_be_rm_ft <- feature_amb_res$ntch_idx[!feature_amb_res$keep_row]
+mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm_ft, ]
 
- # Merge remaining duplicated features
- mtched_data$nb_annotations <- 1
- fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
- for (i in unique(fids_ambiguous)) {
-   idxs <- which(mtched_data$feature_id == i)
-   if (length(idxs) > 1) {
-     combined_names <- paste(unique(mtched_data$target_lipid_name_unique[idxs]),
-                             collapse = "; ")
-     combined_adducts <- paste(unique(mtched_data$target_adduct[idxs]),
-                               collapse = "; ")
-     mtched_data$target_lipid_name_unique[idxs[1]] <- combined_names
-     mtched_data$target_adduct[idxs[1]] <- combined_adducts
-     mtched_data <- mtched_data[-idxs[-1], ]
-     mtched_data$nb_annotations[idxs[1]] <- length(idxs)
-   }
- }
+# Merge remaining duplicated features
+mtched_data$nb_annotations <- 1
+fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
+for (i in unique(fids_ambiguous)) {
+  idxs <- which(mtched_data$feature_id == i)
+  if (length(idxs) > 1) {
+    combined_names <- paste(unique(mtched_data$target_lipid_name_unique[idxs]),
+                            collapse = "; ")
+    combined_adducts <- paste(unique(mtched_data$target_adduct[idxs]),
+                              collapse = "; ")
+    mtched_data$target_lipid_name_unique[idxs[1]] <- combined_names
+    mtched_data$target_adduct[idxs[1]] <- combined_adducts
+    mtched_data <- mtched_data[-idxs[-1], ]
+    mtched_data$nb_annotations[idxs[1]] <- length(idxs)
+  }
+}
 
- message("Final matched lipids: ", nrow(mtched_data))
+message("Final matched lipids: ", nrow(mtched_data))
 ```
 
 ## Annotation Summary
@@ -896,10 +919,10 @@ plot_lipid_donut(counts, title = "Annotated Lipid Distribution")
 
 # Apply volume correction
 res <- apply_volume_correction(res, VOLUME_FACTORS,
-                               assay_name = "raw", 
+                               assay_name = "raw",
                                new_assay_name = "raw_corr")
 res <- apply_volume_correction(res, VOLUME_FACTORS,
-                               assay_name = "raw_filled", 
+                               assay_name = "raw_filled",
                                new_assay_name = "corr_filled")
 ```
 
@@ -915,7 +938,8 @@ annotated_res <- res[rownames(res) %in% mtched_data$feature_id, ]
 rowData(annotated_res) <- cbind(
   rowData(annotated_res),
   mtched_data[match(rownames(annotated_res), mtched_data$feature_id),
-              c("target_lipid.name", "target_LIPID.CATEGORY..ABBREV.",
+              c("target_lipid.name", "target_lipid_name_unique",
+                "target_LIPID.CATEGORY..ABBREV.",
                 "target_LIPID.SUBCLASS..ABBREV.", "target_Adduct",
                 "target_IS_norm")]
 )
@@ -925,7 +949,7 @@ message("Annotated result object: ", nrow(annotated_res), " features")
 
 ## Missing Value Imputation
 
-We impute here only to perfrom PCA plotting. 
+We impute here only to perfrom PCA plotting.
 
 ```{r imputation}
 #| label: imputation
@@ -1069,16 +1093,9 @@ saveObject(res_final, file.path(folders$objects, paste0("final_res_", POLARITY))
 sessionInfo()
 ```
 
-# !!!coments
-I ave couple comments in the mean time: 
--for gap filling what should we consider as a huge percentage to put a warning
--In line 621, checkpoint (the red line do not overlap with the expected peak possition)
--for line 622 and 623 should we write what is the R2 and residuals expected
--Can we delete the note that appears on line 705 (electron mass)
--for the isotopic pattern plots, I am not seeing any peaks on the raw data (I mean on top)
 ---
 
-# References
+# Reference
 
 1. Database source: <https://doi.org/10.1016/j.jlr.2024.100671>
 2. Original study: <https://doi.org/10.1016/j.microc.2025.113760>
