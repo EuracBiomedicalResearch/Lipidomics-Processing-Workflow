@@ -528,13 +528,13 @@ plot_isotope_patterns <- function(mtched_data, iso_spectra, theoretical_spectra,
     cmp <- paste0(mtched_data$target_lipid_name_unique[i],
                   "_", mtched_data$target_adduct[i])
     cmp <- gsub("[():/ +]", "", cmp)
+    fid <- mtched_data$feature_id[i]
 
-    out_file <- file.path(output_dir,
-                          paste0(cmp, "_", iso_spectra$feature_id[i], ".png"))
+    out_file <- file.path(output_dir, paste0(cmp, "_", fid, ".png"))
     png(filename = out_file, width = 8, height = 8, units = "cm",
         res = 600, pointsize = 4)
     plotSpectraMirror(iso_spectra[i], theoretical_spectra[i], ppm = 20,
-                      main = paste(cmp, iso_spectra$feature_id[i], sep = " - "))
+                      main = paste(cmp, fid, sep = " - "))
     dev.off()
   }
 
@@ -761,10 +761,14 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
     concatenateSpectra() |>
     scalePeaks(by = max)
 
-  # Calculate theoretical patterns
-  chem_checked <- check_chemform(isotopes, mtched_data$target_adduct_formula)
-  ip <- isopattern(isotopes, chem_checked$new_formula,
-                   threshold = 0.001, charge = charge, rel_to = 0)
+  # Calculate theoretical patterns (suppress electron configuration messages)
+  chem_checked <- suppressMessages(suppressWarnings(
+    check_chemform(isotopes, mtched_data$target_adduct_formula)
+  ))
+  ip <- suppressMessages(suppressWarnings(
+    isopattern(isotopes, chem_checked$new_formula,
+               threshold = 0.001, charge = charge, rel_to = 0)
+  ))
   theoretical_spectra <- isopattern_to_spectra(ip)
 
   # Calculate similarity
@@ -775,13 +779,18 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
   )
 
   # Filter
-  mtched_data <- subset(mtched_data,
-                        isopeak_count >= isopeak_threshold &
-                          isopeak_sim >= similarity_threshold)
+  keep <- mtched_data$isopeak_count >= isopeak_threshold &
+    mtched_data$isopeak_sim >= similarity_threshold
+  mtched_data <- mtched_data[keep, ]
+
+  # Subset spectra to match filtered mtched_data
+  keep_indices <- match_indices[keep]
+  iso_spectra_filtered <- iso_spectra[keep_indices]
+  theoretical_spectra_filtered <- theoretical_spectra[keep]
 
   return(list(mtched_data = mtched_data,
-              iso_spectra = iso_spectra,
-              theoretical_spectra = theoretical_spectra))
+              iso_spectra = iso_spectra_filtered,
+              theoretical_spectra = theoretical_spectra_filtered))
 }
 
 #' Resolve SM1/SM2 isomer ambiguity
@@ -883,6 +892,7 @@ apply_volume_correction <- function(se, sample_pattern_factors,
     factors[idx] <- sample_pattern_factors[[pattern]]
   }
 
+  # Convert to matrix to avoid DelayedArray issues with sweep
   mat <- as.matrix(assay(se, assay_name))
   assay(se, new_assay_name) <- sweep(mat, MARGIN = 2, STATS = factors, FUN = "*")
   return(se)
