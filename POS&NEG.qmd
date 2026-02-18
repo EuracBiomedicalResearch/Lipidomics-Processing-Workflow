@@ -9,69 +9,324 @@ editor: source
 Put both objects together and add an extra column that specify the ionization mode of detection 
 
 ```{r}
-
+#| label: load-packages
+library(alabaster.se)
+library(SummarizedExperiment)
+library(UpSetR)
+library(ggfortify)
 ```
 
-  Rule to eliminate duplicates: look in the data the duplicated entries for lipid name and pick up the entry that has the higher abundance, make sure that the retention times are similar 
+### Load positive and negative mode results
 
-  Then perform univariate and multivariate analysis? not sure if is this what we want 
+```{r}
+#| label: load-data
+# Read the positive and negative results
+res_pos <- readObject("objects/final_res_pos")
+res_neg <- readObject("objects/final_res_neg")
+
+cat("Positive mode:", nrow(res_pos), "features x", ncol(res_pos), "samples\n")
+cat("Negative mode:", nrow(res_neg), "features x", ncol(res_neg), "samples\n")
+```
+
+### Add ionization mode annotation
+
+```{r}
+#| label: add-mode
+# Add ionization mode column to rowData
+rowData(res_pos)$ionization_mode <- "positive"
+rowData(res_neg)$ionization_mode <- "negative"
+```
+
+### Align samples between modes
+
+```{r}
+#| label: align-samples
+# Harmonize sample names (remove _pos/_neg suffix for matching)
+pos_order <- sub("_pos\\.mzML$", "", colnames(res_pos))
+neg_order <- sub("_neg\\.mzML$", "", colnames(res_neg))
+
+# Reorder neg to match pos sample order
+neg_reorder_idx <- match(pos_order, neg_order)
+res_neg <- res_neg[, neg_reorder_idx]
+
+# Verify order matches
+stopifnot(all(pos_order == sub("_neg\\.mzML$", "", colnames(res_neg))))
+```
+
+### Identify and handle duplicate lipids
+
+Rule to eliminate duplicates: for duplicated lipid names between modes, pick the entry with higher abundance, ensuring retention times are similar (<30 sec difference). We use `target_lipid_name_unique` to properly handle isomers.
+
+```{r}
+#| label: find-duplicates
+# Find common lipids between pos and neg using unique names (handles isomers)
+common_lipids <- intersect(
+    rowData(res_pos)$target_lipid_name_unique,
+    rowData(res_neg)$target_lipid_name_unique
+)
+
+cat("Number of common lipids:", length(common_lipids), "\n")
+
+# Create comparison data frame
+comparison_df <- data.frame(
+    lipid_name_unique = common_lipids,
+    pos_idx = match(common_lipids, rowData(res_pos)$target_lipid_name_unique),
+    neg_idx = match(common_lipids, rowData(res_neg)$target_lipid_name_unique)
+)
+
+# Calculate mean abundances and retention times
+comparison_df$pos_mean_abundance <- sapply(comparison_df$pos_idx, function(i) {
+    mean(assay(res_pos, "ISnorm_filled_imputed")[i, ], na.rm = TRUE)
+})
+comparison_df$neg_mean_abundance <- sapply(comparison_df$neg_idx, function(i) {
+    mean(assay(res_neg, "ISnorm_filled_imputed")[i, ], na.rm = TRUE)
+})
+
+comparison_df$pos_rt <- rowData(res_pos)$rtmed[comparison_df$pos_idx]
+comparison_df$neg_rt <- rowData(res_neg)$rtmed[comparison_df$neg_idx]
+comparison_df$rt_diff <- abs(comparison_df$pos_rt - comparison_df$neg_rt)
+
+# Flag similar RT (within 30 seconds)
+comparison_df$rt_similar <- comparison_df$rt_diff < 30
+
+# Decide which mode to keep (higher abundance wins)
+comparison_df$keep_mode <- ifelse(
+    comparison_df$pos_mean_abundance >= comparison_df$neg_mean_abundance,
+    "positive", "negative"
+)
+
+cat("\nRetention time differences summary:\n")
+summary(comparison_df$rt_diff)
+
+cat("\nLipids with dissimilar RT (>30s, kept in both modes):\n")
+comparison_df[!comparison_df$rt_similar, c("lipid_name_unique", "pos_rt", "neg_rt", "rt_diff")]
+```
+
+### Remove duplicates
+
+```{r}
+#| label: remove-duplicates
+# Positive: remove common lipids where neg has higher abundance AND similar RT
+pos_remove_idx <- comparison_df$pos_idx[
+    comparison_df$keep_mode == "negative" & comparison_df$rt_similar
+]
+
+# Negative: remove common lipids where pos has higher abundance AND similar RT
+neg_remove_idx <- comparison_df$neg_idx[
+    comparison_df$keep_mode == "positive" & comparison_df$rt_similar
+]
+
+cat("Removing", length(pos_remove_idx), "duplicates from positive mode\n")
+cat("Removing", length(neg_remove_idx), "duplicates from negative mode\n")
+
+# Create filtered datasets
+res_pos_filtered <- res_pos[-pos_remove_idx, ]
+res_neg_filtered <- res_neg[-neg_remove_idx, ]
+
+cat("\nPositive after filtering:", nrow(res_pos_filtered), "features\n")
+cat("Negative after filtering:", nrow(res_neg_filtered), "features\n")
+```
+
+### Combine into single SummarizedExperiment
+
+```{r}
+#| label: combine-results
+# Standardize sample names (remove polarity suffix)
+colnames(res_pos_filtered) <- sub("_pos\\.mzML$", "", colnames(res_pos_filtered))
+colnames(res_neg_filtered) <- sub("_neg\\.mzML$", "", colnames(res_neg_filtered))
+
+# Standardize colData columns that differ between modes
+colData(res_pos_filtered)$file_name <- sub("_pos\\.mzML$", "", colData(res_pos_filtered)$file_name)
+colData(res_neg_filtered)$file_name <- sub("_neg\\.mzML$", "", colData(res_neg_filtered)$file_name)
+
+# Remove mode-specific columns from colData
+colData(res_pos_filtered)$spectraOrigin <- NULL
+colData(res_neg_filtered)$spectraOrigin <- NULL
+colData(res_pos_filtered)$polarity <- NULL
+colData(res_neg_filtered)$polarity <- NULL
+
+# Ensure ionization_mode is in rowData (should have been added earlier)
+if (!"ionization_mode" %in% colnames(rowData(res_pos_filtered))) {
+    rowData(res_pos_filtered)$ionization_mode <- "positive"
+}
+if (!"ionization_mode" %in% colnames(rowData(res_neg_filtered))) {
+    rowData(res_neg_filtered)$ionization_mode <- "negative"
+}
+
+# Combine row-wise (features are rows)
+res_combined <- rbind(res_pos_filtered, res_neg_filtered)
+
+cat("Combined dataset:", nrow(res_combined), "features x", ncol(res_combined), "samples\n")
+cat("Features from positive mode:", sum(rowData(res_combined)$ionization_mode == "positive"), "\n")
+cat("Features from negative mode:", sum(rowData(res_combined)$ionization_mode == "negative"), "\n")
+```
+
+### Save combined results
+
+```{r}
+#| label: save-combined
+saveObject(res_combined, "objects/res_combined")
+```
+
+### Summary table of duplicate handling
+
+```{r}
+#| label: duplicate-summary
+# Create summary of what happened to duplicates
+dup_summary <- comparison_df |>
+    dplyr::mutate(
+        decision = dplyr::case_when(
+            !rt_similar ~ "Kept both (different RT)",
+            keep_mode == "positive" ~ "Kept positive (higher abundance)",
+            keep_mode == "negative" ~ "Kept negative (higher abundance)"
+        )
+    )
+
+cat("Duplicate resolution summary:\n")
+table(dup_summary$decision)
+
+# Show which lipids were kept in which mode
+cat("\nDetailed duplicate resolution:\n")
+dup_summary[, c("lipid_name_unique", "decision",
+ "pos_mean_abundance", "neg_mean_abundance")]
+``` 
 
 # Downstream analysis:
 
-# Overlaping features
+## Overlapping features across sample types
 
 ```{r}
-#create a logical matrix to be able to make the upsetplot
-df_logical <- !is.na(assay(res, "raw_filled"))
+#| label: upset-plot
+# Create a logical matrix to be able to make the upsetplot
+df_logical <- !is.na(assay(res_combined, "raw_filled"))
 
-# Extract group code (letter before "_pos.mzML")
-code <- sub(".*([MWCP])_pos\\.mzML$", "\\1", colnames(df_logical))
+# Extract group code from sample names
+code <- sub(".*([MWCP])$", "\\1", colnames(df_logical))
 
 # Map codes to descriptive names
 code_map <- c(
-  M = "M-VAMS",
-  C = "C-qDBS",
-  W = "W-DBS",
-  P = "Plasma"
+    M = "M-VAMS",
+    C = "C-qDBS",
+    W = "W-DBS",
+    P = "Plasma"
 )
 groups <- code_map[code]
 
 # Collapse by group using 70% threshold
 result <- sapply(unique(groups), function(g) {
-  # number of samples in this group
-  n <- sum(groups == g)
-  # proportion of TRUEs across samples in this group
-  rowMeans(df_logical[, groups == g, drop = FALSE]) >= 0.7
+    n <- sum(groups == g)
+    rowMeans(df_logical[, groups == g, drop = FALSE]) >= 0.7
 })
 
-# Result: logical matrix compounds x groups
-result[1:5, ]
-
-#make the upsetplot
-binary_data <-apply(result, MARGIN = 2, as.integer)
-upset(as.data.frame(binary_data), nset = 6, sets = colnames(result), keep.order = TRUE)
+# Make the upsetplot
+binary_data <- apply(result, MARGIN = 2, as.integer)
+upset(as.data.frame(binary_data), nsets = 6, sets = colnames(result), keep.order = TRUE)
 ```
 
 ## Data distribution 
 
 ```{r}
-#' Define the colors for the plot
-col_sample <- col_sample_type[res$sample_type]
+#| label: pca-setup
+# Define colors for sample types
+col_sample_type <- c(
+    "QC" = "#1b9e77",
+    "sample" = "#d95f02"
+)
 
-#' Log transform and scale the data for PCA analysis
-vals <- assay(res, "ISnorm_filled_imputed") |>
+# Get sample type from column data
+res_combined$sample_type <- ifelse(
+    grepl("^QC", colnames(res_combined)), "QC", "sample"
+)
+col_sample <- col_sample_type[res_combined$sample_type]
+```
+
+```{r}
+#| label: pca-all
+# Log transform and scale the data for PCA analysis
+# Convert to matrix first to avoid DelayedArray issues
+vals <- assay(res_combined, "ISnorm_filled_imputed") |>
+    as.matrix() |>
     t() |>
     log2() |>
     scale(center = TRUE, scale = TRUE)
 pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
 
-vals_st <- cbind(vals, sample_type = res$sample_type)
-autoplot(pca_res, data = vals_st , colour = 'sample_type', scale = 0) +
-    scale_color_manual(values = col_sample_type)
+vals_st <- as.data.frame(vals)
+vals_st$sample_type <- res_combined$sample_type
+
+autoplot(pca_res, data = vals_st, colour = "sample_type", scale = 0) +
+    scale_color_manual(values = col_sample_type) +
+    labs(title = "PCA - All samples (Positive + Negative combined)")
 ```
 
-PCA of the data after normalization and quality control, without QCs
-- Plotting with highlighting different colors would be good.
+### PCA without QCs
+
+```{r}
+#| label: pca-no-qc
+# Filter out QC samples
+is_sample <- res_combined$sample_type == "sample"
+res_samples <- res_combined[, is_sample]
+
+# Extract sample type information (M-VAMS, C-qDBS, W-DBS, Plasma)
+sample_code <- sub("^D\\d{2}([MWCP])$", "\\1", colnames(res_samples))
+sample_type_full <- c(
+    M = "M-VAMS",
+    C = "C-qDBS",
+    W = "W-DBS",
+    P = "Plasma"
+)[sample_code]
+
+# Define colors for sample types
+col_sample_full <- c(
+    "M-VAMS" = "#e41a1c",
+    "C-qDBS" = "#377eb8",
+    "W-DBS" = "#4daf4a",
+    "Plasma" = "#984ea3"
+)
+
+# Log transform and scale
+vals_samples <- assay(res_samples, "ISnorm_filled_imputed") |>
+    as.matrix() |>
+    t() |>
+    log2() |>
+    scale(center = TRUE, scale = TRUE)
+
+pca_samples <- prcomp(vals_samples, scale = FALSE, center = FALSE)
+
+vals_df <- as.data.frame(vals_samples)
+vals_df$sample_type <- sample_type_full
+
+autoplot(pca_samples, data = vals_df, colour = "sample_type", scale = 0) +
+    scale_color_manual(values = col_sample_full) +
+    labs(title = "PCA - Samples only (without QCs)")
+```
+
+### PCA colored by ionization mode
+
+```{r}
+#| label: pca-by-mode
+# Transpose to get features as observations
+vals_features <- assay(res_samples, "ISnorm_filled_imputed") |>
+    as.matrix() |>
+    log2() |>
+    t() |>
+    scale(center = TRUE, scale = TRUE) |>
+    t()
+
+pca_features <- prcomp(vals_features, scale = FALSE, center = FALSE)
+
+feature_df <- data.frame(
+    PC1 = pca_features$x[, 1],
+    PC2 = pca_features$x[, 2],
+    ionization_mode = rowData(res_samples)$ionization_mode
+)
+
+ggplot(feature_df, aes(x = PC1, y = PC2, color = ionization_mode)) +
+    geom_point(alpha = 0.7) +
+    scale_color_manual(values = c("positive" = "#e41a1c", "negative" = "#377eb8")) +
+    labs(title = "PCA of features colored by ionization mode") +
+    theme_bw()
+```
 
   
   
