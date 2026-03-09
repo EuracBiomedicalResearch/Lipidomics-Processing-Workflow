@@ -136,6 +136,27 @@ source("R/lipid_helpers.R")
 load_lipid_packages(verbose = TRUE)
 ```
 
+## Validate Configuration
+
+```{r validate-config}
+#| label: validate-config
+
+# Validate all user-defined parameters before proceeding
+validate_config(
+  polarity = POLARITY,
+  data_source = DATA_SOURCE,
+  cores_nb = CORES_NB,
+  rt_filter = c(RT_FILTER_MIN, RT_FILTER_MAX),
+  peak_width = PEAK_WIDTH,
+  ppm = PPM,
+  sn_threshold = SN_THRESHOLD,
+  match_ppm = MATCH_PPM,
+  match_rt_tol = MATCH_RT_TOL,
+  isopeak_sim = ISOPEAK_SIM_THRESHOLD,
+  rsd_threshold = RSD_THRESHOLD
+)
+```
+
 ## Setup Folder Structure
 
 ```{r setup-folders}
@@ -200,6 +221,42 @@ Download data directly from the MetaboLights repository. This requires an
 internet connection and may take some time for the initial download. Data is
 cached locally after the first download.
 
+:::
+
+## Validate Input Files
+
+```{r validate-inputs}
+#| label: validate-inputs
+
+# Validate metadata file
+validate_metadata(
+  SEQ_FILE,
+  expected_sample_types = c("QC", "M-VAMS", "W-DBS", "C-qDBS", "Plasma"),
+  data_dir = if (DATA_SOURCE == "local") folders$data else NULL
+)
+
+# Validate reference lipid file
+validate_reference_lipids(IS_FILE)
+
+# Validate lipid database
+validate_lipid_database(
+  db_path = "LipidDatabase_R.xlsx",
+  sheet = DB_SHEET,
+  polarity = POLARITY,
+  rt_col = RT_COL
+)
+```
+
+::: {.callout-important}
+## 📋 USER CHECKPOINT: Input Validation
+Check the output above for any **errors** or **warnings**. Common issues include:
+
+- Missing or misspelled columns in Excel files
+- mzML files listed in the metadata but not found on disk
+- Unexpected sample types
+- Duplicate entries
+
+Fix any reported problems in your input files **before** continuing.
 :::
 
 ```{r load-data}
@@ -555,6 +612,13 @@ res <- quantify(mse, method = "sum", filled = FALSE)
 assays(res)$raw_filled <- featureValues(mse, method = "sum", filled = TRUE)
 ```
 
+```{r validate-preprocessing}
+#| label: validate-preprocessing
+
+# Validate the preprocessed result
+validate_result(res, assay_name = "raw", min_features = 50)
+```
+
 ```{r save-preprocessed}
 #| label: save-preprocessed
 #| eval: true
@@ -639,6 +703,9 @@ rt_fit <- fit_rt_correction(
 
 # Display model summary
 summary(rt_fit$fit)
+
+# Validate the RT correction model
+validate_rt_correction(rt_fit, min_r_squared = 0.90, max_residual = 15)
 ```
 
 ::: {.callout-important}
@@ -713,6 +780,9 @@ match_result <- match_features_to_database(
 mtched_data <- match_result$mtched_data
 query <- match_result$query
 lipid_db_r1 <- match_result$lipid_db_r1
+
+# Validate matching results
+validate_matches(mtched_data, min_matches = 10, max_ppm_error = 15)
 ```
 
 ## Isotope Pattern Validation
