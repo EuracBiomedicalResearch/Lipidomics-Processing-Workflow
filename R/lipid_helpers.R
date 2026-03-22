@@ -11,6 +11,587 @@
 #' ===========================================================================
 
 # =============================================================================
+# VALIDATION / FAILSAFE FUNCTIONS
+# =============================================================================
+
+#' Validate the sample metadata Excel file
+#'
+#' Checks that the metadata file exists, is readable, and contains all
+#' required columns with sensible values.
+#'
+#' @param file_path Path to the sample sequence Excel file
+#' @param required_cols Character vector of required column names
+#' @param expected_sample_types Character vector of expected sample_type values
+#'   (optional; warns if unexpected types found)
+#' @param data_dir Directory where mzML files should be (optional; checks files
+#'   exist)
+#' @return The validated data frame (invisibly). Stops on critical errors,
+#'   warns on non-critical issues.
+#' @examples
+#' validate_metadata("seq_pos.xlsx", data_dir = "POS_data")
+validate_metadata <- function(file_path,
+                              required_cols = c("file_name", "sample_name",
+                                                "sample_type",
+                                                "injection_index"),
+                              expected_sample_types = NULL,
+                              data_dir = NULL) {
+
+  # --- File existence & readability ---
+  if (!file.exists(file_path)) {
+    stop("Metadata file not found: '", file_path,
+         "'\n  Make sure the file is in the project root directory.")
+  }
+
+  df <- tryCatch(
+    readxl::read_xlsx(file_path, col_names = TRUE) |> as.data.frame(),
+    error = function(e) {
+      stop("Cannot read metadata file '", file_path, "': ", conditionMessage(e))
+    }
+  )
+
+  if (nrow(df) == 0) stop("Metadata file '", file_path, "' is empty (0 rows).")
+
+  # --- Required columns ---
+  missing <- setdiff(required_cols, colnames(df))
+  if (length(missing) > 0) {
+    stop("Metadata file is missing required column(s): ",
+         paste0("'", missing, "'", collapse = ", "),
+         "\n  Found columns: ",
+         paste0("'", colnames(df), "'", collapse = ", "))
+  }
+
+  # --- Duplicate file names ---
+  dup_files <- df$file_name[duplicated(df$file_name)]
+  if (length(dup_files) > 0) {
+    stop("Duplicate file_name entries in metadata: ",
+         paste0("'", unique(dup_files), "'", collapse = ", "))
+  }
+
+  # --- Duplicate sample names ---
+  dup_samples <- df$sample_name[duplicated(df$sample_name)]
+  if (length(dup_samples) > 0) {
+    warning("Duplicate sample_name entries: ",
+            paste0("'", unique(dup_samples), "'", collapse = ", "),
+            "\n  This may cause issues with downstream analyses.")
+  }
+
+  # --- NA values in critical columns ---
+  for (col in required_cols) {
+    n_na <- sum(is.na(df[[col]]) | trimws(df[[col]]) == "")
+    if (n_na > 0) {
+      stop("Column '", col, "' has ", n_na, " missing/empty value(s).")
+    }
+  }
+
+  # --- Injection index must be numeric and unique ---
+  if ("injection_index" %in% colnames(df)) {
+    idx <- suppressWarnings(as.numeric(df$injection_index))
+    if (any(is.na(idx))) {
+      stop("'injection_index' contains non-numeric values: ",
+           paste0("'", df$injection_index[is.na(idx)], "'", collapse = ", "))
+    }
+    if (any(duplicated(idx))) {
+      warning("'injection_index' has duplicate values: ",
+              paste(idx[duplicated(idx)], collapse = ", "))
+    }
+  }
+
+  # --- Sample type check ---
+  actual_types <- unique(df$sample_type)
+  if (!is.null(expected_sample_types)) {
+    unexpected <- setdiff(actual_types, expected_sample_types)
+    if (length(unexpected) > 0) {
+      warning("Unexpected sample_type values: ",
+              paste0("'", unexpected, "'", collapse = ", "),
+              "\n  Expected: ",
+              paste0("'", expected_sample_types, "'", collapse = ", "))
+    }
+  }
+
+  # --- Must have at least one QC ---
+  if (!"QC" %in% actual_types) {
+    warning("No 'QC' samples found in metadata. ",
+            "QC-based normalization and RSD filtering will fail.")
+  }
+
+  # --- Check mzML files exist ---
+  if (!is.null(data_dir)) {
+    paths <- file.path(data_dir, df$file_name)
+    missing_files <- paths[!file.exists(paths)]
+    if (length(missing_files) > 0) {
+      stop(length(missing_files), " mzML file(s) listed in metadata not found:\n  ",
+           paste(basename(head(missing_files, 5)), collapse = "\n  "),
+           if (length(missing_files) > 5)
+             paste0("\n  ... and ", length(missing_files) - 5, " more"))
+    }
+  }
+
+  message("\u2713 Metadata validated: ", nrow(df), " samples, ",
+          length(actual_types), " sample types (",
+          paste(actual_types, collapse = ", "), ")")
+  invisible(df)
+}
+
+
+#' Validate the reference lipid (internal standard) Excel file
+#'
+#' Checks the file exists and contains the expected columns with valid values.
+#'
+#' @param file_path Path to the reference lipid Excel file
+#' @param required_cols Required columns (default: short_name, mz, RT)
+#' @return The validated data frame (invisibly)
+validate_reference_lipids <- function(file_path,
+                                      required_cols = c("short_name",
+                                                        "mz", "RT")) {
+  if (!file.exists(file_path)) {
+    stop("Reference lipid file not found: '", file_path, "'")
+  }
+
+  df <- tryCatch(
+    readxl::read_xlsx(file_path) |> as.data.frame(),
+    error = function(e) {
+      stop("Cannot read reference lipid file '", file_path, "': ",
+           conditionMessage(e))
+    }
+  )
+
+  if (nrow(df) == 0) stop("Reference lipid file is empty.")
+
+  missing <- setdiff(required_cols, colnames(df))
+  if (length(missing) > 0) {
+    stop("Reference lipid file missing column(s): ",
+         paste0("'", missing, "'", collapse = ", "),
+         "\n  Found: ", paste0("'", colnames(df), "'", collapse = ", "))
+  }
+
+  # Numeric checks
+  if (!is.numeric(df$mz) || any(is.na(df$mz)) || any(df$mz <= 0)) {
+    stop("Column 'mz' must contain positive numeric values with no NAs.")
+  }
+  if (!is.numeric(df$RT) || any(is.na(df$RT)) || any(df$RT <= 0)) {
+    stop("Column 'RT' must contain positive numeric values with no NAs.")
+  }
+
+  # Duplicate short_name
+  if (any(duplicated(df$short_name))) {
+    stop("Duplicate short_name entries: ",
+         paste(df$short_name[duplicated(df$short_name)], collapse = ", "))
+  }
+
+  message("\u2713 Reference lipids validated: ", nrow(df), " compounds (",
+          paste(df$short_name, collapse = ", "), ")")
+  invisible(df)
+}
+
+
+#' Validate the lipid database Excel file
+#'
+#' Checks the database file and specific sheet for expected structure.
+#'
+#' @param db_path Path to the lipid database Excel file
+#' @param sheet Sheet number to validate
+#' @param polarity "pos" or "neg"
+#' @param rt_col Name of the retention time column
+#' @param required_cols Additional required column names
+#' @return The raw data frame (invisibly)
+validate_lipid_database <- function(db_path,
+                                    sheet,
+                                    polarity = c("pos", "neg"),
+                                    rt_col,
+                                    required_cols = c("lipid name",
+                                                      "MOLECULAR FORMULA",
+                                                      "mz", "Adduct",
+                                                      "rank")) {
+  polarity <- match.arg(polarity)
+
+  if (!file.exists(db_path)) {
+    stop("Lipid database file not found: '", db_path, "'")
+  }
+
+  # Check the sheet exists
+  available_sheets <- readxl::excel_sheets(db_path)
+  if (sheet > length(available_sheets)) {
+    stop("Sheet ", sheet, " does not exist in '", db_path,
+         "'. Available sheets (", length(available_sheets), "): ",
+         paste0("'", available_sheets, "'", collapse = ", "))
+  }
+
+  df <- tryCatch(
+    readxl::read_xlsx(db_path, sheet = sheet),
+    error = function(e) {
+      stop("Cannot read sheet ", sheet, " from '", db_path, "': ",
+           conditionMessage(e))
+    }
+  )
+
+  if (nrow(df) == 0) {
+    stop("Lipid database sheet ", sheet, " is empty.")
+  }
+
+  # Check RT column
+  all_required <- c(required_cols, rt_col)
+  missing <- setdiff(all_required, colnames(df))
+  if (length(missing) > 0) {
+    stop("Lipid database (sheet ", sheet, ") missing column(s): ",
+         paste0("'", missing, "'", collapse = ", "),
+         "\n  Found: ",
+         paste0("'", head(colnames(df), 15), "'", collapse = ", "),
+         if (ncol(df) > 15) "...")
+  }
+
+  # Rank column should contain numeric values including 0 and 1
+  ranks <- df$rank
+  if (!is.numeric(ranks)) {
+    stop("Column 'rank' must be numeric (found ", class(ranks), ").")
+  }
+  if (!any(ranks == 1, na.rm = TRUE)) {
+    warning("No rank=1 entries found in the database. ",
+            "Rank 1 matching will return no results.")
+  }
+
+  # Check mz is numeric
+  mz_vals <- suppressWarnings(as.numeric(df$mz))
+  n_na_mz <- sum(is.na(mz_vals) & !is.na(df$mz))
+  if (n_na_mz > 0) {
+    warning(n_na_mz, " non-numeric value(s) in 'mz' column.")
+  }
+
+  n_lipids <- length(unique(df$`lipid name`[!is.na(df$`lipid name`)]))
+  message("\u2713 Lipid database validated (sheet ", sheet, "): ",
+          nrow(df), " entries, ", n_lipids, " unique lipids")
+  invisible(df)
+}
+
+
+#' Validate configuration parameters
+#'
+#' Checks that the user-defined configuration parameters are within
+#' reasonable ranges and consistent with each other.
+#'
+#' @param polarity "pos" or "neg"
+#' @param data_source "local", "sqlite", or "metaboLights"
+#' @param cores_nb Number of CPU cores
+#' @param rt_filter Range for RT filter c(min, max)
+#' @param peak_width Peak width range c(min, max)
+#' @param ppm PPM tolerance
+#' @param sn_threshold Signal-to-noise threshold
+#' @param match_ppm PPM for matching
+#' @param match_rt_tol RT tolerance for matching
+#' @param isopeak_sim Isotope similarity threshold
+#' @param rsd_threshold RSD threshold
+#' @return TRUE invisibly. Stops or warns on issues.
+validate_config <- function(polarity,
+                            data_source,
+                            cores_nb,
+                            rt_filter = c(10, 800),
+                            peak_width = c(4, 8),
+                            ppm = 10,
+                            sn_threshold = 2,
+                            match_ppm = 20,
+                            match_rt_tol = 20,
+                            isopeak_sim = 0.78,
+                            rsd_threshold = 0.3) {
+
+  # Polarity
+  if (!polarity %in% c("pos", "neg")) {
+    stop("POLARITY must be 'pos' or 'neg', got '", polarity, "'")
+  }
+
+  # Data source
+  if (!data_source %in% c("local", "sqlite", "metaboLights")) {
+    stop("DATA_SOURCE must be 'local', 'sqlite', or 'metaboLights', got '",
+         data_source, "'")
+  }
+
+  # Cores
+  max_cores <- parallel::detectCores()
+  if (!is.numeric(cores_nb) || cores_nb < 1) {
+    stop("CORES_NB must be a positive integer.")
+  }
+  if (cores_nb > max_cores) {
+    warning("CORES_NB (", cores_nb, ") exceeds available cores (", max_cores,
+            "). Setting to ", max_cores - 1, " is recommended.")
+  }
+
+  # RT filter range
+  if (rt_filter[1] >= rt_filter[2]) {
+    stop("RT_FILTER_MIN (", rt_filter[1], ") must be less than RT_FILTER_MAX (",
+         rt_filter[2], ").")
+  }
+  if (rt_filter[1] < 0) stop("RT_FILTER_MIN cannot be negative.")
+
+  # Peak width
+  if (peak_width[1] >= peak_width[2]) {
+    stop("PEAK_WIDTH min (", peak_width[1], ") must be less than max (",
+         peak_width[2], ").")
+  }
+  if (peak_width[1] <= 0) stop("PEAK_WIDTH values must be positive.")
+
+  # PPM
+  if (ppm <= 0 || ppm > 100) {
+    warning("PPM value (", ppm, ") is outside typical range (1-50).")
+  }
+
+  # SN threshold
+  if (sn_threshold < 1) {
+    warning("SN_THRESHOLD (", sn_threshold,
+            ") is below 1 — very permissive peak detection.")
+  }
+
+  # Match PPM
+  if (match_ppm <= 0 || match_ppm > 100) {
+    warning("MATCH_PPM (", match_ppm, ") is outside typical range (5-50).")
+  }
+
+  # Match RT tolerance
+  if (match_rt_tol <= 0) stop("MATCH_RT_TOL must be positive.")
+  if (match_rt_tol > 60) {
+    warning("MATCH_RT_TOL (", match_rt_tol,
+            "s) is very large. Typical values: 10-30s.")
+  }
+
+  # Isotope similarity
+  if (isopeak_sim < 0 || isopeak_sim > 1) {
+    stop("ISOPEAK_SIM_THRESHOLD must be between 0 and 1.")
+  }
+  if (isopeak_sim < 0.5) {
+    warning("ISOPEAK_SIM_THRESHOLD (", isopeak_sim,
+            ") is low — may accept poor isotope matches.")
+  }
+
+  # RSD threshold
+  if (rsd_threshold <= 0 || rsd_threshold > 1) {
+    stop("RSD_THRESHOLD must be between 0 and 1 (e.g., 0.3 = 30%).")
+  }
+
+  message("\u2713 Configuration parameters validated")
+  invisible(TRUE)
+}
+
+
+#' Validate a preprocessed MsExperiment object
+#'
+#' Checks that the MsExperiment has expected properties after preprocessing.
+#'
+#' @param mse An MsExperiment object
+#' @param expected_n_samples Expected number of samples (optional)
+#' @param check_peaks Logical, check that chromatographic peaks exist
+#' @param min_peaks_per_sample Minimum peaks expected per sample (warns below)
+#' @return TRUE invisibly. Stops or warns on issues.
+validate_mse <- function(mse,
+                         expected_n_samples = NULL,
+                         check_peaks = TRUE,
+                         min_peaks_per_sample = 100) {
+
+  if (!inherits(mse, "MsExperiment")) {
+    stop("Object is not an MsExperiment (got ", class(mse)[1], ")")
+  }
+
+  n <- length(mse)
+  if (n == 0) stop("MsExperiment is empty (0 samples).")
+
+  if (!is.null(expected_n_samples) && n != expected_n_samples) {
+    warning("Expected ", expected_n_samples, " samples but MsExperiment has ",
+            n, ".")
+  }
+
+  # Check spectra
+  n_spectra <- length(spectra(mse))
+  if (n_spectra == 0) {
+    stop("MsExperiment contains 0 spectra.")
+  }
+
+  # Check peak detection results
+  if (check_peaks && inherits(mse, "XcmsExperiment")) {
+    cp <- chromPeaks(mse)
+    if (is.null(cp) || nrow(cp) == 0) {
+      stop("No chromatographic peaks found. Run findChromPeaks() first.")
+    }
+
+    peaks_per_sample <- table(cp[, "sample"])
+    low_samples <- names(peaks_per_sample)[peaks_per_sample < min_peaks_per_sample]
+    if (length(low_samples) > 0) {
+      warning(length(low_samples), " sample(s) have fewer than ",
+              min_peaks_per_sample, " peaks. Consider checking data quality.")
+    }
+  }
+
+  message("\u2713 MsExperiment validated: ", n, " samples, ",
+          n_spectra, " spectra")
+  invisible(TRUE)
+}
+
+
+#' Validate a SummarizedExperiment result object
+#'
+#' Checks feature counts, missing value rates, and assay integrity.
+#'
+#' @param res A SummarizedExperiment object
+#' @param assay_name Assay to check (default: first available)
+#' @param max_na_pct Maximum acceptable NA percentage (warns above)
+#' @param min_features Minimum expected features (warns below)
+#' @return TRUE invisibly
+validate_result <- function(res,
+                            assay_name = NULL,
+                            max_na_pct = 50,
+                            min_features = 10) {
+
+  if (!inherits(res, "SummarizedExperiment")) {
+    stop("Object is not a SummarizedExperiment (got ", class(res)[1], ")")
+  }
+
+  if (nrow(res) == 0) stop("SummarizedExperiment has 0 features.")
+  if (ncol(res) == 0) stop("SummarizedExperiment has 0 samples.")
+
+  if (nrow(res) < min_features) {
+    warning("Only ", nrow(res), " features detected (expected >= ", min_features,
+            "). Check peak detection parameters.")
+  }
+
+  # Check assay
+  if (is.null(assay_name)) assay_name <- assayNames(res)[1]
+  if (!assay_name %in% assayNames(res)) {
+    stop("Assay '", assay_name, "' not found. Available: ",
+         paste(assayNames(res), collapse = ", "))
+  }
+
+  mat <- assay(res, assay_name)
+  na_pct <- sum(is.na(mat)) / length(mat) * 100
+
+  if (na_pct > max_na_pct) {
+    warning("High missing value rate in assay '", assay_name, "': ",
+            round(na_pct, 1), "% (threshold: ", max_na_pct, "%).",
+            "\n  Consider reviewing peak detection or gap filling.")
+  }
+
+  # Check for all-NA features
+  all_na_features <- rowSums(!is.na(mat)) == 0
+  if (any(all_na_features)) {
+    warning(sum(all_na_features),
+            " feature(s) have NA across all samples in assay '",
+            assay_name, "'.")
+  }
+
+  # Check for negative values
+  neg_vals <- sum(mat < 0, na.rm = TRUE)
+  if (neg_vals > 0) {
+    warning(neg_vals, " negative values found in assay '", assay_name, "'.",
+            " This is unexpected for abundance data.")
+  }
+
+  message("\u2713 Result validated: ", nrow(res), " features x ", ncol(res),
+          " samples, ", round(na_pct, 1), "% NA in '", assay_name, "'")
+  invisible(TRUE)
+}
+
+
+#' Validate matching results
+#'
+#' Checks that the matched data frame has expected structure and
+#' reasonable quality metrics.
+#'
+#' @param mtched_data Matched data frame from match_features_to_database()
+#' @param min_matches Minimum expected matches (warns below)
+#' @param max_ppm_error Maximum acceptable median ppm error (warns above)
+#' @return TRUE invisibly
+validate_matches <- function(mtched_data,
+                             min_matches = 5,
+                             max_ppm_error = 15) {
+
+  if (!is.data.frame(mtched_data)) {
+    stop("mtched_data must be a data.frame")
+  }
+
+  if (nrow(mtched_data) == 0) {
+    stop("No matches found. Check:\n",
+         "  - PPM and RT tolerance parameters\n",
+         "  - RT correction model quality\n",
+         "  - Database polarity (pos/neg)")
+  }
+
+  if (nrow(mtched_data) < min_matches) {
+    warning("Very few matches (", nrow(mtched_data), "). Expected at least ",
+            min_matches, ".")
+  }
+
+  # Check required columns
+  expected_cols <- c("feature_id", "mzmed", "rtmed",
+                     "target_lipid_name_unique")
+  missing_cols <- setdiff(expected_cols, colnames(mtched_data))
+  if (length(missing_cols) > 0) {
+    stop("Matched data missing expected columns: ",
+         paste0("'", missing_cols, "'", collapse = ", "))
+  }
+
+  # PPM error distribution
+  if ("ppm_error" %in% colnames(mtched_data)) {
+    med_ppm <- median(abs(mtched_data$ppm_error), na.rm = TRUE)
+    if (med_ppm > max_ppm_error) {
+      warning("Median absolute ppm error is ", round(med_ppm, 1),
+              " (threshold: ", max_ppm_error,
+              "). m/z calibration may need review.")
+    }
+  }
+
+  # Duplicate feature_id check (informational)
+  n_dup <- sum(duplicated(mtched_data$feature_id))
+  n_unique <- length(unique(mtched_data$feature_id))
+  n_lipids <- length(unique(mtched_data$target_lipid_name_unique))
+
+  message("\u2713 Matches validated: ", nrow(mtched_data), " rows, ",
+          n_unique, " unique features, ", n_lipids, " unique lipids",
+          if (n_dup > 0) paste0(" (", n_dup, " feature ambiguities)"))
+  invisible(TRUE)
+}
+
+
+#' Validate RT correction fit quality
+#'
+#' Checks R-squared and residuals of the RT correction model.
+#'
+#' @param rt_fit List returned by fit_rt_correction()
+#' @param min_r_squared Minimum acceptable R-squared (warns below)
+#' @param max_residual Maximum acceptable residual in seconds (warns above)
+#' @return TRUE invisibly
+validate_rt_correction <- function(rt_fit,
+                                   min_r_squared = 0.90,
+                                   max_residual = 15) {
+
+  if (!is.list(rt_fit) || !"fit" %in% names(rt_fit)) {
+    stop("rt_fit must be a list with a 'fit' element (from fit_rt_correction)")
+  }
+
+  fit <- rt_fit$fit
+  r2 <- summary(fit)$r.squared
+
+  if (r2 < min_r_squared) {
+    warning("RT correction R\u00b2 = ", round(r2, 4),
+            " (threshold: ", min_r_squared,
+            "). Model fit is poor — review reference lipid EICs.")
+  }
+
+  # Check residuals
+  resids <- abs(residuals(fit))
+  max_res <- max(resids, na.rm = TRUE)
+  if (max_res > max_residual) {
+    warning("Largest RT correction residual is ", round(max_res, 1),
+            "s (threshold: ", max_residual,
+            "s). Some reference lipids may be poorly detected.")
+  }
+
+  # Check for NAs in experimental RT
+  n_na <- sum(is.na(rt_fit$exp_rt))
+  if (n_na > 0) {
+    warning(n_na, " reference lipid(s) were not detected. ",
+            "Consider removing them from the reference list.")
+  }
+
+  message("\u2713 RT correction validated: R\u00b2 = ", round(r2, 4),
+          ", max residual = ", round(max_res, 1), "s")
+  invisible(TRUE)
+}
+
+# =============================================================================
 # PACKAGE LOADING
 # =============================================================================
 
@@ -770,6 +1351,8 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
                threshold = 0.001, charge = charge, rel_to = 0)
   ))
   theoretical_spectra <- isopattern_to_spectra(ip)
+  # Normalize theoretical spectra to [0,1] to match experimental scalePeaks output
+  theoretical_spectra <- scalePeaks(theoretical_spectra, by = max)
 
   # Calculate similarity
   match_indices <- match(mtched_data$feature_id, iso_spectra$feature_id)
@@ -998,7 +1581,22 @@ fit_rt_correction <- function(eic_is, intern_standard, param_group,
       plot(eic_is_corr[i, ],
            main = rownames(fData(eic_is_corr))[i],
            cex.axis = 0.8, cex.main = 0.8)
+      # Show experimental feature RT (blue solid) and reference RT (red dashed)
+      if (nrow(table) > 0) {
+        if (nrow(table) > 1) {
+          feat_rt <- table$rtmed[which.max(
+            rowSums(featureValues(eic_is_corr[i, ]), na.rm = TRUE)
+          )]
+        } else {
+          feat_rt <- table$rtmed
+        }
+        abline(v = feat_rt, col = "blue", lty = 1, lwd = 1.5)
+      }
       abline(v = fData(eic_is_corr)$rt[i], col = "red", lty = 3)
+      legend("topright",
+             legend = c("Experimental RT", "Reference RT"),
+             col = c("blue", "red"), lty = c(1, 3), lwd = c(1.5, 1),
+             bty = "n", cex = 0.7)
       dev.off()
     }
 
