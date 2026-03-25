@@ -10,11 +10,25 @@ format:
 execute:
   warning: false
   message: false
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 6)
 ```
+
+
+```{r delete-objects}
+# FIXME: this should be handled in the chunk save-preprocessed. This is a quick 
+# and dirty solution to get this working.
+# delete "objects" folder if it exists
+if (dir.exists("objects")) {
+  unlink("objects", recursive = TRUE)
+}
+
+```
+
 
 # Project Structure Overview
 
@@ -86,7 +100,7 @@ POLARITY <- "neg"
 # - "local": Load from local .mzML files in POS_data/ or NEG_data/
 # - "sqlite": Load from pre-built SQLite database (faster for repeated analyses)
 # - "metaboLights": Download directly from MetaboLights repository (MTBLS10722)
-DATA_SOURCE <- "sqlite"
+DATA_SOURCE <- "local"
 
 # MetaboLights study ID (only used if DATA_SOURCE = "metaboLights")
 MTBLS_ID <- "MTBLS10722"
