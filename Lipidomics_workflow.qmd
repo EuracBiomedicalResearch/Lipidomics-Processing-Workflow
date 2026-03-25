@@ -101,6 +101,11 @@ POLARITY <- "pos"
 # Snapshots are always saved; filename tags distinguish "smoke" vs "full".
 SMOKE <- FALSE
 
+# Directory for regression snapshots.
+# "tests/snapshots"     → golden baselines (committed, never overwrite)
+# "tests/snapshots_dev" → written during active development / refactor work
+SNAPSHOT_DIR <- "tests/snapshots_dev"
+
 # Data source: "local", "sqlite", or "metaboLights"
 # - "local": Load from local .mzML files in POS_data/ or NEG_data/
 # - "sqlite": Load from pre-built SQLite database (faster for repeated analyses)
@@ -159,21 +164,22 @@ load_lipid_packages(verbose = TRUE)
 #| label: snapshot-helper
 #| include: false
 
-# Save a lightweight regression snapshot to tests/snapshots/.
+# Save a lightweight regression snapshot to SNAPSHOT_DIR.
 # Always runs (both SMOKE and full modes); the filename encodes polarity and
 # mode so the two sets can be compared independently.
-#   step_name : short identifier, e.g. "step3_chrompeaks"
-#   object    : the R object to serialise (keep it small — data frames, vectors)
-#   min_rows  : for data frames, minimum acceptable row count (default 1)
-#   min_r2    : for RT correction list, minimum acceptable R² (default 0.5)
+#   step_name    : short identifier, e.g. "step3_chrompeaks"
+#   object       : the R object to serialise (keep it small — data frames, vectors)
+#   min_rows     : for data frames, minimum acceptable row count (default 1)
+#   min_r2       : for RT correction list, minimum acceptable R² (default 0.5)
+#   snap_dir     : output directory; defaults to SNAPSHOT_DIR from config
 #
 # Validation rules applied per object type:
 #   data.frame  → nrow >= min_rows; warn on NA-dominated key columns
 #   list        → each named numeric element checked for all-NA
 #   numeric/list of vectors (adjustedRtime) → each element length > 0
 save_snapshot <- function(object, step_name, polarity, smoke,
-                          min_rows = 1L, min_r2 = 0.5) {
-    snap_dir <- "tests/snapshots"
+                          min_rows = 1L, min_r2 = 0.5,
+                          snap_dir = SNAPSHOT_DIR) {
     if (!dir.exists(snap_dir)) dir.create(snap_dir, recursive = TRUE)
     mode_tag <- if (isTRUE(smoke)) "smoke" else "full"
     fname <- file.path(snap_dir,
