@@ -94,7 +94,12 @@ The other parameter SHOULD be adjusted while the workflop is being run.
 # ============================================================================
 
 # Analysis polarity: "pos" or "neg"
-POLARITY <- "neg"
+POLARITY <- "pos"
+
+# Smoke test mode: if TRUE, slice data to a minimal subset (all QCs + 2 study
+# samples per type) to allow a fast run-through of the entire pipeline.
+# Snapshots are always saved; filename tags distinguish "smoke" vs "full".
+SMOKE <- FALSE
 
 # Data source: "local", "sqlite", or "metaboLights"
 # - "local": Load from local .mzML files in POS_data/ or NEG_data/
@@ -148,6 +153,80 @@ source("R/lipid_helpers.R")
 
 # Load all required packages
 load_lipid_packages(verbose = TRUE)
+```
+
+```{r snapshot-helper}
+#| label: snapshot-helper
+#| include: false
+
+# Save a lightweight regression snapshot to tests/snapshots/.
+# Always runs (both SMOKE and full modes); the filename encodes polarity and
+# mode so the two sets can be compared independently.
+#   step_name : short identifier, e.g. "step3_chrompeaks"
+#   object    : the R object to serialise (keep it small — data frames, vectors)
+#   min_rows  : for data frames, minimum acceptable row count (default 1)
+#   min_r2    : for RT correction list, minimum acceptable R² (default 0.5)
+#
+# Validation rules applied per object type:
+#   data.frame  → nrow >= min_rows; warn on NA-dominated key columns
+#   list        → each named numeric element checked for all-NA
+#   numeric/list of vectors (adjustedRtime) → each element length > 0
+save_snapshot <- function(object, step_name, polarity, smoke,
+                          min_rows = 1L, min_r2 = 0.5) {
+    snap_dir <- "tests/snapshots"
+    if (!dir.exists(snap_dir)) dir.create(snap_dir, recursive = TRUE)
+    mode_tag <- if (isTRUE(smoke)) "smoke" else "full"
+    fname <- file.path(snap_dir,
+                       paste0(step_name, "_", polarity, "_", mode_tag, ".rds"))
+
+    issues <- character(0)
+
+    if (is.data.frame(object)) {
+        if (nrow(object) < min_rows)
+            issues <- c(issues, sprintf("data frame has %d rows (min %d)",
+                                        nrow(object), min_rows))
+        # Warn on columns where >80% of values are NA
+        na_frac <- colMeans(is.na(object))
+        bad_cols <- names(na_frac[na_frac > 0.8])
+        if (length(bad_cols))
+            issues <- c(issues, sprintf(
+                "column(s) >80%% NA: %s", paste(bad_cols, collapse = ", ")))
+
+    } else if (is.list(object) && !is.data.frame(object)) {
+        # adjustedRtime returns a list of per-sample numeric vectors
+        if (all(vapply(object, is.numeric, logical(1)))) {
+            empty_els <- sum(vapply(object, function(x) length(x) == 0L, logical(1)))
+            if (empty_els > 0)
+                issues <- c(issues, sprintf("%d element(s) have length 0", empty_els))
+            allna_els <- sum(vapply(object, function(x) all(is.na(x)), logical(1)))
+            if (allna_els > 0)
+                issues <- c(issues, sprintf("%d element(s) are all-NA", allna_els))
+        } else {
+            # Structured list (step7, step8)
+            if (!is.null(object$r_squared) && object$r_squared < min_r2)
+                issues <- c(issues, sprintf("R² = %.3f < %.1f", object$r_squared, min_r2))
+            if (!is.null(object$n_features) && object$n_features < 1L)
+                issues <- c(issues, "n_features = 0")
+            na_nums <- Filter(function(x) is.numeric(x) && all(is.na(x)), object)
+            if (length(na_nums))
+                issues <- c(issues, sprintf("all-NA element(s): %s",
+                                            paste(names(na_nums), collapse = ", ")))
+        }
+    }
+
+    if (length(issues)) {
+        warning("Snapshot '", step_name, "' (", mode_tag, "/", polarity, "): ",
+                paste(issues, collapse = "; "),
+                " — snapshot saved but may be degenerate for regression use")
+    }
+
+    saveRDS(object, fname)
+    message(sprintf("Snapshot saved [%s/%s]: %s  (%s)",
+                    mode_tag, polarity,
+                    basename(fname),
+                    if (length(issues)) "WARNINGS — see above" else "OK"))
+    invisible(fname)
+}
 ```
 
 ## Validate Configuration
@@ -345,6 +424,25 @@ message("✓ Loaded ", length(mse), " samples")
 sampleData(mse)
 ```
 
+```{r smoke-slice}
+#| label: smoke-slice
+
+# SMOKE mode: retain all QC samples (needed for RT alignment) and at most 2
+# study samples per sample type, giving a fast but structurally complete run.
+if (isTRUE(SMOKE)) {
+    qc_idx   <- which(sampleData(mse)$sample_type == "QC")
+    other_types <- unique(sampleData(mse)$sample_type[
+        sampleData(mse)$sample_type != "QC"])
+    other_idx <- unlist(lapply(other_types, function(t) {
+        head(which(sampleData(mse)$sample_type == t), 2)
+    }))
+    keep_idx <- sort(unique(c(qc_idx, other_idx)))
+    mse <- filterFile(mse, file = keep_idx)
+    message("SMOKE mode: subset to ", length(mse), " samples (",
+            paste(sampleData(mse)$sample_name, collapse = ", "), ")")
+}
+```
+
 ## Setup Color Palettes
 
 Create color palettes for visualization. By default, colors are based on
@@ -482,6 +580,17 @@ mse <- findChromPeaks(mse, param = param_pd, chunkSize = CORES_NB)
 # Update EICs with peak detection results
 eic_is <- extract_is_eics(mse, intern_standard)
 fData(eic_is) <- fdata
+
+# Inline check: peak detection must yield at least one peak per retained sample
+n_peaks <- nrow(chromPeaks(mse))
+n_samples <- length(mse)
+if (n_peaks == 0L)
+    stop("No chromatographic peaks detected. Check CentWave parameters or data quality.")
+if (n_peaks / n_samples < 10)
+    warning("Very few peaks per sample (", round(n_peaks / n_samples, 1),
+            "). SMOKE subset may be too sparse for meaningful regression snapshots.")
+save_snapshot(as.data.frame(chromPeaks(mse)),
+              "step3_chrompeaks", POLARITY, SMOKE)
 ```
 
 ```{r peaks-per-sample}
@@ -556,6 +665,11 @@ legend("topright", col = palette_sample_type,
 ```{r apply-alignment}
 #| label: apply-alignment
 
+# Snapshot BEFORE applying: adjustedRtime() is only meaningful while the
+# correction vectors are still separate from the raw RTs.
+save_snapshot(adjustedRtime(mse),
+              "step5_adjrt", POLARITY, SMOKE)
+
 # Keep raw data for comparison, then apply alignment
 mse_raw <- dropAdjustedRtime(mse)
 mse <- applyAdjustedRtime(mse)
@@ -584,6 +698,9 @@ param_cor <- PeakDensityParam(
 mse <- groupChromPeaks(mse, param = param_cor)
 
 message("Correspondence complete: ", nrow(featureDefinitions(mse)), " features")
+
+save_snapshot(as.data.frame(featureDefinitions(mse)),
+              "step6_features", POLARITY, SMOKE)
 ```
 
 ## Gap Filling
@@ -607,6 +724,11 @@ if (na_before > 50) {
   warning("High initial missing value percentage (", round(na_before, 1),
           "%). Consider reviewing peak detection parameters or sample quality.")
 }
+
+save_snapshot(list(na_before   = na_before,
+                   na_after    = na_after,
+                   n_features  = nrow(featureDefinitions(mse))),
+              "step7_gapfill", POLARITY, SMOKE)
 ```
 
 ::: {.callout-note}
@@ -720,6 +842,11 @@ summary(rt_fit$fit)
 
 # Validate the RT correction model
 validate_rt_correction(rt_fit, min_r_squared = 0.90, max_residual = 15)
+
+save_snapshot(list(coef      = coef(rt_fit$fit),
+                   r_squared = summary(rt_fit$fit)$r.squared,
+                   residuals = residuals(rt_fit$fit)),
+              "step8_rtcorrection", POLARITY, SMOKE)
 ```
 
 ::: {.callout-important}
@@ -814,6 +941,20 @@ iso_result <- calculate_isotope_similarity(
 mtched_data <- iso_result$mtched_data
 
 message("Matches after isotope filter: ", nrow(mtched_data))
+
+# Inline check: annotation must survive isotope filter with at least some matches
+if (nrow(mtched_data) == 0L)
+    stop("No matches remain after isotope filter. ",
+         "Check ISOPEAK_SIM_THRESHOLD or data quality.")
+if (isTRUE(SMOKE) && nrow(mtched_data) < 5L)
+    warning("Only ", nrow(mtched_data), " match(es) after isotope filter in SMOKE mode. ",
+            "Snapshot will have very limited regression value.")
+
+save_snapshot(mtched_data[, c("feature_id", "target_lipid_name_unique",
+                               "target_adduct", "target_rank",
+                               "isopeak_count", "isopeak_sim",
+                               "ppm_error", "score_rt")],
+              "step9_annotation", POLARITY, SMOKE)
 ```
 
 ```{r plot-isotope-patterns}
@@ -1167,6 +1308,22 @@ rowData(res_final)$qc_cv <- assay(res_qc, "ISnorm_filled") |> rowRsd()
 
 # save objects
 saveObject(res_final, file.path(folders$objects, paste0("final_res_", POLARITY)))
+
+# Inline check: warn if IS normalisation left many features without QC CV
+#  (symptom of IS not found in SMOKE subset)
+qc_cv_na_frac <- mean(is.na(rowData(res_final)$qc_cv))
+if (qc_cv_na_frac > 0.5)
+    warning(round(qc_cv_na_frac * 100, 1), "% of features have NA qc_cv — ",
+            "likely caused by missing IS in SMOKE subset. ",
+            "step10 snapshot has limited regression value for normalization checks.")
+
+snap_cols <- intersect(
+    c("mzmed", "rtmed", "target_lipid_name_unique",
+      "target_Adduct", "qc_cv"),
+    colnames(rowData(res_final))
+)
+save_snapshot(as.data.frame(rowData(res_final)[, snap_cols]),
+              "step10_final", POLARITY, SMOKE)
 ```
 
 ## Session Info
