@@ -6,7 +6,7 @@ A vendor-independent, open-source workflow for LC-MS lipidomics data processing 
 
 ---
 
-## 📋 Overview
+## Overview
 
 This workflow provides:
 
@@ -25,54 +25,55 @@ This workflow provides:
 
 ---
 
-## 📁 Project Structure
+## Project Structure
+
+Each analysis is split by **ionization polarity** — positive and negative each
+have their own Quarto documents so that parameter choices are fully traceable.
 
 ```
 CEMBIO-EURAC/
 │
-├── Lipidomics_workflow.qmd      # 📌 MAIN WORKFLOW - Start here!
+├── generic_workflow/                # Reusable workflow templates
+│   ├── LipidDatabase_R.xlsx         #   Lipid database (sheet 4=POS, sheet 5=NEG)
+│   ├── positive/                    #   Positive-mode templates
+│   │   ├── Preprocessing_pos.qmd    #     Step 1 (POLARITY = "pos")
+│   │   └── Annotation_pos.qmd      #     Step 2 (POLARITY = "pos")
+│   ├── negative/                    #   Negative-mode templates
+│   │   ├── Preprocessing_neg.qmd    #     Step 1 (POLARITY = "neg")
+│   │   └── Annotation_neg.qmd      #     Step 2 (POLARITY = "neg")
+│   └── POS_NEG_merge.qmd           #   Step 3: Merge positive + negative results
 │
-├── R/
-│   └── lipid_helpers.R          # Helper functions (loaded automatically)
+├── applications/                    # Study-specific applications (self-contained)
+│   ├── pilot_study/
+│   │   ├── LipidDatabase_R.xlsx     #   Lipid database (shared by POS + NEG)
+│   │   ├── positive/                #   Positive-mode analysis
+│   │   │   ├── Preprocessing_pos.qmd   #     Configured for pilot, POS
+│   │   │   ├── Annotation_pos.qmd      #     Configured for pilot, POS
+│   │   │   ├── seq_pos_pilot.xlsx   #     Sample sequence
+│   │   │   ├── pos_lipid_reference_set.xlsx  # Reference lipids
+│   │   │   └── data/               #     .mzML files (gitignored)
+│   │   ├── negative/                #   Negative-mode analysis
+│   │   │   ├── Preprocessing_neg.qmd   #     Configured for pilot, NEG
+│   │   │   ├── Annotation_neg.qmd      #     Configured for pilot, NEG
+│   │   │   ├── seq_neg_pilot.xlsx   #     Sample sequence
+│   │   │   ├── neg_lipid_reference_set.xlsx  # Reference lipids
+│   │   │   └── data/               #     .mzML files (gitignored)
+│   │   └── POS_NEG_merge.qmd       #   Step 3: Merge POS + NEG pilot results
+│   └── exercise_study/              #   (same structure as pilot_study)
+│       ├── positive/ ...
+│       ├── negative/ ...
+│       └── POS_NEG_merge.qmd
 │
-├── POS_data/                    # Positive mode raw data (.mzML files)
-│   └── *.mzML
+├── R/                               # Shared helper functions
+│   ├── lipid_helpers.R              #   All reusable functions
+│   └── create_sqlite_database.R     #   SQLite database creation utility
 │
-├── NEG_data/                    # Negative mode raw data (.mzML files)
-│   └── *.mzML
-│
-├── objects/                     # Saved R objects (auto-generated)
-│   ├── preprocessed_mse_pos/    # Preprocessed MsExperiment (positive)
-│   ├── preprocessed_mse_neg/    # Preprocessed MsExperiment (negative)
-│   ├── preprocessed_res/        # SummarizedExperiment (positive)
-│   └── preprocessed_res_neg/    # SummarizedExperiment (negative)
-│
-├── figures/                     # Output figures (auto-generated)
-│   ├── EIC_internal_standards/  # EIC plots for reference lipids
-│   ├── iso_pattern_check/       # Isotope pattern mirror plots (pos)
-│   ├── iso_pattern_check_neg/   # Isotope pattern mirror plots (neg)
-│   ├── ref_lipid_image/         # RT correction diagnostics (pos)
-│   └── ref_lipid_image_neg/     # RT correction diagnostics (neg)
-│
-├── pos_peak_detection_ref_lipid/  # Peak detection QC plots (pos)
-├── neg_peak_detection_ref_lipid/  # Peak detection QC plots (neg)
-├── ISTD_mtched_data/              # Matched ISTD chromatograms (pos)
-├── ISTD_mtched_data_neg/          # Matched ISTD chromatograms (neg)
-│
-├── seq_pos.xlsx                 # Sample sequence (positive mode)
-├── seq_neg.xlsx                 # Sample sequence (negative mode)
-├── splashlipidomix_list.xlsx    # Reference lipids (positive mode)
-├── neg_splashlipidomix_list.xlsx # Reference lipids (negative mode)
-├── LipidDatabase_R.xlsx         # Lipid database (sheet 4=POS, sheet 5=NEG)
-│
-├── Pilot_POS.qmd                # Original positive mode analysis
-├── Pilot_NEG.qmd                # Original negative mode analysis
-└── README.md                    # This file
+└── README.md                        # This file
 ```
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Prerequisites
 
@@ -97,89 +98,101 @@ install.packages(c(
 
 ### 2. Prepare Input Files
 
-1. **Sample sequence file** (`seq_pos.xlsx` or `seq_neg.xlsx`):
+Each polarity folder is self-contained. Place these files inside your
+polarity folder (e.g. `applications/my_study/positive/`):
+
+1. **Sample sequence file** (`seq_pos_<study_id>.xlsx` or `seq_neg_<study_id>.xlsx`):
+
    | file_name | sample_name | sample_type | injection_index |
-   |-----------|-------------|-------------|-----------------|
+   |-----------|-------------|-------------|------------------|
    | D01P_pos.mzML | D01P | Plasma | 1 |
    | QC_1_pos.mzML | QC_1 | QC | 2 |
-   | ... | ... | ... | ... |
 
-2. **Reference lipid list**: Ensure your internal standards file has columns `short_name`, `mz`, `RT` (in seconds)
+2. **Reference lipid list**: `pos_lipid_reference_set.xlsx` or `neg_lipid_reference_set.xlsx`
 
-3. **Raw data**: Convert your vendor files to `.mzML` format and place in `POS_data/` or `NEG_data/`
+3. **Lipid database**: `LipidDatabase_R.xlsx` in the study folder (one level above each polarity folder)
+
+4. **Raw data**: Place `.mzML` files in the `data/` subfolder
 
 ### 3. Run the Workflow
 
-1. Open `Lipidomics_workflow.qmd` in RStudio/Positron
-2. Set the polarity in the Configuration section:
-   ```r
-   POLARITY <- "pos"  # or "neg"
-   ```
-3. Adjust parameters as needed (RT range, peak detection, etc.)
-4. Render the document or run chunks interactively
+Each polarity has dedicated Quarto documents with hardcoded `POLARITY`,
+so parameter choices are fully traceable.
+
+| Step | Files | Description |
+|------|-------|-------------|
+| 1 | `positive/Preprocessing_pos.qmd`, `negative/Preprocessing_neg.qmd` | Data import, peak detection, RT alignment, gap filling |
+| 2 | `positive/Annotation_pos.qmd`, `negative/Annotation_neg.qmd` | RT correction, database matching, normalization, QC |
+| 3 | `POS_NEG_merge.qmd` | Combine POS + NEG results, coverage figures, PCA |
+
+**Example: run the pilot study**
+
+1. Render `applications/pilot_study/positive/Preprocessing_pos.qmd`
+2. Render `applications/pilot_study/positive/Annotation_pos.qmd`
+3. Render `applications/pilot_study/negative/Preprocessing_neg.qmd`
+4. Render `applications/pilot_study/negative/Annotation_neg.qmd`
+5. Render `applications/pilot_study/POS_NEG_merge.qmd`
+
+### 4. Start a New Study
+
+1. Create a new folder under `applications/` (e.g. `applications/my_study/`)
+2. Create `positive/` and `negative/` subfolders
+3. Copy templates from `generic_workflow/positive/` and `generic_workflow/negative/`
+4. Copy `generic_workflow/POS_NEG_merge.qmd` to the study root
+5. In each file, set:
+   - `PROJECT_ROOT <- "../../.."` (path back to project root)
+   - `STUDY_ID <- "my_study"`
+   - Adjust study-specific parameters (sample types, colors, volume factors, etc.)
+6. Copy `LipidDatabase_R.xlsx` into the study folder (one level above `positive/`/`negative/`)
+7. Add polarity-specific files to each polarity folder:
+   - `seq_pos_my_study.xlsx` / `seq_neg_my_study.xlsx` (sample sequences)
+   - `pos_lipid_reference_set.xlsx` / `neg_lipid_reference_set.xlsx` (copy from another study)
+   - `data/` subfolder with `.mzML` files
 
 ---
 
-## 📋 User Checkpoints
+## User Checkpoints
 
-The workflow includes several **USER CHECKPOINT** sections that require your attention:
+The workflow includes several interactive checkpoints:
 
 | Checkpoint | Location | Action Required |
 |------------|----------|-----------------|
-| RT Filter Range | Data Import | Adjust RT filter based on BPC |
-| Reference Lipid EICs | Dataset Investigation | Verify IS signals |
+| RT Filter Range | Preprocessing | Adjust RT filter based on BPC |
+| Reference Lipid EICs | Preprocessing | Verify internal standard signals |
 | Peak Detection Results | Preprocessing | Check peak detection quality |
-| RT Correction Model | Database Correction | Validate R² and residuals |
+| RT Correction Model | Annotation | Validate R-squared and residuals |
 | Isotope Pattern Validation | Annotation | Review mirror plots |
 | Manual Ambiguity Resolution | Annotation | Curate Excel files |
 
 ---
 
-## 📊 Output Files
+## Configuration Parameters
 
-### Generated During Analysis
-
-| File | Description |
-|------|-------------|
-| `lipid_ambiguity_resolution.xlsx` | Lipids matching multiple features (manual curation) |
-| `feature_ambiguity_resolution.xlsx` | Features matching multiple lipids (manual curation) |
-
-### Saved R Objects
-
-| Object | Contents |
-|--------|----------|
-| `preprocessed_mse_*` | MsExperiment with chromatographic peaks |
-| `preprocessed_res*` | SummarizedExperiment with feature intensities |
-
----
-
-## 🔧 Configuration Parameters
-
-Key parameters in `Lipidomics_workflow.qmd`:
+Key parameters in the Configuration section of each workflow file:
 
 ```r
-POLARITY <- "pos"          # Analysis mode
-CORES_NB <- 4              # Parallel processing cores
-RT_FILTER_MIN <- 10        # RT filter start (seconds)
-RT_FILTER_MAX <- 950       # RT filter end (seconds)
-PEAK_WIDTH <- c(4, 8)      # Peak width range (seconds)
-PPM <- 10                  # m/z tolerance for peak detection
-MATCH_PPM <- 20            # m/z tolerance for database matching
-MATCH_RT_TOL <- 20         # RT tolerance for matching (seconds)
+PROJECT_ROOT <- "../../.."  # Path to project root (for shared R/ helper functions)
+STUDY_ID <- "pilot"         # Study prefix for saved objects and seq file names
+POLARITY <- "pos"           # Hardcoded per folder ("pos" in positive/, "neg" in negative/)
+CORES_NB <- 4               # Parallel processing cores
+PPM <- 10                   # m/z tolerance for peak detection
+MATCH_PPM <- 20             # m/z tolerance for database matching
+MATCH_RT_TOL <- 20          # RT tolerance for matching (seconds)
 ISOPEAK_SIM_THRESHOLD <- 0.78  # Minimum isotope similarity
-RSD_THRESHOLD <- 0.3       # QC RSD filter (30%)
+RSD_THRESHOLD <- 0.3        # QC RSD filter (30%)
 ```
 
 ---
 
-## 📚 References
+## References
 
-1. **Lipid Database**: [https://doi.org/10.1016/j.jlr.2024.100671](https://doi.org/10.1016/j.jlr.2024.100671)
-2. **Original Study**: [https://doi.org/10.1016/j.microc.2025.113760](https://doi.org/10.1016/j.microc.2025.113760)
+1. **Lipid Database**: <https://doi.org/10.1016/j.jlr.2024.100671>
+2. **Original Study (pilot)**: <https://doi.org/10.1016/j.microc.2025.113760>
+3. **Validation Study (exercise)**: <https://pubs.acs.org/doi/10.1021/acs.jproteome.5c00480>
 
 ---
 
-## 👥 Contributors
+## Contributors
 
 - CEMBIO-EURAC Team
 - Sara Londono
@@ -187,6 +200,6 @@ RSD_THRESHOLD <- 0.3       # QC RSD filter (30%)
 
 ---
 
-## 📄 License
+## License
 
 This project is for research purposes. Please cite the original publications when using this workflow.
