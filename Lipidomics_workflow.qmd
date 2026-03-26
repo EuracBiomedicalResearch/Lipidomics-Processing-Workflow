@@ -52,18 +52,18 @@ project_root/
 
 Before running, prepare these files:
 
-1. Sample sequence file (`seq_pos.xlsx` or `seq_neg.xlsx`):
+1. Raw data files in `.mzML` format in the appropriate data folder
+
+2. Sample sequence file (`seq_pos.xlsx` or `seq_neg.xlsx`):
    - Columns: `file_name`, `sample_name`, `sample_type`, `injection_index`
    - `sample_type` should include: QC, M-VAMS, W-DBS, C-qDBS, Plasma
-
-2. Reference lipid list (`splashlipidomix_list.xlsx` or `neg_splashlipidomix_list.xlsx`):
-   - Columns: `short_name`, `mz`, `RT` (in seconds)
 
 3. Lipid database (`LipidDatabase_R.xlsx`):
    - Sheet 4: Positive mode database
    - Sheet 5: Negative mode database
-
-4. Raw data files in `.mzML` format in the appropriate data folder
+   
+4. Reference lipid list (`splashlipidomix_list.xlsx` or `neg_splashlipidomix_list.xlsx`):
+   - Columns: `short_name`, `mz`, `RT` (in seconds)
 
 ---
 
@@ -80,13 +80,13 @@ The other parameter SHOULD be adjusted while the workflop is being run.
 # ============================================================================
 
 # Analysis polarity: "pos" or "neg"
-POLARITY <- "neg"
+POLARITY <- "pos"
 
 # Data source: "local", "sqlite", or "metaboLights"
 # - "local": Load from local .mzML files in POS_data/ or NEG_data/
 # - "sqlite": Load from pre-built SQLite database (faster for repeated analyses)
 # - "metaboLights": Download directly from MetaboLights repository (MTBLS10722)
-DATA_SOURCE <- "sqlite"
+DATA_SOURCE <- "local"
 
 # MetaboLights study ID (only used if DATA_SOURCE = "metaboLights")
 MTBLS_ID <- "MTBLS10722"
@@ -100,7 +100,7 @@ CORES_NB <- 4
 
 # Retention time filter range (seconds) - adjust based on your BPC
 RT_FILTER_MIN <- 10
-RT_FILTER_MAX <- 800  # Use 800 for negative mode typically
+RT_FILTER_MAX <- 950  # Use 800 for negative mode typically
 
 # Chromatographic peak detection parameters
 PEAK_WIDTH <- c(4, 8)  # min and max peak width in seconds
@@ -1168,4 +1168,6 @@ sessionInfo()
 # Reference
 
 1. Database source: <https://doi.org/10.1016/j.jlr.2024.100671>
-2. Original study: <https://doi.org/10.1016/j.microc.2025.113760>
+2. Original study (dataset 1): <https://doi.org/10.1016/j.microc.2025.113760>
+3. Metabonaut tutorial: <https://rformassspectrometry.github.io/Metabonaut/articles/a-end-to-end-untargeted-metabolomics.html#retention-time-alignment>
+4. Validation study (dataset 2): <https://pubs.acs.org/doi/10.1021/acs.jproteome.5c00480>
