@@ -83,8 +83,10 @@ Before running, prepare these files:
 
 # Configuration
 
-Set the analysis polarity here. This single parameter controls the entire workflow.
-The other parameter SHOULD be adjusted while the workflop is being run.
+The workflow processes both positive and negative ionization modes in a single run.
+xcms preprocessing steps (1–7) use `PosNegMsExp`/`PosNegXcmsExp` to apply identical parameters to
+both modes simultaneously. Annotation steps (8–10) loop over each mode, using
+mode-specific reference files and database sheets. Adjust parameters below as needed.
 
 ```{r config}
 #| label: configuration
@@ -92,9 +94,6 @@ The other parameter SHOULD be adjusted while the workflop is being run.
 # ============================================================================
 # USER CONFIGURATION - MODIFY THIS SECTION
 # ============================================================================
-
-# Analysis polarity: "pos" or "neg"
-POLARITY <- "pos"
 
 # Smoke test mode: if TRUE, slice data to a minimal subset (all QCs + 2 study
 # samples per type) to allow a fast run-through of the entire pipeline.
@@ -115,16 +114,16 @@ DATA_SOURCE <- "local"
 # MetaboLights study ID (only used if DATA_SOURCE = "metaboLights")
 MTBLS_ID <- "MTBLS10722"
 
-# SQLite database path (only used if DATA_SOURCE = "sqlite")
-# Will be auto-generated based on polarity if not specified
-SQLITE_DB <- NULL  # e.g., "NEG_data/pilot_neg.sqlite"
+# SQLite database paths (only used if DATA_SOURCE = "sqlite")
+SQLITE_DB_POS <- NULL  # e.g., "POS_data/pilot_pos.sqlite"
+SQLITE_DB_NEG <- NULL  # e.g., "NEG_data/pilot_neg.sqlite"
 
 # Number of CPU cores for parallel processing (use 1-2 below your max)
 CORES_NB <- 4
 
-# Retention time filter range (seconds) - adjust based on your BPC
-RT_FILTER_MIN <- 10
-RT_FILTER_MAX <- 800  # Use 800 for negative mode typically
+# Retention time filter range (seconds) per ionization mode
+RT_FILTER_POS <- c(10, 800)
+RT_FILTER_NEG <- c(10, 800)
 
 # Chromatographic peak detection parameters
 PEAK_WIDTH <- c(4, 8)  # min and max peak width in seconds
@@ -144,6 +143,16 @@ VOLUME_FACTORS <- list(
   "W" = 2.5,    # W-DBS: smaller volume injected
   "P" = 1.08    # Plasma: slight adjustment
 )
+
+# --- Per-mode file configuration ---
+SEQ_FILE_POS <- "seq_pos.xlsx"
+SEQ_FILE_NEG <- "seq_neg.xlsx"
+IS_FILE_POS  <- "splashlipidomix_list.xlsx"
+IS_FILE_NEG  <- "neg_splashlipidomix_list.xlsx"
+DB_SHEET_POS <- 4L
+DB_SHEET_NEG <- 5L
+RT_COL_POS   <- "RT ESI(+) (min)"
+RT_COL_NEG   <- "RT ESI(\u2013) (min)"
 ```
 
 # Setup
@@ -155,6 +164,7 @@ VOLUME_FACTORS <- list(
 
 # Source helper functions
 source("R/lipid_helpers.R")
+source("R/pos_neg_exp.R")
 
 # Load all required packages
 load_lipid_packages(verbose = TRUE)
@@ -240,20 +250,23 @@ save_snapshot <- function(object, step_name, polarity, smoke,
 ```{r validate-config}
 #| label: validate-config
 
-# Validate all user-defined parameters before proceeding
-validate_config(
-  polarity = POLARITY,
-  data_source = DATA_SOURCE,
-  cores_nb = CORES_NB,
-  rt_filter = c(RT_FILTER_MIN, RT_FILTER_MAX),
-  peak_width = PEAK_WIDTH,
-  ppm = PPM,
-  sn_threshold = SN_THRESHOLD,
-  match_ppm = MATCH_PPM,
-  match_rt_tol = MATCH_RT_TOL,
-  isopeak_sim = ISOPEAK_SIM_THRESHOLD,
-  rsd_threshold = RSD_THRESHOLD
-)
+# Validate parameters for both modes (same xcms params, different RT filter)
+for (.pol in c("pos", "neg")) {
+  validate_config(
+    polarity = .pol,
+    data_source = DATA_SOURCE,
+    cores_nb = CORES_NB,
+    rt_filter = if (.pol == "pos") RT_FILTER_POS else RT_FILTER_NEG,
+    peak_width = PEAK_WIDTH,
+    ppm = PPM,
+    sn_threshold = SN_THRESHOLD,
+    match_ppm = MATCH_PPM,
+    match_rt_tol = MATCH_RT_TOL,
+    isopeak_sim = ISOPEAK_SIM_THRESHOLD,
+    rsd_threshold = RSD_THRESHOLD
+  )
+}
+rm(.pol)
 ```
 
 ## Setup Folder Structure
@@ -261,23 +274,9 @@ validate_config(
 ```{r setup-folders}
 #| label: setup-folders
 
-# Create folder structure based on polarity
-folders <- setup_folders(polarity = POLARITY)
-
-# Define file paths based on polarity
-if (POLARITY == "pos") {
-  SEQ_FILE <- "seq_pos.xlsx"
-  IS_FILE <- "splashlipidomix_list.xlsx"
-  DB_SHEET <- 4L
-  DATA_SUFFIX <- "_pos.mzML"
-  RT_COL <- "RT ESI(+) (min)"
-} else {
-  SEQ_FILE <- "seq_neg.xlsx"
-  IS_FILE <- "neg_splashlipidomix_list.xlsx"
-  DB_SHEET <- 5L
-  DATA_SUFFIX <- "_neg.mzML"
-  RT_COL <- "RT ESI(–) (min)"
-}
+# Create folder structure for both modes
+folders_pos <- setup_folders(polarity = "pos")
+folders_neg <- setup_folders(polarity = "neg")
 
 # Setup parallel processing
 if (.Platform$OS.type == "unix") {
@@ -327,23 +326,27 @@ cached locally after the first download.
 ```{r validate-inputs}
 #| label: validate-inputs
 
-# Validate metadata file
-validate_metadata(
-  SEQ_FILE,
-  expected_sample_types = c("QC", "M-VAMS", "W-DBS", "C-qDBS", "Plasma"),
-  data_dir = if (DATA_SOURCE == "local") folders$data else NULL
-)
+for (.pol in c("pos", "neg")) {
+  .folders  <- if (.pol == "pos") folders_pos else folders_neg
+  .seq_file <- if (.pol == "pos") SEQ_FILE_POS else SEQ_FILE_NEG
+  .is_file  <- if (.pol == "pos") IS_FILE_POS  else IS_FILE_NEG
+  .db_sheet <- if (.pol == "pos") DB_SHEET_POS else DB_SHEET_NEG
+  .rt_col   <- if (.pol == "pos") RT_COL_POS   else RT_COL_NEG
 
-# Validate reference lipid file
-validate_reference_lipids(IS_FILE)
-
-# Validate lipid database
-validate_lipid_database(
-  db_path = "LipidDatabase_R.xlsx",
-  sheet = DB_SHEET,
-  polarity = POLARITY,
-  rt_col = RT_COL
-)
+  validate_metadata(
+    .seq_file,
+    expected_sample_types = c("QC", "M-VAMS", "W-DBS", "C-qDBS", "Plasma"),
+    data_dir = if (DATA_SOURCE == "local") .folders$data else NULL
+  )
+  validate_reference_lipids(.is_file)
+  validate_lipid_database(
+    db_path = "LipidDatabase_R.xlsx",
+    sheet = .db_sheet,
+    polarity = .pol,
+    rt_col = .rt_col
+  )
+}
+rm(.pol, .folders, .seq_file, .is_file, .db_sheet, .rt_col)
 ```
 
 ::: {.callout-important}
@@ -361,73 +364,61 @@ Fix any reported problems in your input files **before** continuing.
 ```{r load-data}
 #| label: load-data
 
-# Load sample sequence
-seq_data <- read_xlsx(SEQ_FILE, col_names = TRUE) |> as.data.frame()
-seq_data$polarity <- POLARITY
+.load_mode <- function(polarity, folders, seq_file) {
+  seq_data <- read_xlsx(seq_file, col_names = TRUE) |> as.data.frame()
+  seq_data$polarity <- polarity
 
-if (DATA_SOURCE == "local") {
-  # ---- OPTION 1: Load from local mzML files ----
-  message("Loading data from local mzML files...")
+  if (DATA_SOURCE == "local") {
+    spectra_files <- file.path(folders$data, seq_data$file_name)
+    missing_files <- spectra_files[!file.exists(spectra_files)]
+    if (length(missing_files) > 0)
+      stop("Missing files (", polarity, "):\n", paste(missing_files, collapse = "\n"))
+    readMsExperiment(spectraFiles = spectra_files, sampleData = seq_data)
 
-  spectra_files <- file.path(folders$data, seq_data$file_name)
+  } else if (DATA_SOURCE == "sqlite") {
+    sqlite_db <- if (polarity == "pos") SQLITE_DB_POS else SQLITE_DB_NEG
+    if (is.null(sqlite_db))
+      sqlite_db <- file.path(folders$data, paste0("pilot_", polarity, ".sqlite"))
+    load_from_sqlite(sqlite_db, seq_data)
 
-  # Check files exist
-  missing_files <- spectra_files[!file.exists(spectra_files)]
-  if (length(missing_files) > 0) {
-    stop("Missing files:\n", paste(missing_files, collapse = "\n"))
-  }
-
-  mse <- readMsExperiment(spectraFiles = spectra_files, sampleData = seq_data)
-
-} else if (DATA_SOURCE == "sqlite") {
-  # ---- OPTION 2: Load from SQLite database ----
-  # To create a database from mzML files first, run: source("R/create_sqlite_database.R")
-
-  # Use provided path or default based on polarity
-  if (is.null(SQLITE_DB)) {
-    SQLITE_DB <- file.path(folders$data, paste0("pilot_", POLARITY, ".sqlite"))
-  }
-
-  mse <- load_from_sqlite(SQLITE_DB, seq_data)
-
-} else if (DATA_SOURCE == "metaboLights") {
-  # ---- OPTION 3: Load from MetaboLights ----
-  # This loads data directly from the MetaboLights repository.
-  # You need to configure the column_mapping for your specific study.
-
-  # Define assay name based on polarity (specific to MTBLS10722)
-  assay_name <- if (POLARITY == "pos") {
-    "a_MTBLS10722_LC-MS_positive_reverse-phase_metabolite_profiling.txt"
+  } else if (DATA_SOURCE == "metaboLights") {
+    assay_name <- if (polarity == "pos") {
+      "a_MTBLS10722_LC-MS_positive_reverse-phase_metabolite_profiling.txt"
+    } else {
+      "a_MTBLS10722_LC-MS_negative_reverse-phase_metabolite_profiling.txt"
+    }
+    mtbls_column_mapping <- list(
+      sample_name = "Sample Name",
+      file_name = "Raw Spectral Data File",
+      sample_type = "Factor Value[Sample type]",
+      injection_index = "Comment[injection_index]"
+    )
+    load_from_metaboLights(
+      mtbls_id = MTBLS_ID,
+      assay_name = assay_name,
+      column_mapping = mtbls_column_mapping,
+      filter_column = "Factor Value[Cohort]",
+      filter_value = "Cohort_study",
+      exclude_sample_types = "Blank",
+      polarity = polarity
+    )
   } else {
-    "a_MTBLS10722_LC-MS_negative_reverse-phase_metabolite_profiling.txt"
+    stop("Invalid DATA_SOURCE: '", DATA_SOURCE,
+         "'. Use 'local', 'sqlite', or 'metaboLights'.")
   }
-
-  # Column mapping for MTBLS10722 - adjust for other studies
-  # To find column names, visit: https://www.ebi.ac.uk/metabolights/{MTBLS_ID}
-  # and examine the assay file chosen above (a_*.txt)
-  mtbls_column_mapping <- list(
-    sample_name = "Sample Name",
-    file_name = "Raw Spectral Data File",
-    sample_type = "Factor Value[Sample type]",
-    injection_index = "Comment[injection_index]"
-  )
-
-  mse <- load_from_metaboLights(
-    mtbls_id = MTBLS_ID,
-    assay_name = assay_name,
-    column_mapping = mtbls_column_mapping,
-    filter_column = "Factor Value[Cohort]",
-    filter_value = "Cohort_study",
-    exclude_sample_types = "Blank",
-    polarity = POLARITY
-  )
-
-} else {
-  stop("Invalid DATA_SOURCE: '", DATA_SOURCE, "'. Use 'local', 'sqlite', or 'metaboLights'.")
 }
 
-message("✓ Loaded ", length(mse), " samples")
-sampleData(mse)
+message("Loading positive mode data...")
+mse_pos <- .load_mode("pos", folders_pos, SEQ_FILE_POS)
+message("Loading negative mode data...")
+mse_neg <- .load_mode("neg", folders_neg, SEQ_FILE_NEG)
+rm(.load_mode)
+
+# Wrap both modes in a single dual-mode object (PosNegMsExp until findChromPeaks)
+data <- PosNegMsExp(mse_pos, mse_neg)
+message("✓ Loaded ", length(posExp(data)), " samples (pos) and ",
+        length(negExp(data)), " samples (neg)")
+sampleData(posExp(data))
 ```
 
 ```{r smoke-slice}
@@ -435,17 +426,18 @@ sampleData(mse)
 
 # SMOKE mode: retain all QC samples (needed for RT alignment) and at most 2
 # study samples per sample type, giving a fast but structurally complete run.
+# Both modes are assumed to have the same sample ordering.
 if (isTRUE(SMOKE)) {
-    qc_idx   <- which(sampleData(mse)$sample_type == "QC")
-    other_types <- unique(sampleData(mse)$sample_type[
-        sampleData(mse)$sample_type != "QC"])
+    sd <- sampleData(posExp(data))
+    qc_idx   <- which(sd$sample_type == "QC")
+    other_types <- unique(sd$sample_type[sd$sample_type != "QC"])
     other_idx <- unlist(lapply(other_types, function(t) {
-        head(which(sampleData(mse)$sample_type == t), 2)
+        head(which(sd$sample_type == t), 2)
     }))
     keep_idx <- sort(unique(c(qc_idx, other_idx)))
-    mse <- filterFile(mse, file = keep_idx)
-    message("SMOKE mode: subset to ", length(mse), " samples (",
-            paste(sampleData(mse)$sample_name, collapse = ", "), ")")
+    data <- filterFile(data, file = keep_idx)
+    message("SMOKE mode: subset to ", length(posExp(data)), " samples (",
+            paste(sampleData(posExp(data))$sample_name, collapse = ", "), ")")
 }
 ```
 
@@ -457,10 +449,9 @@ Create color palettes for visualization. By default, colors are based on
 ```{r setup-colors}
 #| label: setup-colors
 
-# Create palette for sample_type (default for most plots)
-# Uses predefined colors for known sample types, auto-generates for others
+# Create palette for sample_type (same sample types in both modes)
 palette_sample_type <- create_color_palette(
-  mse,
+  posExp(data),
   column = "sample_type",
   custom_colors =
     c("QC" = "#999999",
@@ -471,11 +462,6 @@ palette_sample_type <- create_color_palette(
     )
 )
 
-# You can create additional palettes for other columns, e.g.:
-# palette_batch <- create_color_palette(mse, column = "batch")
-# palette_donor <- create_color_palette(mse, column = "donor_id", palette = "Set2")
-
-# Display the palette
 message("Color palette for sample_type:")
 print(palette_sample_type)
 ```
@@ -486,32 +472,35 @@ print(palette_sample_type)
 
 ```{r bpc-raw}
 #| label: bpc-raw
-#| fig-cap: "Base Peak Chromatogram (BPC) of all samples colored by sample type"
+#| fig-cap: "Base Peak Chromatogram (BPC) for positive (left) and negative (right) mode"
 
-# Plot BPC
-plot_bpc(mse, palette = palette_sample_type, main = "BPC - All Samples")
+par(mfrow = c(1, 2))
+plot_bpc(posExp(data), palette = palette_sample_type, main = "BPC - Positive Mode")
+plot_bpc(negExp(data), palette = palette_sample_type, main = "BPC - Negative Mode")
 ```
 
 ::: {.callout-important}
 ## 📋 USER CHECKPOINT: RT Filter Range
-Examine the BPC above and adjust `RT_FILTER_MIN` and `RT_FILTER_MAX` in the
-Configuration section if needed. The current filter range is
-**`r RT_FILTER_MIN`** to **`r RT_FILTER_MAX`** seconds.
+Examine the BPC above and adjust `RT_FILTER_POS` / `RT_FILTER_NEG` in the
+Configuration section if needed.
+Current: POS **`r RT_FILTER_POS[1]`–`r RT_FILTER_POS[2]`** s,
+NEG **`r RT_FILTER_NEG[1]`–`r RT_FILTER_NEG[2]`** s.
 :::
 
 ```{r filter-rt}
 #| label: filter-rt
 
-# Filter based on retention time
-mse <- filterRt(mse, c(RT_FILTER_MIN, RT_FILTER_MAX))
+# Filter both modes using perMode() to allow different ranges per polarity
+data <- filterRt(data, rt = perMode(pos = RT_FILTER_POS, neg = RT_FILTER_NEG))
 ```
 
 ```{r bpc-filtered}
 #| label: bpc-filtered
-#| fig-cap: "BPC after retention time filtering"
+#| fig-cap: "BPC after retention time filtering (positive left, negative right)"
 
-plot_bpc(mse, palette = palette_sample_type,
-         main = "BPC - After RT Filtering")
+par(mfrow = c(1, 2))
+plot_bpc(posExp(data), palette = palette_sample_type, main = "BPC - Positive (filtered)")
+plot_bpc(negExp(data), palette = palette_sample_type, main = "BPC - Negative (filtered)")
 ```
 
 ## Reference Lipid EICs
@@ -522,32 +511,40 @@ Load and visualize the internal standards / reference lipids used for RT correct
 #| label: load-is
 #| tbl-cap: "Reference lipids for RT correction"
 
-# Load and prepare internal standard data
-intern_standard <- prepare_reference_lipids(
-  IS_FILE,
-  rt_window_left = 30,
-  rt_window_right = ifelse(POLARITY == "pos", 15, 20)
+# Load reference lipids for each mode
+intern_standard_pos <- prepare_reference_lipids(
+  IS_FILE_POS, rt_window_left = 30, rt_window_right = 15
+)
+intern_standard_neg <- prepare_reference_lipids(
+  IS_FILE_NEG, rt_window_left = 30, rt_window_right = 20
 )
 
-# Extract EICs
-eic_is <- extract_is_eics(mse, intern_standard)
-fdata <- fData(eic_is)
+# Extract EICs for both modes
+eic_is_pos <- extract_is_eics(posExp(data), intern_standard_pos)
+eic_is_neg <- extract_is_eics(negExp(data), intern_standard_neg)
+fdata_pos  <- fData(eic_is_pos)
+fdata_neg  <- fData(eic_is_neg)
 
-# Display table
-kable(intern_standard[, c("short_name", "mz", "RT")], format = "pipe")
+message("Positive mode reference lipids:")
+kable(intern_standard_pos[, c("short_name", "mz", "RT")], format = "pipe")
+message("Negative mode reference lipids:")
+kable(intern_standard_neg[, c("short_name", "mz", "RT")], format = "pipe")
 ```
 
 ```{r plot-is-eics}
 #| label: plot-is-eics
 
-# Save EIC plots for all reference lipids
-plot_eic_batch(eic_is, fdata, palette = palette_sample_type,
-               output_dir = folders$eic_istd)
+# Save EIC plots for reference lipids (both modes)
+plot_eic_batch(eic_is_pos, fdata_pos, palette = palette_sample_type,
+               output_dir = folders_pos$eic_istd)
+plot_eic_batch(eic_is_neg, fdata_neg, palette = palette_sample_type,
+               output_dir = folders_neg$eic_istd)
 ```
 
 ::: {.callout-important}
 ## 📋 USER CHECKPOINT: Reference Lipid EICs
-Check the EIC plots saved in **`r folders$eic_istd`**.
+Check the EIC plots saved in **`r folders_pos$eic_istd`** (positive) and
+**`r folders_neg$eic_istd`** (negative).
 
 - The red dashed line indicates the expected RT
 - Each peak should be detected in most/all samples
@@ -580,47 +577,61 @@ param_pd
 ```{r run-peak-detection}
 #| label: run-peak-detection
 
-# Run peak detection on entire dataset
-mse <- findChromPeaks(mse, param = param_pd, chunkSize = CORES_NB)
+# Run peak detection on both modes simultaneously
+data <- findChromPeaks(data, param = param_pd, chunkSize = CORES_NB)
 
-# Update EICs with peak detection results
-eic_is <- extract_is_eics(mse, intern_standard)
-fData(eic_is) <- fdata
+# Update EICs with peak detection results for each mode
+eic_is_pos <- extract_is_eics(posExp(data), intern_standard_pos)
+fData(eic_is_pos) <- fdata_pos
+eic_is_neg <- extract_is_eics(negExp(data), intern_standard_neg)
+fData(eic_is_neg) <- fdata_neg
 
-# Inline check: peak detection must yield at least one peak per retained sample
-n_peaks <- nrow(chromPeaks(mse))
-n_samples <- length(mse)
-if (n_peaks == 0L)
-    stop("No chromatographic peaks detected. Check CentWave parameters or data quality.")
-if (n_peaks / n_samples < 10)
-    warning("Very few peaks per sample (", round(n_peaks / n_samples, 1),
-            "). SMOKE subset may be too sparse for meaningful regression snapshots.")
-save_snapshot(as.data.frame(chromPeaks(mse)),
-              "step3_chrompeaks", POLARITY, SMOKE)
+# Inline checks and snapshots for both modes
+for (.pol in c("pos", "neg")) {
+    .mse <- if (.pol == "pos") posExp(data) else negExp(data)
+    n_peaks   <- nrow(chromPeaks(.mse))
+    n_samples <- length(.mse)
+    if (n_peaks == 0L)
+        stop("No chromatographic peaks detected (", .pol, "). ",
+             "Check CentWave parameters or data quality.")
+    if (n_peaks / n_samples < 10)
+        warning("Very few peaks per sample in ", .pol, " mode (",
+                round(n_peaks / n_samples, 1), ").")
+    save_snapshot(as.data.frame(chromPeaks(.mse)),
+                  "step3_chrompeaks", .pol, SMOKE)
+}
+rm(.pol, .mse, n_peaks, n_samples)
 ```
 
 ```{r peaks-per-sample}
 #| label: peaks-per-sample
-#| tbl-cap: "Number of chromatographic peaks detected per sample"
+#| tbl-cap: "Chromatographic peaks detected per sample (positive / negative)"
 
-# Summarize peaks per sample
-data.frame(
-  sample_name = sampleData(mse)$sample_name,
-  peak_count = as.integer(table(chromPeaks(mse)[, "sample"]))
-) |> t() |> kable(format = "pipe")
+for (.pol in c("pos", "neg")) {
+    .mse <- if (.pol == "pos") posExp(data) else negExp(data)
+    message(.pol, " mode:")
+    data.frame(
+        sample_name = sampleData(.mse)$sample_name,
+        peak_count  = as.integer(table(chromPeaks(.mse)[, "sample"]))
+    ) |> t() |> kable(format = "pipe") |> print()
+}
+rm(.pol, .mse)
 ```
 
 ```{r save-peak-detection-plots}
 #| label: save-peak-detection-plots
 
-# Save peak detection result plots
-plot_eic_batch(eic_is, fdata, palette = palette_sample_type,
-               output_dir = folders$peak_detection)
+# Save peak detection result plots for both modes
+plot_eic_batch(eic_is_pos, fdata_pos, palette = palette_sample_type,
+               output_dir = folders_pos$peak_detection)
+plot_eic_batch(eic_is_neg, fdata_neg, palette = palette_sample_type,
+               output_dir = folders_neg$peak_detection)
 ```
 
 ::: {.callout-important}
 ## 📋 USER CHECKPOINT: Peak Detection Results
-Review the plots in **`r folders$peak_detection`**.
+Review the plots in **`r folders_pos$peak_detection`** (positive) and
+**`r folders_neg$peak_detection`** (negative).
 
 - Each peak should be detected in most samples
 - Check that peaks are not merged incorrectly
@@ -632,8 +643,8 @@ Review the plots in **`r folders$peak_detection`**.
 ```{r rt-alignment}
 #| label: rt-alignment
 
-# Initial correspondence for alignment (based on QC samples)
-QC_samples <- sampleData(mse)$sample_type == "QC"
+# Both modes share the same sample structure — use pos mode to derive groups
+QC_samples <- sampleData(posExp(data))$sample_type == "QC"
 
 param_c <- PeakDensityParam(
   sampleGroups = QC_samples,
@@ -641,9 +652,9 @@ param_c <- PeakDensityParam(
   binSize = 0.01, ppm = PPM,
   bw = 2
 )
-mse <- groupChromPeaks(mse, param = param_c)
+data <- groupChromPeaks(data, param = param_c)
 
-# Perform alignment
+# Perform alignment on both modes simultaneously
 subset_idx <- which(QC_samples)
 param_align <- PeakGroupsParam(
   minFraction = 0.9,
@@ -653,32 +664,41 @@ param_align <- PeakGroupsParam(
   subset = subset_idx
 )
 
-mse <- adjustRtime(mse, param = param_align)
+data <- adjustRtime(data, param = param_align)
 ```
 
 ```{r plot-alignment}
 #| label: plot-alignment
-#| fig-cap: "Retention time alignment results"
+#| fig-cap: "Retention time alignment (positive left, negative right)"
 
-# Visualize alignment
-col_sample <- get_sample_colors(sampleData(mse)$sample_type, palette_sample_type)
-plotAdjustedRtime(mse, col = paste0(col_sample, "80"), peakGroupsPch = 1)
-grid()
-legend("topright", col = palette_sample_type,
-       legend = names(palette_sample_type), lty = 1, bty = "n")
+par(mfrow = c(1, 2))
+for (.pol in c("pos", "neg")) {
+    .mse <- if (.pol == "pos") posExp(data) else negExp(data)
+    col_sample <- get_sample_colors(sampleData(.mse)$sample_type, palette_sample_type)
+    plotAdjustedRtime(.mse, col = paste0(col_sample, "80"), peakGroupsPch = 1,
+                      main = paste("RT alignment -", .pol))
+    grid()
+    legend("topright", col = palette_sample_type,
+           legend = names(palette_sample_type), lty = 1, bty = "n")
+}
+rm(.pol, .mse, col_sample)
 ```
 
 ```{r apply-alignment}
 #| label: apply-alignment
 
-# Snapshot BEFORE applying: adjustedRtime() is only meaningful while the
-# correction vectors are still separate from the raw RTs.
-save_snapshot(adjustedRtime(mse),
-              "step5_adjrt", POLARITY, SMOKE)
+# Snapshot BEFORE applying for both modes
+save_snapshot(adjustedRtime(posExp(data)), "step5_adjrt", "pos", SMOKE)
+save_snapshot(adjustedRtime(negExp(data)), "step5_adjrt", "neg", SMOKE)
 
-# Keep raw data for comparison, then apply alignment
-mse_raw <- dropAdjustedRtime(mse)
-mse <- applyAdjustedRtime(mse)
+# Keep raw data for comparison, then apply alignment.
+# Note: applyAdjustedRtime() is not an S4 generic in xcms so it cannot be
+# dispatched on PosNegXcmsExp — call it explicitly on each mode slot.
+data_raw <- dropAdjustedRtime(data)
+data <- PosNegXcmsExp(
+    applyAdjustedRtime(posExp(data)),
+    applyAdjustedRtime(negExp(data))
+)
 ```
 
 ## Correspondence Analysis
@@ -687,7 +707,7 @@ mse <- applyAdjustedRtime(mse)
 #| label: correspondence
 
 # Define sample groups (QCs as NA)
-group_mse <- sampleData(mse)$sample_type
+group_mse <- sampleData(posExp(data))$sample_type
 group_mse[group_mse == "QC"] <- NA
 group_mse <- as.factor(group_mse)
 
@@ -700,13 +720,16 @@ param_cor <- PeakDensityParam(
   bw = 2
 )
 
-# Run correspondence
-mse <- groupChromPeaks(mse, param = param_cor)
+# Run correspondence on both modes simultaneously
+data <- groupChromPeaks(data, param = param_cor)
 
-message("Correspondence complete: ", nrow(featureDefinitions(mse)), " features")
-
-save_snapshot(as.data.frame(featureDefinitions(mse)),
-              "step6_features", POLARITY, SMOKE)
+for (.pol in c("pos", "neg")) {
+    .mse <- if (.pol == "pos") posExp(data) else negExp(data)
+    message(.pol, " correspondence: ", nrow(featureDefinitions(.mse)), " features")
+    save_snapshot(as.data.frame(featureDefinitions(.mse)),
+                  "step6_features", .pol, SMOKE)
+}
+rm(.pol, .mse)
 ```
 
 ## Gap Filling
@@ -714,27 +737,30 @@ save_snapshot(as.data.frame(featureDefinitions(mse)),
 ```{r gap-filling}
 #| label: gap-filling
 
-# Check missing values before
-na_before <- sum(is.na(featureValues(mse))) / length(featureValues(mse)) * 100
+# Capture pre-fill NA rates for both modes
+na_before <- list(
+    pos = sum(is.na(featureValues(posExp(data)))) / length(featureValues(posExp(data))) * 100,
+    neg = sum(is.na(featureValues(negExp(data)))) / length(featureValues(negExp(data))) * 100
+)
 
-# Fill missing values
-mse <- fillChromPeaks(mse, param = ChromPeakAreaParam(), chunkSize = CORES_NB)
+# Fill missing values in both modes simultaneously
+data <- fillChromPeaks(data, param = ChromPeakAreaParam(), chunkSize = CORES_NB)
 
-# Check missing values after
-na_after <- sum(is.na(featureValues(mse))) / length(featureValues(mse)) * 100
-
-message("Gap filling: ", round(na_before, 1), "% -> ", round(na_after, 1), "% NA")
-
-# Warning for high initial NA percentage
-if (na_before > 50) {
-  warning("High initial missing value percentage (", round(na_before, 1),
-          "%). Consider reviewing peak detection parameters or sample quality.")
+# Capture post-fill NA rates, report, and snapshot
+for (.pol in c("pos", "neg")) {
+    .mse     <- if (.pol == "pos") posExp(data) else negExp(data)
+    na_after <- sum(is.na(featureValues(.mse))) / length(featureValues(.mse)) * 100
+    message(.pol, " gap filling: ", round(na_before[[.pol]], 1),
+            "% -> ", round(na_after, 1), "% NA")
+    if (na_before[[.pol]] > 50)
+        warning("High initial NA % in ", .pol, " mode (",
+                round(na_before[[.pol]], 1), "%).")
+    save_snapshot(list(na_before  = na_before[[.pol]],
+                       na_after   = na_after,
+                       n_features = nrow(featureDefinitions(.mse))),
+                  "step7_gapfill", .pol, SMOKE)
 }
-
-save_snapshot(list(na_before   = na_before,
-                   na_after    = na_after,
-                   n_features  = nrow(featureDefinitions(mse))),
-              "step7_gapfill", POLARITY, SMOKE)
+rm(.pol, .mse, na_after)
 ```
 
 ::: {.callout-note}
@@ -749,38 +775,47 @@ save_snapshot(list(na_before   = na_before,
 ```{r extract-results}
 #| label: extract-results
 
-# Extract as SummarizedExperiment
-res <- quantify(mse, method = "sum", filled = FALSE)
-assays(res)$raw_filled <- featureValues(mse, method = "sum", filled = TRUE)
+# Extract per-mode SummarizedExperiment objects
+mse_pos <- posExp(data)
+mse_neg <- negExp(data)
+
+res_pos <- quantify(mse_pos, method = "sum", filled = FALSE)
+assays(res_pos)$raw_filled <- featureValues(mse_pos, method = "sum", filled = TRUE)
+
+res_neg <- quantify(mse_neg, method = "sum", filled = FALSE)
+assays(res_neg)$raw_filled <- featureValues(mse_neg, method = "sum", filled = TRUE)
 ```
 
 ```{r validate-preprocessing}
 #| label: validate-preprocessing
 
-# Validate the preprocessed result
-validate_result(res, assay_name = "raw", min_features = 50)
+validate_result(res_pos, assay_name = "raw", min_features = 50)
+validate_result(res_neg, assay_name = "raw", min_features = 50)
 ```
 
 ```{r save-preprocessed}
 #| label: save-preprocessed
 #| eval: true
 
-# Save preprocessed objects
-mse_save_path <- file.path(folders$objects,
-                           paste0("preprocessed_mse_", POLARITY))
-res_save_path <- file.path(folders$objects,
-                           paste0("preprocessed_res_", POLARITY))
+# Save preprocessed objects for both modes
+for (.pol in c("pos", "neg")) {
+    .mse     <- if (.pol == "pos") mse_pos else mse_neg
+    .res     <- if (.pol == "pos") res_pos else res_neg
+    .folders <- if (.pol == "pos") folders_pos else folders_neg
 
-# If SQLite backend is used, convert to in-memory before saving
-if (DATA_SOURCE == "sqlite") {
-  spectra(mse) <- setBackend(spectra(mse), MsBackendMemory())
-  save(mse, file = paste0(mse_save_path, ".RData"))
-} else {
-  saveMsObject(mse, AlabasterParam(path = mse_save_path))
+    mse_save_path <- file.path(.folders$objects, paste0("preprocessed_mse_", .pol))
+    res_save_path <- file.path(.folders$objects, paste0("preprocessed_res_", .pol))
+
+    if (DATA_SOURCE == "sqlite") {
+        spectra(.mse) <- setBackend(spectra(.mse), MsBackendMemory())
+        save(.mse, file = paste0(mse_save_path, ".RData"))
+    } else {
+        saveMsObject(.mse, AlabasterParam(path = mse_save_path))
+    }
+
+    saveRDS(.res, paste0(res_save_path, ".rds"))
 }
-
-res@metadata <- list()
-saveObject(res, res_save_path)
+rm(.pol, .mse, .res, .folders, mse_save_path, res_save_path)
 ```
 
 ---
@@ -792,544 +827,363 @@ done.
 ```{r load-preprocessed}
 #| label: load-preprocessed
 #| eval: false
- source("R/lipid_helpers.R")
- load_lipid_packages(verbose = TRUE)
- folders <- setup_folders(polarity = POLARITY)
+source("R/lipid_helpers.R")
+source("R/pos_neg_exp.R")
+load_lipid_packages(verbose = TRUE)
+folders_pos <- setup_folders(polarity = "pos")
+folders_neg <- setup_folders(polarity = "neg")
 
- mse_save_path <- file.path(folders$objects, paste0("preprocessed_mse_", POLARITY))
- res_save_path <- file.path(folders$objects, paste0("preprocessed_res_", POLARITY))
+for (.pol in c("pos", "neg")) {
+    .folders      <- if (.pol == "pos") folders_pos else folders_neg
+    mse_save_path <- file.path(.folders$objects, paste0("preprocessed_mse_", .pol))
+    res_save_path <- file.path(.folders$objects, paste0("preprocessed_res_", .pol))
 
- # Load mse: .RData file (from SQLite workflow) or Alabaster directory
- if (file.exists(paste0(mse_save_path, ".RData"))) {
-   load(paste0(mse_save_path, ".RData"))  # loads 'mse'
- } else {
-   mse <- readMsObject(XcmsExperiment(), AlabasterParam(path = mse_save_path))
- }
- res <- readObject(res_save_path)
+    if (file.exists(paste0(mse_save_path, ".RData"))) {
+        load(paste0(mse_save_path, ".RData"))
+        assign(paste0("mse_", .pol), mse)
+    } else {
+        assign(paste0("mse_", .pol),
+               readMsObject(XcmsExperiment(), AlabasterParam(path = mse_save_path)))
+    }
+    assign(paste0("res_", .pol), readRDS(paste0(res_save_path, ".rds")))
+}
+rm(.pol, .folders, mse_save_path, res_save_path)
 
-# # Reload internal standards
- intern_standard <- prepare_reference_lipids(IS_FILE)
- eic_is <- extract_is_eics(mse, intern_standard)
- fdata <- fData(eic_is)
+intern_standard_pos <- prepare_reference_lipids(IS_FILE_POS)
+intern_standard_neg <- prepare_reference_lipids(IS_FILE_NEG)
+eic_is_pos <- extract_is_eics(mse_pos, intern_standard_pos)
+eic_is_neg <- extract_is_eics(mse_neg, intern_standard_neg)
+fdata_pos  <- fData(eic_is_pos)
+fdata_neg  <- fData(eic_is_neg)
 
- message("✓ Loaded preprocessed objects")
+message("✓ Loaded preprocessed objects (pos + neg)")
 ```
 
 ---
 
-# Database RT Correction
+# Annotation, Normalization, and QC (per mode)
 
-Fit a polynomial model to correct library retention times based on observed
-shifts in reference lipids.
-
-```{r rt-correction-fit}
-#| label: rt-correction-fit
-#| fig-cap: "RT correction model diagnostic plots"
-
-# Prepare grouping parameter
-group <- eic_is$sample_type
-group[group == "QC"] <- NA
-group <- as.factor(group)
-param_group <- PeakDensityParam(
-  sampleGroups = group,
-  minFraction = 0.5,
-  binSize = 0.01, ppm = PPM, bw = 2
-)
-
-# Fit RT correction model
-rt_fit <- fit_rt_correction(
-  eic_is, intern_standard, param_group,
-  poly_degree = 6,
-  output_dir = folders$ref_lipid
-)
-
-# Display model summary
-summary(rt_fit$fit)
-
-# Validate the RT correction model
-validate_rt_correction(rt_fit, min_r_squared = 0.90, max_residual = 15)
-
-save_snapshot(list(coef      = coef(rt_fit$fit),
-                   r_squared = summary(rt_fit$fit)$r.squared,
-                   residuals = residuals(rt_fit$fit)),
-              "step8_rtcorrection", POLARITY, SMOKE)
-```
-
-::: {.callout-important}
-## 📋 USER CHECKPOINT: RT Correction Model
-Review the diagnostic plots in **`r folders$ref_lipid`**.
-
-- Red points (reference lipids) should align closely with the fitted curve
-- **R² > 0.95** is expected for a good fit; values below 0.90 indicate poor calibration
-- **Residuals** should be randomly distributed around zero with no systematic patterns
-- Typical residual range: ±10 seconds; larger deviations suggest outlier reference compounds
-:::
-
-## Load and Correct Lipid Database
-
-The `prepare_lipid_database()` function handles all database preprocessing:
-
-1. Filter by rank - Removes rank=0 (unconfirmed) entries
-2. RT conversion - Minutes → seconds
-3. Unique naming - Appends RT rank for lipids with multiple isomers
-4. Adduct processing - Calculates theoretical m/z using `adductFormula()`
-5. Deuterium handling - Converts D↔[2H] notation for formula calculation
-6. NA removal - Cleans empty rows from Excel import
-7. RT correction - Applies polynomial model from reference lipids
-
-```{r load-database}
-#| label: load-database
-
-lipid_database <- prepare_lipid_database(
-  db_path = "LipidDatabase_R.xlsx",
-  sheet = DB_SHEET,
-  polarity = POLARITY,
-  rt_col = RT_COL,
-  rt_fit = rt_fit
-)
-```
-
-```{r plot-rt-correction}
-#| label: plot-rt-correction
-#| fig-cap: "Database RT vs. adjusted RT with reference lipids overlay"
-
-# Plot RT correction results
-plot(y = lipid_database$rt_sd, x = lipid_database$rt_adjusted, type = "l",
-     xlab = "Adjusted RT", ylab = "Database RT")
-points(intern_standard$RT ~ rt_fit$exp_rt, col = "red", pch = 16, cex = 1)
-abline(v = min(rt_fit$fit$fitted.values), col = "blue", lwd = 1, lty = 2)
-abline(v = max(rt_fit$fit$fitted.values), col = "blue", lwd = 1, lty = 2)
-grid()
-abline(0, 1, lty = 2, col = "#00000040")
-legend("topleft", legend = c("Database compounds", "Reference lipids"),
-       col = c("black", "red"), lty = c(1, NA), pch = c(NA, 16), bty = "n")
-```
-
----
-
-# Annotation / Matching
-
-## Rank 1 Matching
-
-Match features against the lipid database using primary adducts (rank 1).
-Matching uses both m/z (ppm tolerance) and RT (time tolerance) constraints.
-
-```{r rank1-matching}
-#| label: rank1-matching
-
-match_result <- match_features_to_database(
-  res,
-  lipid_database,
-  ppm = MATCH_PPM,
-  rt_tol = MATCH_RT_TOL
-)
-
-mtched_data <- match_result$mtched_data
-query <- match_result$query
-lipid_db_r1 <- match_result$lipid_db_r1
-
-# Validate matching results
-validate_matches(mtched_data, min_matches = 10, max_ppm_error = 15)
-```
-
-## Isotope Pattern Validation
-
-```{r isotope-validation}
-#| label: isotope-validation
-
-# Calculate isotope pattern similarity
-iso_result <- calculate_isotope_similarity(
-  mse, mtched_data, polarity = POLARITY,
-  isopeak_threshold = 2,
-  similarity_threshold = ISOPEAK_SIM_THRESHOLD
-)
-
-mtched_data <- iso_result$mtched_data
-
-message("Matches after isotope filter: ", nrow(mtched_data))
-
-# Inline check: annotation must survive isotope filter with at least some matches
-if (nrow(mtched_data) == 0L)
-    stop("No matches remain after isotope filter. ",
-         "Check ISOPEAK_SIM_THRESHOLD or data quality.")
-if (isTRUE(SMOKE) && nrow(mtched_data) < 5L)
-    warning("Only ", nrow(mtched_data), " match(es) after isotope filter in SMOKE mode. ",
-            "Snapshot will have very limited regression value.")
-
-save_snapshot(mtched_data[, c("feature_id", "target_lipid_name_unique",
-                               "target_adduct", "target_rank",
-                               "isopeak_count", "isopeak_sim",
-                               "ppm_error", "score_rt")],
-              "step9_annotation", POLARITY, SMOKE)
-```
-
-```{r plot-isotope-patterns}
-#| label: plot-isotope-patterns
-
-# Save isotope pattern comparison plots
-plot_isotope_patterns(
-  mtched_data,
-  iso_result$iso_spectra,
-  iso_result$theoretical_spectra,
-  folders$iso_pattern
-)
-```
-
-::: {.callout-important}
-## 📋 USER CHECKPOINT: Isotope Pattern Validation
-Review the mirror plots in **`r folders$iso_pattern`**.
-
-- Experimental (top) should match theoretical (bottom) patterns
-- Check compounds with similarity scores near the threshold; adjust
- `ISOPEAK_SIM_THRESHOLD` if needed
-- Note any false positive matches where patterns clearly don't align
-:::
-
-## Adduct Matching (Rank > 1)
-
-After rank 1 matching, search for secondary adducts that support the identification.
-Finding multiple adducts for the same lipid increases annotation confidence.
-
-```{r adduct-matching}
-#| label: adduct-matching
-
-mtched_data <- match_adducts(
-  mtched_data,
-  lipid_database,
-  query,
-  ppm = MATCH_PPM,
-  rt_tol = 5
-)
-```
-
-## Resolve Ambiguities
-
-```{r resolve-ambiguities}
-#| label: resolve-ambiguities
-
-cols_amb <- c("feature_id", "target_mz", "mzmed", "target_rt_adjusted",
-              "rtmed", "target_lipid_name_unique", "target_adduct",
-              "ppm_error", "score_rt", "target_rank", "score",
-              "isopeak_count", "isopeak_sim", "adduct_ratio", "ntch_idx")
-
-# Resolve lipid -> multiple features
-key <- paste(mtched_data$target_lipid_name_unique,
-             mtched_data$target_adduct, sep = "_")
-
-rm_vector <- c()
-for (i in key[duplicated(key)]) {
-  idxs <- which(key == i)
-  count <- mtched_data$adduct_ratio[idxs]
-  if (which.max(count) == which.min(count)) next
-  best_idx <- idxs[which.max(count)]
-  rm_vector <- c(rm_vector, setdiff(idxs, best_idx))
-}
-
-if (length(rm_vector) > 0) {
-  mtched_data <- mtched_data[-rm_vector, ]
-  message("Removed ", length(rm_vector), " rows (lower adduct counts)")
-}
-
-# Resolve by RT score
-key <- paste(mtched_data$target_lipid_name_unique,
-             mtched_data$target_adduct, sep = "_")
-dupe_keys <- unique(key[duplicated(key)])
-rows_to_keep <- rep(TRUE, nrow(mtched_data))
-
-for (k in dupe_keys) {
-  idxs <- which(key == k)
-  scores <- abs(mtched_data$score_rt[idxs])
-  best_score <- min(scores, na.rm = TRUE)
-  to_remove <- idxs[(scores - best_score) > 4]
-  if (length(to_remove) > 0) rows_to_keep[to_remove] <- FALSE
-}
-
-mtched_data <- mtched_data[rows_to_keep, ]
-message("After RT score filter: ", nrow(mtched_data), " matches")
-```
-
-## SM1/SM2 Isomer Resolution
-
-```{r sm-resolution}
-#| label: sm-resolution
-
-mtched_data <- resolve_sm_isomers(mtched_data)
-```
-
-## Export Ambiguity Tables for Manual Curation
-
-Export tables for manual review of ambiguous matches:
-
-- Lipid ambiguities: one lipid matches multiple features
-- Feature ambiguities: one feature matches multiple lipids (will be merged if not resolved)
-
-```{r export-ambiguity}
-#| label: export-ambiguity
-
-ambiguities <- export_ambiguity_tables(mtched_data)
-```
+Steps 8–10 run separately for each ionization mode. The loop below executes
+the full annotation pipeline (RT correction → database matching → isotope
+validation → ambiguity resolution → normalization → QC) for positive mode
+followed by negative mode. Final objects are stored in `res_final_pos` and
+`res_final_neg`.
 
 ::: {.callout-important}
 ## 📋 USER CHECKPOINT: Manual Ambiguity Resolution
+After the loop completes, two Excel files per mode will have been created:
 
-Two Excel files have been created:
+- `lipid_ambiguity_resolution_{pos|neg}.xlsx`
+- `feature_ambiguity_resolution_{pos|neg}.xlsx`
 
-1. **`lipid_ambiguity_resolution.xlsx`**: Cases where one lipid matches multiple features (DEFAULT TABLE HAS VERDADERO in the keep_row)
-2. **`feature_ambiguity_resolution.xlsx`**: Cases where one feature matches multiple lipids
-    Here if ambiguity are not resolved they will be merged.
-
-**Action Required:**
-- Open each file
-- Set `keep_row = FALSE` for entries you want to remove
-- Save the files
-- Run the chunk below to apply your curation
+Review and edit `keep_row` as needed, then re-run the **apply-curation** chunk.
 :::
 
-## Apply Manual Curation
+```{r annotation-loop}
+#| label: annotation-loop
 
-```{r apply-curation}
-#| label: apply-curation
+res_final_list <- list()
 
-# Uncomment after manual curation is complete
-lipid_amb_res <- read_excel("lipid_ambiguity_resolution.xlsx")
-lipid_amb_res$keep_row <- as.logical(lipid_amb_res$keep_row)
-mtch_to_be_rm <- lipid_amb_res$ntch_idx[!lipid_amb_res$keep_row]
-mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm, ]
+for (POLARITY in c("pos", "neg")) {
 
-feature_amb_res <- read_excel("feature_ambiguity_resolution.xlsx")
-feature_amb_res$keep_row <- as.logical(feature_amb_res$keep_row)
-mtch_to_be_rm_ft <- feature_amb_res$ntch_idx[!feature_amb_res$keep_row]
-mtched_data <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm_ft, ]
+    mse     <- if (POLARITY == "pos") mse_pos else mse_neg
+    res     <- if (POLARITY == "pos") res_pos else res_neg
+    folders <- if (POLARITY == "pos") folders_pos else folders_neg
+    IS_FILE          <- if (POLARITY == "pos") IS_FILE_POS  else IS_FILE_NEG
+    DB_SHEET         <- if (POLARITY == "pos") DB_SHEET_POS else DB_SHEET_NEG
+    RT_COL           <- if (POLARITY == "pos") RT_COL_POS   else RT_COL_NEG
+    intern_standard  <- if (POLARITY == "pos") intern_standard_pos else intern_standard_neg
+    eic_is           <- if (POLARITY == "pos") eic_is_pos else eic_is_neg
 
-# Merge remaining duplicated features
-mtched_data$nb_annotations <- 1
-fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
-for (i in unique(fids_ambiguous)) {
-  idxs <- which(mtched_data$feature_id == i)
-  if (length(idxs) > 1) {
-    combined_names <- paste(unique(mtched_data$target_lipid_name_unique[idxs]),
-                            collapse = "; ")
-    combined_adducts <- paste(unique(mtched_data$target_adduct[idxs]),
-                              collapse = "; ")
-    mtched_data$target_lipid_name_unique[idxs[1]] <- combined_names
-    mtched_data$target_adduct[idxs[1]] <- combined_adducts
-    mtched_data <- mtched_data[-idxs[-1], ]
-    mtched_data$nb_annotations[idxs[1]] <- length(idxs)
-  }
-}
+    message("\n========== Annotation: ", toupper(POLARITY), " mode ==========")
 
-message("Final matched lipids: ", nrow(mtched_data))
-```
+    # ------------------------------------------------------------------
+    # Step 8 — Database RT Correction
+    # ------------------------------------------------------------------
+    group <- eic_is$sample_type
+    group[group == "QC"] <- NA
+    group <- as.factor(group)
+    param_group <- PeakDensityParam(
+        sampleGroups = group,
+        minFraction = 0.5,
+        binSize = 0.01, ppm = PPM, bw = 2
+    )
 
-## Annotation Summary
+    rt_fit <- fit_rt_correction(
+        eic_is, intern_standard, param_group,
+        poly_degree = 6,
+        output_dir = folders$ref_lipid
+    )
+    summary(rt_fit$fit)
+    validate_rt_correction(rt_fit, min_r_squared = 0.90, max_residual = 15)
+    message(POLARITY, " RT correction R\u00b2 = ",
+            round(summary(rt_fit$fit)$r.squared, 4))
 
-```{r annotation-summary}
-#| label: annotation-summary
+    save_snapshot(list(coef      = coef(rt_fit$fit),
+                       r_squared = summary(rt_fit$fit)$r.squared,
+                       residuals = residuals(rt_fit$fit)),
+                  "step8_rtcorrection", POLARITY, SMOKE)
 
-# Coverage summary
-n_unique_lipids <- length(unique(mtched_data$target_lipid_name_unique))
-n_db_lipids <- length(unique(lipid_db_r1$lipid_name_unique))
-coverage <- n_unique_lipids / n_db_lipids * 100
+    lipid_database <- prepare_lipid_database(
+        db_path  = "LipidDatabase_R.xlsx",
+        sheet    = DB_SHEET,
+        polarity = POLARITY,
+        rt_col   = RT_COL,
+        rt_fit   = rt_fit
+    )
 
-message("Final annotation: ", n_unique_lipids, " unique lipids (",
-        round(coverage, 1), "% database coverage)")
+    # ------------------------------------------------------------------
+    # Step 9 — Annotation: rank 1 matching + isotope validation
+    # ------------------------------------------------------------------
+    match_result <- match_features_to_database(
+        res, lipid_database,
+        ppm    = MATCH_PPM,
+        rt_tol = MATCH_RT_TOL
+    )
+    mtched_data <- match_result$mtched_data
+    query       <- match_result$query
+    lipid_db_r1 <- match_result$lipid_db_r1
+    validate_matches(mtched_data, min_matches = 10, max_ppm_error = 15)
 
-# Lipid class distribution
-counts <- table(mtched_data$`target_LIPID.CATEGORY..ABBREV.`)
-plot_lipid_donut(counts, title = "Annotated Lipid Distribution")
-```
+    iso_result  <- calculate_isotope_similarity(
+        mse, mtched_data, polarity = POLARITY,
+        isopeak_threshold    = 2,
+        similarity_threshold = ISOPEAK_SIM_THRESHOLD
+    )
+    mtched_data <- iso_result$mtched_data
+    message(POLARITY, " matches after isotope filter: ", nrow(mtched_data))
 
----
+    if (nrow(mtched_data) == 0L)
+        stop("No matches remain after isotope filter (", POLARITY, "). ",
+             "Check ISOPEAK_SIM_THRESHOLD or data quality.")
+    if (isTRUE(SMOKE) && nrow(mtched_data) < 5L)
+        warning("Only ", nrow(mtched_data), " match(es) after isotope filter ",
+                "in SMOKE/", POLARITY, " mode.")
 
-# Data Normalization
+    save_snapshot(mtched_data[, c("feature_id", "target_lipid_name_unique",
+                                   "target_adduct", "target_rank",
+                                   "isopeak_count", "isopeak_sim",
+                                   "ppm_error", "score_rt")],
+                  "step9_annotation", POLARITY, SMOKE)
 
-## Volume Correction
+    plot_isotope_patterns(
+        mtched_data,
+        iso_result$iso_spectra,
+        iso_result$theoretical_spectra,
+        folders$iso_pattern
+    )
 
-```{r volume-correction}
-#| label: volume-correction
+    # Adduct matching (rank > 1)
+    mtched_data <- match_adducts(
+        mtched_data, lipid_database, query,
+        ppm = MATCH_PPM, rt_tol = 5
+    )
 
-# Apply volume correction
-res <- apply_volume_correction(res, VOLUME_FACTORS,
-                               assay_name = "raw",
-                               new_assay_name = "raw_corr")
-res <- apply_volume_correction(res, VOLUME_FACTORS,
-                               assay_name = "raw_filled",
-                               new_assay_name = "corr_filled")
-```
+    # ------------------------------------------------------------------
+    # Step 10 — Ambiguity resolution
+    # ------------------------------------------------------------------
+    # Resolve lipid → multiple features (keep highest adduct count)
+    key <- paste(mtched_data$target_lipid_name_unique,
+                 mtched_data$target_adduct, sep = "_")
+    rm_vector <- c()
+    for (i in key[duplicated(key)]) {
+        idxs  <- which(key == i)
+        count <- mtched_data$adduct_ratio[idxs]
+        if (which.max(count) == which.min(count)) next
+        rm_vector <- c(rm_vector, setdiff(idxs, idxs[which.max(count)]))
+    }
+    if (length(rm_vector) > 0) {
+        mtched_data <- mtched_data[-rm_vector, ]
+        message("Removed ", length(rm_vector), " rows (lower adduct counts)")
+    }
 
-## Create Annotated Result Object
+    # Resolve by RT score
+    key       <- paste(mtched_data$target_lipid_name_unique,
+                       mtched_data$target_adduct, sep = "_")
+    dupe_keys    <- unique(key[duplicated(key)])
+    rows_to_keep <- rep(TRUE, nrow(mtched_data))
+    for (k in dupe_keys) {
+        idxs       <- which(key == k)
+        scores     <- abs(mtched_data$score_rt[idxs])
+        best_score <- min(scores, na.rm = TRUE)
+        to_remove  <- idxs[(scores - best_score) > 4]
+        if (length(to_remove) > 0) rows_to_keep[to_remove] <- FALSE
+    }
+    mtched_data <- mtched_data[rows_to_keep, ]
+    message("After RT score filter: ", nrow(mtched_data), " matches")
 
-```{r annotated-res}
-#| label: annotated-res
+    mtched_data <- resolve_sm_isomers(mtched_data)
 
-# Subset to annotated features only
-annotated_res <- res[rownames(res) %in% mtched_data$feature_id, ]
+    ambiguities <- export_ambiguity_tables(
+        mtched_data,
+        lipid_file   = paste0("lipid_ambiguity_resolution_",   POLARITY, ".xlsx"),
+        feature_file = paste0("feature_ambiguity_resolution_", POLARITY, ".xlsx")
+    )
 
-# Add annotation metadata
-rowData(annotated_res) <- cbind(
-  rowData(annotated_res),
-  mtched_data[match(rownames(annotated_res), mtched_data$feature_id),
-              c("target_lipid.name", "target_lipid_name_unique",
-                "target_LIPID.CATEGORY..ABBREV.",
-                "target_LIPID.SUBCLASS..ABBREV.", "target_Adduct",
-                "target_IS_norm")]
-)
+    # ------------------------------------------------------------------
+    # Apply manual curation (reads per-mode Excel files)
+    # ------------------------------------------------------------------
+    lip_file <- paste0("lipid_ambiguity_resolution_",   POLARITY, ".xlsx")
+    ft_file  <- paste0("feature_ambiguity_resolution_", POLARITY, ".xlsx")
 
-message("Annotated result object: ", nrow(annotated_res), " features")
-```
+    if (file.exists(lip_file)) {
+        lipid_amb_res      <- read_excel(lip_file)
+        lipid_amb_res$keep_row <- as.logical(lipid_amb_res$keep_row)
+        mtch_to_be_rm      <- lipid_amb_res$ntch_idx[!lipid_amb_res$keep_row]
+        mtched_data        <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm, ]
+    }
+    if (file.exists(ft_file)) {
+        feature_amb_res      <- read_excel(ft_file)
+        feature_amb_res$keep_row <- as.logical(feature_amb_res$keep_row)
+        mtch_to_be_rm_ft     <- feature_amb_res$ntch_idx[!feature_amb_res$keep_row]
+        mtched_data          <- mtched_data[!mtched_data$ntch_idx %in% mtch_to_be_rm_ft, ]
+    }
 
-## Missing Value Imputation
+    # Merge remaining duplicated features
+    mtched_data$nb_annotations <- 1
+    fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
+    for (i in unique(fids_ambiguous)) {
+        idxs <- which(mtched_data$feature_id == i)
+        if (length(idxs) > 1) {
+            mtched_data$target_lipid_name_unique[idxs[1]] <-
+                paste(unique(mtched_data$target_lipid_name_unique[idxs]), collapse = "; ")
+            mtched_data$target_adduct[idxs[1]] <-
+                paste(unique(mtched_data$target_adduct[idxs]), collapse = "; ")
+            mtched_data$nb_annotations[idxs[1]] <- length(idxs)
+            mtched_data <- mtched_data[-idxs[-1], ]
+        }
+    }
+    message("Final matched lipids (", POLARITY, "): ", nrow(mtched_data))
 
-We impute here only to perfrom PCA plotting.
+    # Coverage summary
+    n_unique_lipids <- length(unique(mtched_data$target_lipid_name_unique))
+    n_db_lipids     <- length(unique(lipid_db_r1$lipid_name_unique))
+    message(POLARITY, " database coverage: ", n_unique_lipids, " / ", n_db_lipids,
+            " (", round(n_unique_lipids / n_db_lipids * 100, 1), "%)")
 
-```{r imputation}
-#| label: imputation
+    counts <- table(mtched_data$`target_LIPID.CATEGORY..ABBREV.`)
+    plot_lipid_donut(counts, title = paste("Lipid Distribution -", toupper(POLARITY)))
 
-# Impute missing values
-tmp <- apply(assay(annotated_res, "raw_filled"), MARGIN = 1, na_unidis)
-assays(annotated_res)$raw_filled_imputed <- t(tmp)
+    # ------------------------------------------------------------------
+    # Normalization
+    # ------------------------------------------------------------------
+    res <- apply_volume_correction(res, VOLUME_FACTORS,
+                                   assay_name = "raw",
+                                   new_assay_name = "raw_corr")
+    res <- apply_volume_correction(res, VOLUME_FACTORS,
+                                   assay_name = "raw_filled",
+                                   new_assay_name = "corr_filled")
 
-tmp <- apply(assay(annotated_res, "corr_filled"), MARGIN = 1, na_unidis)
-assays(annotated_res)$corr_filled_imputed <- t(tmp)
-```
+    annotated_res <- res[rownames(res) %in% mtched_data$feature_id, ]
+    rowData(annotated_res) <- cbind(
+        rowData(annotated_res),
+        mtched_data[match(rownames(annotated_res), mtched_data$feature_id),
+                    c("target_lipid.name", "target_lipid_name_unique",
+                      "target_LIPID.CATEGORY..ABBREV.",
+                      "target_LIPID.SUBCLASS..ABBREV.", "target_Adduct",
+                      "target_IS_norm")]
+    )
+    message("Annotated result object (", POLARITY, "): ", nrow(annotated_res), " features")
 
-## Internal Standard Normalization
+    tmp <- apply(assay(annotated_res, "raw_filled"),  MARGIN = 1, na_unidis)
+    assays(annotated_res)$raw_filled_imputed <- t(tmp)
+    tmp <- apply(assay(annotated_res, "corr_filled"), MARGIN = 1, na_unidis)
+    assays(annotated_res)$corr_filled_imputed <- t(tmp)
 
-```{r is-normalization}
-#| label: is-normalization
+    annotated_res <- normalize_by_is(
+        annotated_res,
+        input_assay  = "corr_filled",
+        output_assay = "ISnorm_filled",
+        is_col       = "target_IS_norm",
+        lipid_col    = "target_lipid.name"
+    )
+    tmp <- apply(assay(annotated_res, "ISnorm_filled"), MARGIN = 1, na_unidis)
+    assays(annotated_res)$ISnorm_filled_imputed <- t(tmp)
 
-# Normalize by internal standards
-annotated_res <- normalize_by_is(
-  annotated_res,
-  input_assay = "corr_filled",
-  output_assay = "ISnorm_filled",
-  is_col = "target_IS_norm",
-  lipid_col = "target_lipid.name"
-)
+    # ------------------------------------------------------------------
+    # QC
+    # ------------------------------------------------------------------
+    res_unfilt    <- annotated_res
+    annotated_res <- filter_by_qc_rsd(annotated_res, threshold = RSD_THRESHOLD)
 
-# Impute normalized data
-tmp <- apply(assay(annotated_res, "ISnorm_filled"), MARGIN = 1, na_unidis)
-assays(annotated_res)$ISnorm_filled_imputed <- t(tmp)
-```
+    # PCA
+    vals   <- assay(annotated_res, "ISnorm_filled_imputed") |>
+        log2() |> t() |> scale(center = TRUE, scale = TRUE)
+    pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
+    vals_st <- cbind(vals, sample_type = annotated_res$sample_type)
+    print(
+        autoplot(pca_res, data = vals_st, colour = "sample_type", scale = 0) +
+            scale_color_manual(values = palette_sample_type) +
+            theme_minimal() +
+            ggtitle(paste("PCA - Normalized Data (", toupper(POLARITY), ")"))
+    )
 
----
+    # RLA
+    col_sample_ann <- get_sample_colors(annotated_res$sample_type, palette_sample_type)
+    par(mfrow = c(2, 1), mar = c(3.5, 4.5, 2.5, 1))
+    boxplot(rowRla(assay(annotated_res, "raw_filled"), group = annotated_res$sample_type),
+            cex = 0.5, pch = 16, ylab = "RLA", border = col_sample_ann,
+            col = paste0(col_sample_ann, "80"), outline = FALSE,
+            xaxt = "n", main = paste("Raw Data -", toupper(POLARITY)), boxwex = 1)
+    grid(nx = NA, ny = NULL); abline(h = 0, lty = 3)
+    boxplot(rowRla(assay(annotated_res, "ISnorm_filled"), group = annotated_res$sample_type),
+            cex = 0.5, pch = 16, ylab = "RLA", border = col_sample_ann,
+            col = paste0(col_sample_ann, "80"), outline = FALSE,
+            xaxt = "n", main = paste("Normalized -", toupper(POLARITY)), boxwex = 1)
+    axis(side = 1, at = seq_len(ncol(annotated_res)),
+         labels = annotated_res$sample_name, las = 2, cex.axis = 0.6)
+    grid(nx = NA, ny = NULL); abline(h = 0, lty = 3)
 
-# Quality Control
+    # CV summary
+    index_study <- annotated_res$sample_type %in% c("M-VAMS", "W-DBS", "C-qDBS", "Plasma")
+    index_QC    <- annotated_res$sample_type == "QC"
+    sample_res  <- cbind(
+        QC_raw    = rowRsd(assay(annotated_res, "raw_filled")[, index_QC],
+                           na.rm = TRUE, mad = TRUE),
+        QC_norm   = rowRsd(assay(annotated_res, "ISnorm_filled")[, index_QC],
+                           na.rm = TRUE, mad = TRUE),
+        Study_raw  = rowRsd(assay(annotated_res, "raw_filled")[, index_study],
+                            na.rm = TRUE, mad = TRUE),
+        Study_norm = rowRsd(assay(annotated_res, "ISnorm_filled")[, index_study],
+                            na.rm = TRUE, mad = TRUE)
+    )
+    res_df <- data.frame(
+        QC_raw    = quantile(sample_res[, "QC_raw"],    na.rm = TRUE),
+        QC_norm   = quantile(sample_res[, "QC_norm"],   na.rm = TRUE),
+        Study_raw  = quantile(sample_res[, "Study_raw"],  na.rm = TRUE),
+        Study_norm = quantile(sample_res[, "Study_norm"], na.rm = TRUE)
+    )
+    message(POLARITY, " CV summary:")
+    print(kable(res_df, format = "pipe", digits = 3))
 
-## RSD Filtering
+    # ------------------------------------------------------------------
+    # Final results
+    # ------------------------------------------------------------------
+    res_qc    <- annotated_res[, annotated_res$sample_type == "QC"]
+    res_final <- annotated_res[, annotated_res$sample_type != "QC"]
+    rowData(res_final)$qc_cv <- assay(res_qc, "ISnorm_filled") |> rowRsd()
 
-```{r rsd-filter}
-#| label: rsd-filter
+    saveRDS(res_final, file.path(folders$objects, paste0("final_res_", POLARITY, ".rds")))
 
-# Store unfiltered object
-res_unfilt <- annotated_res
+    qc_cv_na_frac <- mean(is.na(rowData(res_final)$qc_cv))
+    if (qc_cv_na_frac > 0.5)
+        warning(round(qc_cv_na_frac * 100, 1), "% of features have NA qc_cv (",
+                POLARITY, ") — likely caused by missing IS in SMOKE subset.")
 
-# Apply RSD filter
-annotated_res <- filter_by_qc_rsd(annotated_res, threshold = RSD_THRESHOLD)
-```
+    snap_cols <- intersect(
+        c("mzmed", "rtmed", "target_lipid_name_unique", "target_Adduct", "qc_cv"),
+        colnames(rowData(res_final))
+    )
+    save_snapshot(as.data.frame(rowData(res_final)[, snap_cols]),
+                  "step10_final", POLARITY, SMOKE)
 
-## Quality Assessment Plots
+    res_final_list[[POLARITY]] <- res_final
 
-```{r pca-plot}
-#| label: pca-plot
-#| fig-cap: "PCA of normalized data colored by sample type"
+} # end for POLARITY
 
-# PCA analysis
-vals <- assay(annotated_res, "ISnorm_filled_imputed") |>
-  log2() |> t() |> scale(center = TRUE, scale = TRUE)
-
-pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
-
-vals_st <- cbind(vals, sample_type = annotated_res$sample_type)
-autoplot(pca_res, data = vals_st, colour = 'sample_type', scale = 0) +
-  scale_color_manual(values = palette_sample_type) +
-  theme_minimal() +
-  ggtitle("PCA - Normalized Data")
-```
-
-```{r rla-plot}
-#| label: rla-plot
-#| fig-cap: "Relative Log Abundance before and after normalization"
-
-par(mfrow = c(2, 1), mar = c(3.5, 4.5, 2.5, 1))
-
-col_sample_ann <- get_sample_colors(annotated_res$sample_type, palette_sample_type)
-
-boxplot(rowRla(assay(annotated_res, "raw_filled"), group = annotated_res$sample_type),
-        cex = 0.5, pch = 16, ylab = "RLA", border = col_sample_ann,
-        col = paste0(col_sample_ann, "80"), outline = FALSE,
-        xaxt = "n", main = "Raw Data", boxwex = 1)
-grid(nx = NA, ny = NULL)
-abline(h = 0, lty = 3)
-
-boxplot(rowRla(assay(annotated_res, "ISnorm_filled"), group = annotated_res$sample_type),
-        cex = 0.5, pch = 16, ylab = "RLA", border = col_sample_ann,
-        col = paste0(col_sample_ann, "80"), outline = FALSE,
-        xaxt = "n", main = "Normalized Data", boxwex = 1)
-axis(side = 1, at = seq_len(ncol(annotated_res)),
-     labels = annotated_res$sample_name, las = 2, cex.axis = 0.6)
-grid(nx = NA, ny = NULL)
-abline(h = 0, lty = 3)
-```
-
-## CV Summary
-
-```{r cv-summary}
-#| label: cv-summary
-#| tbl-cap: "Coefficient of variation summary"
-
-index_study <- annotated_res$sample_type %in% c("M-VAMS", "W-DBS", "C-qDBS", "Plasma")
-index_QC <- annotated_res$sample_type == "QC"
-
-sample_res <- cbind(
-  QC_raw = rowRsd(assay(annotated_res, "raw_filled")[, index_QC], na.rm = TRUE, mad = TRUE),
-  QC_norm = rowRsd(assay(annotated_res, "ISnorm_filled")[, index_QC], na.rm = TRUE, mad = TRUE),
-  Study_raw = rowRsd(assay(annotated_res, "raw_filled")[, index_study], na.rm = TRUE, mad = TRUE),
-  Study_norm = rowRsd(assay(annotated_res, "ISnorm_filled")[, index_study], na.rm = TRUE, mad = TRUE)
-)
-
-res_df <- data.frame(
-  QC_raw = quantile(sample_res[, "QC_raw"], na.rm = TRUE),
-  QC_norm = quantile(sample_res[, "QC_norm"], na.rm = TRUE),
-  Study_raw = quantile(sample_res[, "Study_raw"], na.rm = TRUE),
-  Study_norm = quantile(sample_res[, "Study_norm"], na.rm = TRUE)
-)
-
-kable(res_df, format = "pipe", digits = 3)
-```
-
----
-
-# Final Results
-
-```{r remove-qc}
-#| label: remove-qc
-
-# Remove QCs for final analysis
-res_qc <- annotated_res[, annotated_res$sample_type == "QC"]
-res_final <- annotated_res[, annotated_res$sample_type != "QC"]
-
-# Add QC CV as feature metadata
-rowData(res_final)$qc_cv <- assay(res_qc, "ISnorm_filled") |> rowRsd()
-
-# save objects
-saveObject(res_final, file.path(folders$objects, paste0("final_res_", POLARITY)))
-
-# Inline check: warn if IS normalisation left many features without QC CV
-#  (symptom of IS not found in SMOKE subset)
-qc_cv_na_frac <- mean(is.na(rowData(res_final)$qc_cv))
-if (qc_cv_na_frac > 0.5)
-    warning(round(qc_cv_na_frac * 100, 1), "% of features have NA qc_cv — ",
-            "likely caused by missing IS in SMOKE subset. ",
-            "step10 snapshot has limited regression value for normalization checks.")
-
-snap_cols <- intersect(
-    c("mzmed", "rtmed", "target_lipid_name_unique",
-      "target_Adduct", "qc_cv"),
-    colnames(rowData(res_final))
-)
-save_snapshot(as.data.frame(rowData(res_final)[, snap_cols]),
-              "step10_final", POLARITY, SMOKE)
+res_final_pos <- res_final_list$pos
+res_final_neg <- res_final_list$neg
+message("\n✓ Annotation complete for both modes.")
 ```
 
 ## Session Info

@@ -25,6 +25,10 @@ if (!dir.exists(DEV_DIR) || length(list.files(DEV_DIR)) == 0L) {
 
 golden_files <- list.files(GOLDEN_DIR, pattern = "\\.rds$", full.names = FALSE)
 
+# Smoke snapshots are excluded from regression comparison: they cover a
+# reduced sample subset and are not expected to match the full-run baselines.
+golden_files <- golden_files[!grepl("_smoke\\.rds$", golden_files)]
+
 for (f in golden_files) {
     golden_path <- file.path(GOLDEN_DIR, f)
     dev_path    <- file.path(DEV_DIR,    f)

@@ -17,6 +17,13 @@ load_mse <- function(data_dir, n = 1) {
     readMsExperiment(spectraFiles = head(files, n))
 }
 
+skip_no_data <- function() {
+    skip_if_not(
+        file.exists("../POS_data") && file.exists("../NEG_data"),
+        "POS_data / NEG_data not available"
+    )
+}
+
 # =============================================================================
 # perMode()
 # =============================================================================
@@ -46,109 +53,153 @@ test_that("is_per_mode() returns TRUE only for PerModeParam", {
 })
 
 # =============================================================================
-# PosNegExp construction
+# PosNegMsExp construction (from MsExperiment — no coercion needed)
 # =============================================================================
 
-test_that("PosNegExp() constructs from two XcmsExperiment objects", {
-    skip_if_not(
-        file.exists("../POS_data") && file.exists("../NEG_data"),
-        "POS_data / NEG_data not available"
-    )
+test_that("PosNegMsExp() constructs from two MsExperiment objects", {
+    skip_no_data()
     mse_pos <- load_mse("POS_data")
     mse_neg <- load_mse("NEG_data")
     skip_if(is.null(mse_pos) || is.null(mse_neg), "could not load mzML files")
 
-    mse_pos <- as(mse_pos, "XcmsExperiment")
-    mse_neg <- as(mse_neg, "XcmsExperiment")
-
-    pn <- PosNegExp(mse_pos, mse_neg)
-    expect_s4_class(pn, "PosNegExp")
+    pn <- PosNegMsExp(mse_pos, mse_neg)
+    expect_s4_class(pn, "PosNegMsExp")
 })
 
-test_that("posExp() and negExp() return the correct slots", {
-    skip_if_not(
-        file.exists("../POS_data") && file.exists("../NEG_data"),
-        "POS_data / NEG_data not available"
-    )
-    mse_pos <- as(load_mse("POS_data"), "XcmsExperiment")
-    mse_neg <- as(load_mse("NEG_data"), "XcmsExperiment")
+test_that("posExp() and negExp() work on PosNegMsExp", {
+    skip_no_data()
+    mse_pos <- load_mse("POS_data")
+    mse_neg <- load_mse("NEG_data")
     skip_if(is.null(mse_pos) || is.null(mse_neg))
 
-    pn <- PosNegExp(mse_pos, mse_neg)
-    expect_identical(posExp(pn), mse_pos)
-    expect_identical(negExp(pn), mse_neg)
+    pn <- PosNegMsExp(mse_pos, mse_neg)
+    expect_s4_class(posExp(pn), "MsExperiment")
+    expect_s4_class(negExp(pn), "MsExperiment")
 })
 
-test_that("show() runs without error", {
-    skip_if_not(
-        file.exists("../POS_data") && file.exists("../NEG_data"),
-        "POS_data / NEG_data not available"
-    )
-    mse_pos <- as(load_mse("POS_data"), "XcmsExperiment")
-    mse_neg <- as(load_mse("NEG_data"), "XcmsExperiment")
+test_that("show() on PosNegMsExp runs without error", {
+    skip_no_data()
+    mse_pos <- load_mse("POS_data")
+    mse_neg <- load_mse("NEG_data")
     skip_if(is.null(mse_pos) || is.null(mse_neg))
 
-    pn <- PosNegExp(mse_pos, mse_neg)
-    expect_output(show(pn), "PosNegExp")
+    pn <- PosNegMsExp(mse_pos, mse_neg)
+    expect_output(show(pn), "PosNegMsExp")
     expect_output(show(pn), "Positive")
     expect_output(show(pn), "Negative")
 })
 
 # =============================================================================
-# Delegating methods — return type must be PosNegExp
+# PosNegXcmsExp construction (from XcmsExperiment)
 # =============================================================================
 
-# filterRt is the cheapest delegating method: no peak detection required.
-test_that("filterRt() on PosNegExp returns a PosNegExp", {
-    skip_if_not(
-        file.exists("../POS_data") && file.exists("../NEG_data"),
-        "POS_data / NEG_data not available"
-    )
-    mse_pos <- as(load_mse("POS_data"), "XcmsExperiment")
-    mse_neg <- as(load_mse("NEG_data"), "XcmsExperiment")
-    skip_if(is.null(mse_pos) || is.null(mse_neg))
+test_that("PosNegXcmsExp() constructs from two XcmsExperiment objects", {
+    skip_no_data()
+    mse_pos <- load_mse("POS_data")
+    mse_neg <- load_mse("NEG_data")
+    skip_if(is.null(mse_pos) || is.null(mse_neg), "could not load mzML files")
 
-    pn     <- PosNegExp(mse_pos, mse_neg)
-    pn_flt <- filterRt(pn, c(100, 500))
-    expect_s4_class(pn_flt, "PosNegExp")
+    xcms_pos <- as(mse_pos, "XcmsExperiment")
+    xcms_neg <- as(mse_neg, "XcmsExperiment")
+
+    pn <- PosNegXcmsExp(xcms_pos, xcms_neg)
+    expect_s4_class(pn, "PosNegXcmsExp")
 })
 
-test_that("filterRt() applies same RT range to both modes", {
-    skip_if_not(
-        file.exists("../POS_data") && file.exists("../NEG_data"),
-        "POS_data / NEG_data not available"
-    )
-    mse_pos <- as(load_mse("POS_data"), "XcmsExperiment")
-    mse_neg <- as(load_mse("NEG_data"), "XcmsExperiment")
+test_that("posExp() and negExp() work on PosNegXcmsExp", {
+    skip_no_data()
+    xcms_pos <- as(load_mse("POS_data"), "XcmsExperiment")
+    xcms_neg <- as(load_mse("NEG_data"), "XcmsExperiment")
+    skip_if(is.null(xcms_pos) || is.null(xcms_neg))
+
+    pn <- PosNegXcmsExp(xcms_pos, xcms_neg)
+    expect_identical(posExp(pn), xcms_pos)
+    expect_identical(negExp(pn), xcms_neg)
+})
+
+test_that("show() on PosNegXcmsExp runs without error", {
+    skip_no_data()
+    xcms_pos <- as(load_mse("POS_data"), "XcmsExperiment")
+    xcms_neg <- as(load_mse("NEG_data"), "XcmsExperiment")
+    skip_if(is.null(xcms_pos) || is.null(xcms_neg))
+
+    pn <- PosNegXcmsExp(xcms_pos, xcms_neg)
+    expect_output(show(pn), "PosNegXcmsExp")
+    expect_output(show(pn), "Positive")
+    expect_output(show(pn), "Negative")
+})
+
+# =============================================================================
+# Delegating methods on PosNegMsExp
+# =============================================================================
+
+test_that("filterRt() on PosNegMsExp returns a PosNegMsExp", {
+    skip_no_data()
+    mse_pos <- load_mse("POS_data")
+    mse_neg <- load_mse("NEG_data")
     skip_if(is.null(mse_pos) || is.null(mse_neg))
 
-    pn     <- PosNegExp(mse_pos, mse_neg)
+    pn     <- PosNegMsExp(mse_pos, mse_neg)
+    pn_flt <- filterRt(pn, c(100, 500))
+    expect_s4_class(pn_flt, "PosNegMsExp")
+})
+
+test_that("filterRt() on PosNegMsExp applies same RT range to both modes", {
+    skip_no_data()
+    mse_pos <- load_mse("POS_data")
+    mse_neg <- load_mse("NEG_data")
+    skip_if(is.null(mse_pos) || is.null(mse_neg))
+
+    pn     <- PosNegMsExp(mse_pos, mse_neg)
     pn_flt <- filterRt(pn, c(100, 500))
 
     rt_pos <- range(rtime(spectra(posExp(pn_flt))))
     rt_neg <- range(rtime(spectra(negExp(pn_flt))))
-    expect_gte(rt_pos[1], 100)
-    expect_lte(rt_pos[2], 500)
-    expect_gte(rt_neg[1], 100)
-    expect_lte(rt_neg[2], 500)
+    expect_gte(rt_pos[1], 100); expect_lte(rt_pos[2], 500)
+    expect_gte(rt_neg[1], 100); expect_lte(rt_neg[2], 500)
 })
 
 # =============================================================================
-# perMode() routing — correct param reaches the correct mode
+# Delegating methods on PosNegXcmsExp
 # =============================================================================
 
-test_that("perMode() routes distinct params to the correct mode", {
-    skip_if_not(
-        file.exists("../POS_data") && file.exists("../NEG_data"),
-        "POS_data / NEG_data not available"
-    )
-    mse_pos <- as(load_mse("POS_data"), "XcmsExperiment")
-    mse_neg <- as(load_mse("NEG_data"), "XcmsExperiment")
+test_that("filterRt() on PosNegXcmsExp returns a PosNegXcmsExp", {
+    skip_no_data()
+    xcms_pos <- as(load_mse("POS_data"), "XcmsExperiment")
+    xcms_neg <- as(load_mse("NEG_data"), "XcmsExperiment")
+    skip_if(is.null(xcms_pos) || is.null(xcms_neg))
+
+    pn     <- PosNegXcmsExp(xcms_pos, xcms_neg)
+    pn_flt <- filterRt(pn, c(100, 500))
+    expect_s4_class(pn_flt, "PosNegXcmsExp")
+})
+
+test_that("filterRt() on PosNegXcmsExp applies same RT range to both modes", {
+    skip_no_data()
+    xcms_pos <- as(load_mse("POS_data"), "XcmsExperiment")
+    xcms_neg <- as(load_mse("NEG_data"), "XcmsExperiment")
+    skip_if(is.null(xcms_pos) || is.null(xcms_neg))
+
+    pn     <- PosNegXcmsExp(xcms_pos, xcms_neg)
+    pn_flt <- filterRt(pn, c(100, 500))
+
+    rt_pos <- range(rtime(spectra(posExp(pn_flt))))
+    rt_neg <- range(rtime(spectra(negExp(pn_flt))))
+    expect_gte(rt_pos[1], 100); expect_lte(rt_pos[2], 500)
+    expect_gte(rt_neg[1], 100); expect_lte(rt_neg[2], 500)
+})
+
+# =============================================================================
+# perMode() routing
+# =============================================================================
+
+test_that("perMode() routes distinct params to the correct mode (PosNegMsExp)", {
+    skip_no_data()
+    mse_pos <- load_mse("POS_data")
+    mse_neg <- load_mse("NEG_data")
     skip_if(is.null(mse_pos) || is.null(mse_neg))
 
-    pn <- PosNegExp(mse_pos, mse_neg)
-
-    # Use RT ranges that are intentionally different per mode
+    pn <- PosNegMsExp(mse_pos, mse_neg)
     pn_flt <- filterRt(pn, rt = perMode(
         pos = c(100, 600),
         neg = c(200, 700)
@@ -161,16 +212,13 @@ test_that("perMode() routes distinct params to the correct mode", {
     expect_gte(rt_neg[1], 200); expect_lte(rt_neg[2], 700)
 })
 
-test_that("perMode(pos = X) applies X to both modes identically", {
-    skip_if_not(
-        file.exists("../POS_data") && file.exists("../NEG_data"),
-        "POS_data / NEG_data not available"
-    )
-    mse_pos <- as(load_mse("POS_data"), "XcmsExperiment")
-    mse_neg <- as(load_mse("NEG_data"), "XcmsExperiment")
+test_that("perMode(pos = X) applies X to both modes identically (PosNegMsExp)", {
+    skip_no_data()
+    mse_pos <- load_mse("POS_data")
+    mse_neg <- load_mse("NEG_data")
     skip_if(is.null(mse_pos) || is.null(mse_neg))
 
-    pn     <- PosNegExp(mse_pos, mse_neg)
+    pn     <- PosNegMsExp(mse_pos, mse_neg)
     pn_flt <- filterRt(pn, rt = perMode(pos = c(100, 500)))
 
     rt_pos <- range(rtime(spectra(posExp(pn_flt))))
@@ -184,16 +232,13 @@ test_that("perMode(pos = X) applies X to both modes identically", {
 # Accessor methods — return type must be named list(pos, neg)
 # =============================================================================
 
-test_that("hasChromPeaks() returns a named list with pos and neg", {
-    skip_if_not(
-        file.exists("../POS_data") && file.exists("../NEG_data"),
-        "POS_data / NEG_data not available"
-    )
-    mse_pos <- as(load_mse("POS_data"), "XcmsExperiment")
-    mse_neg <- as(load_mse("NEG_data"), "XcmsExperiment")
-    skip_if(is.null(mse_pos) || is.null(mse_neg))
+test_that("hasChromPeaks() on PosNegXcmsExp returns a named list", {
+    skip_no_data()
+    xcms_pos <- as(load_mse("POS_data"), "XcmsExperiment")
+    xcms_neg <- as(load_mse("NEG_data"), "XcmsExperiment")
+    skip_if(is.null(xcms_pos) || is.null(xcms_neg))
 
-    pn     <- PosNegExp(mse_pos, mse_neg)
+    pn     <- PosNegXcmsExp(xcms_pos, xcms_neg)
     result <- hasChromPeaks(pn)
 
     expect_type(result, "list")
