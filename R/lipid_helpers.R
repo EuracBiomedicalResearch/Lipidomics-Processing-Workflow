@@ -720,6 +720,7 @@ load_from_sqlite <- function(db_path, sample_data) {
 
   # Add base file name for linking
   s$base_file <- basename(s$dataOrigin)
+  s$base_file <- sub(".*[\\\\/]", "", s$base_file)
 
   # Create MsExperiment and link sample data
   mse <- MsExperiment(spectra = s, sampleData = sample_data)
