@@ -28,7 +28,7 @@
 #' @return The validated data frame (invisibly). Stops on critical errors,
 #'   warns on non-critical issues.
 #' @examples
-#' validate_metadata("seq_pos.xlsx", data_dir = "POS_data")
+#' validate_metadata("seq_pos.xlsx", data_dir = "data")
 validate_metadata <- function(file_path,
                               required_cols = c("file_name", "sample_name",
                                                 "sample_type",
@@ -39,7 +39,7 @@ validate_metadata <- function(file_path,
   # --- File existence & readability ---
   if (!file.exists(file_path)) {
     stop("Metadata file not found: '", file_path,
-         "'\n  Make sure the file is in the project root directory.")
+         "'\n  Make sure the file is in the current working directory.")
   }
 
   df <- tryCatch(
@@ -649,17 +649,14 @@ setup_folders <- function(polarity = c("pos", "neg"), base_path = ".") {
 
   folders <- list(
     base = base_path,
-    data = file.path(base_path, paste0(toupper(polarity), "_data")),
+    data = file.path(base_path, "data"),
     objects = file.path(base_path, "objects"),
     figures = file.path(base_path, "figures"),
     eic_istd = file.path(base_path, "figures", "EIC_internal_standards"),
-    iso_pattern = file.path(base_path, paste0("figures/iso_pattern_check",
-                                              ifelse(polarity == "neg", "_neg", ""))),
-    peak_detection = file.path(base_path, paste0(polarity, "_peak_detection_ref_lipid")),
-    ref_lipid = file.path(base_path, paste0("figures/ref_lipid_image",
-                                            ifelse(polarity == "neg", "_neg", ""))),
-    istd_matched = file.path(base_path, paste0("ISTD_mtched_data",
-                                               ifelse(polarity == "neg", "_neg", "")))
+    iso_pattern = file.path(base_path, "figures", "iso_pattern_check"),
+    peak_detection = file.path(base_path, "figures", "peak_detection_ref_lipid"),
+    ref_lipid = file.path(base_path, "figures", "ref_lipid_image"),
+    istd_matched = file.path(base_path, "figures", "ISTD_mtched_data")
   )
 
   # Create directories
@@ -690,13 +687,13 @@ setup_folders <- function(polarity = c("pos", "neg"), base_path = ".") {
 #'
 #' @examples
 #' seq_data <- readxl::read_xlsx("seq_pos.xlsx") |> as.data.frame()
-#' mse <- load_from_sqlite("POS_data/pilot_pos.sqlite", seq_data)
+#' mse <- load_from_sqlite("data/pilot_pos.sqlite", seq_data)
 load_from_sqlite <- function(db_path, sample_data) {
   # Check database exists
   if (!file.exists(db_path)) {
     stop("SQLite database not found: ", db_path,
          "\n\nTo create a database from mzML files, run:",
-         "\n  source('R/create_sqlite_database.R')")
+         "\n  create_sqlite_database(STUDY_ID, POLARITY, SEQ_FILE)")
   }
 
   # Check sample_data has file_name
@@ -1319,11 +1316,29 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
   # Set charge based on polarity
   charge <- ifelse(polarity == "neg", -1, 1)
 
-  # Extract experimental spectra
-  spectra(mse) <- setBackend(spectra(mse), MsBackendMemory())
-  sp <- featureSpectra(mse, msLevel = 1L, skipFilled = TRUE,
-                       features = unique(mtched_data$feature_id),
-                       method = "closest_rt")
+  # Extract experimental spectra — memory-aware approach
+  # Estimate if we can fit all spectra in memory (~8 bytes per intensity value)
+  n_spectra <- length(spectra(mse))
+  estimated_mem_gb <- n_spectra * 5000 * 8 / 1e9  # rough: 5000 peaks avg
+  available_mem_gb <- as.numeric(gc(reset = TRUE)[2, 6]) / 1024  # free memory
+
+  if (estimated_mem_gb < available_mem_gb * 0.5) {
+    message("Loading all spectra to memory (estimated ", round(estimated_mem_gb, 1),
+            " GB, available ", round(available_mem_gb, 1), " GB)...")
+    spectra(mse) <- setBackend(spectra(mse), MsBackendMemory())
+    sp <- featureSpectra(mse, msLevel = 1L, skipFilled = TRUE,
+                         features = unique(mtched_data$feature_id),
+                         method = "closest_rt")
+  } else {
+    message("Dataset too large for full in-memory conversion (",
+            round(estimated_mem_gb, 1), " GB estimated). ",
+            "Extracting feature spectra on-disk...")
+    sp <- featureSpectra(mse, msLevel = 1L, skipFilled = TRUE,
+                         features = unique(mtched_data$feature_id),
+                         method = "closest_rt")
+    # Convert subset to in-memory backend (needed for combineSpectra)
+    sp <- setBackend(sp, MsBackendMemory())
+  }
 
   # Combine spectra per feature
   csp <- combineSpectra(sp, f = sp$feature_id, p = sp$feature_id,
