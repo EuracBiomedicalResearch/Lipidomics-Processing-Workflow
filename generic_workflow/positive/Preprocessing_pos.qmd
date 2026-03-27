@@ -7,7 +7,7 @@ params:
   study_id: "my_study"
 format:
   html:
-    output-file: !expr paste0(params$study_id, "_Preprocessing.html")
+    output-file: "Preprocessing_pos.html"
     toc: true
     toc-depth: 3
 execute:

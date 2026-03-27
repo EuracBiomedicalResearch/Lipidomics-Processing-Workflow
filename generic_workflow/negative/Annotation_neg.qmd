@@ -7,7 +7,7 @@ params:
   study_id: "my_study"
 format:
   html:
-    output-file: !expr paste0(params$study_id, "_Annotation.html")
+    output-file: "Annotation_neg.html"
     toc: true
     toc-depth: 3
 execute:

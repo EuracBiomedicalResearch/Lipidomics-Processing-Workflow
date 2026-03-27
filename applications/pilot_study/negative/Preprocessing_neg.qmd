@@ -7,7 +7,7 @@ params:
   study_id: "pilot"
 format:
   html:
-    output-file: !expr paste0(params$study_id, "_Preprocessing.html")
+    output-file: "pilot_Preprocessing_neg.html"
     toc: true
     toc-depth: 3
 execute:

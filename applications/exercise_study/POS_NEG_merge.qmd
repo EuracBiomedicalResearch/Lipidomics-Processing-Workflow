@@ -7,7 +7,7 @@ params:
   study_id: "exercise"
 format:
   html:
-    output-file: !expr paste0(params$study_id, "_POS_NEG_merge.html")
+    output-file: "exercise_POS_NEG_merge.html"
     toc: true
     toc-depth: 3
 execute:
