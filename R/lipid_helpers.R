@@ -627,6 +627,13 @@ load_lipid_packages <- function(verbose = TRUE) {
     suppressPackageStartupMessages(library(pkg, character.only = TRUE))
   }
 
+  # Verify MsIO version
+  msio_ver <- as.character(packageVersion("MsIO"))
+  if (msio_ver != "0.0.15") {
+    warning("MsIO version ", msio_ver, " is loaded, but 0.0.15 is required. ",
+            "Run: remotes::install_version(\"MsIO\", version = \"0.0.15\")")
+  }
+
   if (verbose) message("\n✓ All packages loaded successfully!")
   invisible(NULL)
 }
