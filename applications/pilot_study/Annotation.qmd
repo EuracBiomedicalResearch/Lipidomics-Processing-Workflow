@@ -8,6 +8,7 @@ params:
 format:
   html:
     output-file: "pilot_Annotation.html"
+    embed-resources: true
     toc: true
     toc-depth: 3
 execute:

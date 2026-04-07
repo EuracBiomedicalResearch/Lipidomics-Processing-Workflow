@@ -8,6 +8,7 @@ params:
 format:
   html:
     output-file: "pilot_Preprocessing_pos.html"
+    embed-resources: true
     toc: true
     toc-depth: 3
 execute:
