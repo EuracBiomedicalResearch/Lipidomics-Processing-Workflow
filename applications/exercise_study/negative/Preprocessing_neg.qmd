@@ -519,12 +519,7 @@ mse_save_path <- file.path(folders$objects,
 res_save_path <- file.path(folders$objects,
                            paste0(STUDY_ID, "_preprocessed_res_", POLARITY))
 
-if (DATA_SOURCE == "sqlite") {
-  spectra(mse) <- setBackend(spectra(mse), MsBackendMemory())
-  save(mse, file = paste0(mse_save_path, ".RData"))
-} else {
-  saveMsObject(mse, AlabasterParam(path = mse_save_path))
-}
+saveMsObject(mse, AlabasterParam(path = mse_save_path))
 
 res@metadata <- list()
 saveObject(res, res_save_path)

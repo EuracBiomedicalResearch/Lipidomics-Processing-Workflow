@@ -519,30 +519,7 @@ mse_save_path <- file.path(folders$objects,
 res_save_path <- file.path(folders$objects,
                            paste0(STUDY_ID, "_preprocessed_res_", POLARITY))
 
-if (DATA_SOURCE == "sqlite") {
-  # SQLite backend cannot be serialized directly — convert to in-memory first
-  n_spectra <- length(spectra(mse))
-  estimated_mem_gb <- n_spectra * 5000 * 8 / 1e9
-  available_mem_gb <- as.numeric(gc(reset = TRUE)[2, 6]) / 1024
-
-  if (estimated_mem_gb < available_mem_gb * 0.5) {
-    message("Converting spectra to in-memory backend for saving...")
-    spectra(mse) <- setBackend(spectra(mse), MsBackendMemory())
-    save(mse, file = paste0(mse_save_path, ".RData"))
-  } else {
-    warning("Dataset too large to convert all spectra to memory (",
-            round(estimated_mem_gb, 1), " GB estimated, ",
-            round(available_mem_gb, 1), " GB available).\n",
-            "Saving without spectra. Annotation.qmd will reload from SQLite: ",
-            SQLITE_DB)
-    mse_no_spectra <- mse
-    spectra(mse_no_spectra) <- Spectra()
-    save(mse_no_spectra, SQLITE_DB,
-         file = paste0(mse_save_path, ".RData"))
-  }
-} else {
-  saveMsObject(mse, AlabasterParam(path = mse_save_path))
-}
+saveMsObject(mse, AlabasterParam(path = mse_save_path))
 
 res@metadata <- list()
 saveObject(res, res_save_path)

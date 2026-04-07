@@ -82,11 +82,14 @@ Install required R packages:
 ```r
 # Bioconductor packages
 BiocManager::install(c(
-  "MsExperiment", "MsIO", "alabaster.se", "MsBackendMetaboLights",
+  "MsExperiment", "alabaster.se", "MsBackendMetaboLights",
   "SummarizedExperiment", "xcms", "Spectra", "MetaboCoreUtils",
   "limma", "matrixStats", "BiocFileCache", "AnnotationHub",
   "CompoundDb", "MetaboAnnotation"
 ))
+
+# MsIO — pin to version 0.0.15
+remotes::install_version("MsIO", version = "0.0.15")
 
 # CRAN packages
 install.packages(c(
