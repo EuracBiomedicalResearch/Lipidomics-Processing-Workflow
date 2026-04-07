@@ -1,0 +1,736 @@
+---
+title: "Pilot Study — LC-MS Data Preprocessing"
+subtitle: "Peak detection, RT alignment, correspondence and gap filling (POS + NEG)"
+author: "CEMBIO-EURAC Team"
+date: today
+params:
+  study_id: "pilot"
+format:
+  html:
+    output-file: "pilot_Preprocessing.html"
+    toc: true
+    toc-depth: 3
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 6)
+```
+
+# Overview
+
+::: {.callout-tip}
+## Study-specific instance
+This is the **combined** preprocessing for the **pilot study** (BμS device
+comparison), running positive and negative ionization modes simultaneously via
+`PosNegExp`. See `positive/` and `negative/` for the single-mode counterparts.
+:::
+
+This document handles the preprocessing of LC-MS lipidomics data:
+
+1. **Data Import** — Load raw `.mzML` data (local files, SQLite, or MetaboLights)
+2. **Dataset Investigation** — BPC visualization and reference lipid EICs
+3. **Chromatographic Peak Detection** — CentWave algorithm
+4. **Retention Time Alignment** — QC-based peak group alignment
+5. **Correspondence** — Feature grouping across samples
+6. **Gap Filling** — Fill missing peak values
+
+Output is saved to `positive/objects/` and `negative/objects/`, ready for
+`Annotation.qmd`.
+
+## The `PosNegExp` Framework
+
+This workflow uses the `PosNegExp` S4 class system (defined in `R/pos_neg_exp.R`)
+to run both ionization modes in a single pipeline with minimal code duplication.
+
+**Classes**
+
+| Class | Wraps | Lifecycle |
+|---|---|---|
+| `PosNegMsExp` | Two `MsExperiment` | From data load until `findChromPeaks()` |
+| `PosNegXcmsExp` | Two `XcmsExperiment` | After `findChromPeaks()` onwards |
+
+**Accessors** — extract individual modes at any point:
+
+```r
+posExp(mse)   # returns the positive-mode MsExperiment / XcmsExperiment
+negExp(mse)   # returns the negative-mode counterpart
+```
+
+**Dispatched xcms functions** — called once, applied to both modes automatically:
+
+```r
+findChromPeaks(), filterRt(), groupChromPeaks(),
+adjustRtime(), fillChromPeaks()
+```
+
+**`perMode()`** — pass mode-specific arguments to a dispatched function:
+
+```r
+filterRt(mse, rt = perMode(pos = c(10, 950), neg = c(10, 800)))
+```
+
+**Limitation** — `applyAdjustedRtime()` is not yet dispatched; it must be called
+explicitly per mode and the result re-wrapped:
+
+```r
+mse <- PosNegXcmsExp(applyAdjustedRtime(posExp(mse)),
+                     applyAdjustedRtime(negExp(mse)))
+```
+
+## Folder Hierarchy
+
+```
+pilot_study/
+├── LipidDatabase_R.xlsx
+├── Preprocessing.qmd           # Step 1: This file (combined POS + NEG)
+├── Annotation.qmd              # Step 2: Combined annotation
+├── POS_NEG_merge.qmd           # Step 3: Combine POS + NEG results
+├── positive/
+│   ├── seq_pos_pilot.xlsx              # Sample sequence
+│   ├── pos_lipid_reference_set.xlsx    # Reference lipids
+│   ├── data/                           # .mzML files (symlink → POS_data/)
+│   ├── objects/                        # Saved R objects (auto-generated)
+│   └── figures/                        # Output figures (auto-generated)
+└── negative/
+    ├── seq_neg_pilot.xlsx              # Sample sequence
+    ├── neg_lipid_reference_set.xlsx    # Reference lipids
+    ├── data/                           # .mzML files (symlink → NEG_data/)
+    ├── objects/                        # Saved R objects (auto-generated)
+    └── figures/                        # Output figures (auto-generated)
+```
+
+---
+
+::: {.callout-important}
+## @SARA:
+maybe the folder structure can be simplified by having xlsx at the top level and
+folders `data`, `objects` and `figures` with subfolders `positive` and `negative`
+inside them, e.g. `data/positive` and `data/negative` (instead of `negative/data`,
+etc.)
+:::
+
+## Required Input Files
+
+Before running this workflow, ensure you have:
+
+1. **Sequence files** `positive/seq_pos_pilot.xlsx` and `negative/seq_neg_pilot.xlsx`
+2. **Reference lipid lists** `positive/pos_lipid_reference_set.xlsx` and `negative/neg_lipid_reference_set.xlsx`
+3. **Raw data** (`.mzML` files) in `positive/data/` and `negative/data/`
+4. **Lipid database** (`LipidDatabase_R.xlsx`) in this folder
+
+---
+
+# Configuration
+
+```{r config}
+#| label: configuration
+
+# ============================================================================
+# PILOT STUDY CONFIGURATION
+# ============================================================================
+
+# Project root: relative path to the repository root (R/ helpers live there)
+PROJECT_ROOT <- "../.."
+
+# Study identifier
+STUDY_ID <- "pilot"
+
+# Prefix for saved objects — distinguishes PosNegExp PoC outputs from
+# per-mode outputs (which use STUDY_ID alone as prefix)
+SAVE_PREFIX <- "posNegExp"
+
+# Data source: "local", "sqlite", or "metaboLights"
+DATA_SOURCE <- "local"
+
+# MetaboLights study ID (only used if DATA_SOURCE = "metaboLights")
+MTBLS_ID <- "MTBLS10722"
+
+# SQLite database paths (only used if DATA_SOURCE = "sqlite")
+SQLITE_DB_POS <- NULL
+SQLITE_DB_NEG <- NULL
+
+# Number of CPU cores for parallel processing
+CORES_NB <- 4
+
+# Expected sample types (for validation)
+EXPECTED_SAMPLE_TYPES <- c("QC", "M-VAMS", "W-DBS", "C-qDBS", "Plasma")
+
+# Color palette for sample types
+SAMPLE_TYPE_COLORS <- c(
+  "QC"     = "#999999",
+  "M-VAMS" = "#377EB8",
+  "W-DBS"  = "#E41A1C",
+  "C-qDBS" = "#4DAF4A",
+  "Plasma" = "#984EA3"
+)
+
+# --- MetaboLights options (only used if DATA_SOURCE = "metaboLights") ---
+MTBLS_ASSAY_POS <- "a_MTBLS10722_LC-MS_positive_reverse-phase_metabolite_profiling.txt"
+MTBLS_ASSAY_NEG <- "a_MTBLS10722_LC-MS_negative_reverse-phase_metabolite_profiling.txt"
+
+MTBLS_COLUMN_MAPPING <- list(
+  sample_name     = "Sample Name",
+  file_name       = "Raw Spectral Data File",
+  sample_type     = "Factor Value[Sample type]",
+  injection_index = "Comment[injection_index]"
+)
+
+MTBLS_FILTER_COLUMN <- "Factor Value[Cohort]"
+MTBLS_FILTER_VALUE  <- "Cohort_study"
+MTBLS_EXCLUDE_TYPES <- c("Blank")
+
+# Retention time filter range (seconds) — may differ by polarity
+RT_FILTER_POS <- c(10, 950)
+RT_FILTER_NEG <- c(10, 800)
+
+# Chromatographic peak detection parameters
+PEAK_WIDTH   <- c(4, 8)  # min and max peak width in seconds
+PPM          <- 10       # m/z tolerance in ppm
+SN_THRESHOLD <- 2        # signal-to-noise threshold
+
+# --- Per-mode input files ---
+SEQ_FILE_POS <- "positive/seq_pos_pilot.xlsx"
+SEQ_FILE_NEG <- "negative/seq_neg_pilot.xlsx"
+IS_FILE_POS  <- "positive/pos_lipid_reference_set.xlsx"
+IS_FILE_NEG  <- "negative/neg_lipid_reference_set.xlsx"
+```
+
+---
+
+# Setup
+
+## Load Packages and Helper Functions
+
+```{r load-helpers}
+#| label: load-helpers
+
+source(file.path(PROJECT_ROOT, "R/lipid_helpers.R"))
+source(file.path(PROJECT_ROOT, "R/pos_neg_exp.R"))
+source(file.path(PROJECT_ROOT, "R/create_sqlite_database.R"))
+load_lipid_packages(verbose = TRUE)
+```
+
+## Setup Paths and Parallel Processing
+
+```{r setup-paths}
+#| label: setup-paths
+
+# Data directories (symlinked to POS_data/ and NEG_data/ at repo root)
+DATA_DIR_POS <- "positive/data"
+DATA_DIR_NEG <- "negative/data"
+
+# Output directories
+OBJECTS_DIR_POS  <- "positive/objects"
+OBJECTS_DIR_NEG  <- "negative/objects"
+EIC_ISTD_DIR_POS <- "positive/figures/EIC_internal_standards"
+EIC_ISTD_DIR_NEG <- "negative/figures/EIC_internal_standards"
+PEAK_DET_DIR_POS <- "positive/figures/peak_detection_ref_lipid"
+PEAK_DET_DIR_NEG <- "negative/figures/peak_detection_ref_lipid"
+
+# Create output directories
+for (.d in c(OBJECTS_DIR_POS, OBJECTS_DIR_NEG,
+             EIC_ISTD_DIR_POS, EIC_ISTD_DIR_NEG,
+             PEAK_DET_DIR_POS, PEAK_DET_DIR_NEG)) {
+  dir.create(.d, recursive = TRUE, showWarnings = FALSE)
+}
+rm(.d)
+
+# Setup parallel processing
+if (.Platform$OS.type == "unix") {
+  register(MulticoreParam(CORES_NB))
+} else {
+  register(SnowParam(CORES_NB))
+}
+```
+
+---
+
+# Data Import
+
+Load MS data based on the selected `DATA_SOURCE` option.
+
+::: {.panel-tabset}
+
+## Local mzML Files
+
+Load data from local `.mzML` files in `positive/data/` and `negative/data/`.
+
+## SQLite Database
+
+Load from a pre-built SQLite database. Set `SQLITE_DB_POS` / `SQLITE_DB_NEG`
+in the Configuration section, or leave `NULL` to auto-generate from local files.
+
+## MetaboLights
+
+Download data directly from MetaboLights (requires internet connection).
+
+:::
+
+## Validate Input Files
+
+```{r validate-inputs}
+#| label: validate-inputs
+
+for (.pol in c("pos", "neg")) {
+  .seq_file <- if (.pol == "pos") SEQ_FILE_POS else SEQ_FILE_NEG
+  .is_file  <- if (.pol == "pos") IS_FILE_POS  else IS_FILE_NEG
+  .data_dir <- if (.pol == "pos") DATA_DIR_POS else DATA_DIR_NEG
+
+  validate_metadata(
+    .seq_file,
+    expected_sample_types = EXPECTED_SAMPLE_TYPES,
+    data_dir = if (DATA_SOURCE == "local") .data_dir else NULL
+  )
+  validate_reference_lipids(.is_file)
+}
+rm(.pol, .seq_file, .is_file, .data_dir)
+```
+
+::: {.callout-important}
+## 📋 USER CHECKPOINT: Input Validation
+Check the output above for any **errors** or **warnings**.
+Fix any reported problems in your input files **before** continuing.
+:::
+
+```{r load-data}
+#| label: load-data
+
+.load_mode <- function(polarity, data_dir, seq_file) {
+  seq_data <- read_xlsx(seq_file, col_names = TRUE) |> as.data.frame()
+  seq_data$polarity <- polarity
+
+  if (DATA_SOURCE == "local") {
+    spectra_files <- file.path(data_dir, seq_data$file_name)
+    missing_files <- spectra_files[!file.exists(spectra_files)]
+    if (length(missing_files) > 0)
+      stop("Missing files (", polarity, "):\n", paste(missing_files, collapse = "\n"))
+    readMsExperiment(spectraFiles = spectra_files, sampleData = seq_data)
+
+  } else if (DATA_SOURCE == "sqlite") {
+    sqlite_db <- if (polarity == "pos") SQLITE_DB_POS else SQLITE_DB_NEG
+    if (is.null(sqlite_db))
+      sqlite_db <- file.path(data_dir, paste0(STUDY_ID, "_", polarity, ".sqlite"))
+    if (!file.exists(sqlite_db)) {
+      message("SQLite database not found. Creating from mzML files...")
+      create_sqlite_database(
+        study_id  = STUDY_ID,
+        polarity  = polarity,
+        seq_file  = seq_file,
+        data_dir  = data_dir,
+        output_db = sqlite_db
+      )
+    }
+    load_from_sqlite(sqlite_db, seq_data)
+
+  } else if (DATA_SOURCE == "metaboLights") {
+    assay_name <- if (polarity == "pos") MTBLS_ASSAY_POS else MTBLS_ASSAY_NEG
+    load_from_metaboLights(
+      mtbls_id             = MTBLS_ID,
+      assay_name           = assay_name,
+      column_mapping       = MTBLS_COLUMN_MAPPING,
+      filter_column        = MTBLS_FILTER_COLUMN,
+      filter_value         = MTBLS_FILTER_VALUE,
+      exclude_sample_types = MTBLS_EXCLUDE_TYPES,
+      polarity             = polarity
+    )
+  } else {
+    stop("Invalid DATA_SOURCE: '", DATA_SOURCE,
+         "'. Use 'local', 'sqlite', or 'metaboLights'.")
+  }
+}
+
+message("Loading positive mode data...")
+mse_pos <- .load_mode("pos", DATA_DIR_POS, SEQ_FILE_POS)
+message("Loading negative mode data...")
+mse_neg <- .load_mode("neg", DATA_DIR_NEG, SEQ_FILE_NEG)
+rm(.load_mode)
+```
+
+::: {.callout-caution}
+## `PosNegMsExp`: wrapping both modes
+`PosNegMsExp` holds both `MsExperiment` objects in a single container so that
+subsequent xcms calls automatically process positive and negative mode together.
+`posExp()` / `negExp()` extract each mode at any time.
+:::
+
+```{r wrap-pos-neg}
+#| label: wrap-pos-neg
+
+mse <- PosNegMsExp(mse_pos, mse_neg)
+message("✓ Loaded ", length(posExp(mse)), " samples (pos) and ",
+        length(negExp(mse)), " samples (neg)")
+sampleData(posExp(mse))
+```
+
+## Setup Color Palettes
+
+```{r setup-colors}
+#| label: setup-colors
+
+# Both modes share the same sample structure — derive palette from pos mode
+palette_sample_type <- create_color_palette(
+  posExp(mse),
+  column        = "sample_type",
+  custom_colors = SAMPLE_TYPE_COLORS
+)
+
+message("Color palette for sample_type:")
+print(palette_sample_type)
+```
+
+---
+
+# Dataset Investigation
+
+## Chromatographic Data Visualization
+
+```{r bpc-raw}
+#| label: bpc-raw
+#| fig-cap: "Base Peak Chromatogram — positive (left) and negative (right)"
+
+par(mfrow = c(1, 2))
+plot_bpc(posExp(mse), palette = palette_sample_type, main = "BPC - Positive Mode")
+plot_bpc(negExp(mse), palette = palette_sample_type, main = "BPC - Negative Mode")
+```
+
+::: {.callout-important}
+## 📋 USER CHECKPOINT: RT Filter Range
+Examine the BPCs above and adjust `RT_FILTER_POS` / `RT_FILTER_NEG` in the
+Configuration section if needed.
+Current: POS **`r RT_FILTER_POS[1]`–`r RT_FILTER_POS[2]`** s,
+NEG **`r RT_FILTER_NEG[1]`–`r RT_FILTER_NEG[2]`** s.
+:::
+
+::: {.callout-caution}
+## `perMode()`: mode-specific arguments in a single call
+`perMode(pos = ..., neg = ...)` is an S3 container that tells the dispatched
+method to apply different values to each mode. Here it passes distinct RT ranges
+to a single `filterRt()` call that operates on both modes simultaneously.
+:::
+
+```{r filter-rt}
+#| label: filter-rt
+
+mse <- filterRt(mse, rt = perMode(pos = RT_FILTER_POS, neg = RT_FILTER_NEG))
+```
+
+```{r bpc-filtered}
+#| label: bpc-filtered
+#| fig-cap: "BPC after retention time filtering"
+
+par(mfrow = c(1, 2))
+plot_bpc(posExp(mse), palette = palette_sample_type, main = "BPC - Positive (filtered)")
+plot_bpc(negExp(mse), palette = palette_sample_type, main = "BPC - Negative (filtered)")
+```
+
+## Reference Lipid EICs
+
+```{r load-is}
+#| label: load-is
+#| tbl-cap: "Reference lipids for RT correction"
+
+intern_standard_pos <- prepare_reference_lipids(
+  IS_FILE_POS, rt_window_left = 30, rt_window_right = 15
+)
+intern_standard_neg <- prepare_reference_lipids(
+  IS_FILE_NEG, rt_window_left = 30, rt_window_right = 20
+)
+
+eic_is_pos <- extract_is_eics(posExp(mse), intern_standard_pos)
+eic_is_neg <- extract_is_eics(negExp(mse), intern_standard_neg)
+fdata_pos  <- fData(eic_is_pos)
+fdata_neg  <- fData(eic_is_neg)
+
+message("Positive mode reference lipids:")
+kable(intern_standard_pos[, c("short_name", "mz", "RT")], format = "pipe")
+message("Negative mode reference lipids:")
+kable(intern_standard_neg[, c("short_name", "mz", "RT")], format = "pipe")
+```
+
+```{r plot-is-eics}
+#| label: plot-is-eics
+
+plot_eic_batch(eic_is_pos, fdata_pos, palette = palette_sample_type,
+               output_dir = EIC_ISTD_DIR_POS)
+plot_eic_batch(eic_is_neg, fdata_neg, palette = palette_sample_type,
+               output_dir = EIC_ISTD_DIR_NEG)
+```
+
+::: {.callout-important}
+## 📋 USER CHECKPOINT: Reference Lipid EICs
+Check the EIC plots saved in **`r EIC_ISTD_DIR_POS`** (positive) and
+**`r EIC_ISTD_DIR_NEG`** (negative).
+
+- The red dashed line indicates the expected RT
+- Each peak should be detected in most/all samples
+- Note any compounds with poor signal or unexpected RT shifts
+- Note peak width to inform `PEAK_WIDTH`
+:::
+
+---
+
+# Data Preprocessing
+
+## Chromatographic Peak Detection
+
+```{r peak-detection-params}
+#| label: peak-detection-params
+
+param_pd <- CentWaveParam(
+  peakwidth          = PEAK_WIDTH,
+  ppm                = PPM,
+  integrate          = 2,
+  snthresh           = SN_THRESHOLD,
+  firstBaselineCheck = FALSE
+)
+param_pd
+```
+
+::: {.callout-caution}
+## Dispatched xcms functions
+`findChromPeaks()`, `groupChromPeaks()`, `adjustRtime()`, and `fillChromPeaks()`
+are all dispatched on `PosNegXcmsExp`. A single call processes both modes in
+sequence; the result is automatically re-wrapped in a `PosNegXcmsExp`.
+:::
+
+```{r run-peak-detection}
+#| label: run-peak-detection
+
+mse <- findChromPeaks(mse, param = param_pd, chunkSize = CORES_NB)
+
+# Update EICs with detected peaks for each mode
+eic_is_pos <- extract_is_eics(posExp(mse), intern_standard_pos)
+fData(eic_is_pos) <- fdata_pos
+eic_is_neg <- extract_is_eics(negExp(mse), intern_standard_neg)
+fData(eic_is_neg) <- fdata_neg
+```
+
+```{r peaks-per-sample}
+#| label: peaks-per-sample
+#| results: asis
+
+for (.pol in c("pos", "neg")) {
+  .mse <- if (.pol == "pos") posExp(mse) else negExp(mse)
+  df <- data.frame(
+    sample_name = sampleData(.mse)$sample_name,
+    peak_count  = as.integer(table(chromPeaks(.mse)[, "sample"]))
+  )
+  cat("\n\n**", toupper(.pol), "mode — peaks per sample**\n\n", sep = "")
+  cat(knitr::kable(df, format = "pipe"), sep = "\n")
+  cat("\n")
+}
+rm(.pol, .mse, df)
+```
+
+```{r save-peak-detection-plots}
+#| label: save-peak-detection-plots
+
+plot_eic_batch(eic_is_pos, fdata_pos, palette = palette_sample_type,
+               output_dir = PEAK_DET_DIR_POS)
+plot_eic_batch(eic_is_neg, fdata_neg, palette = palette_sample_type,
+               output_dir = PEAK_DET_DIR_NEG)
+```
+
+::: {.callout-important}
+## 📋 USER CHECKPOINT: Peak Detection Results
+Review the plots in **`r PEAK_DET_DIR_POS`** (positive) and
+**`r PEAK_DET_DIR_NEG`** (negative).
+
+- Each peak should be detected in most samples
+- Check that peaks are not merged incorrectly
+- Adjust `PEAK_WIDTH`, `PPM`, or `SN_THRESHOLD` if needed
+:::
+
+## Retention Time Alignment
+
+```{r rt-alignment}
+#| label: rt-alignment
+
+# Both modes share the same sample structure — use pos to derive groups
+QC_samples <- sampleData(posExp(mse))$sample_type == "QC"
+
+param_c <- PeakDensityParam(
+  sampleGroups = QC_samples,
+  minFraction  = 0.9,
+  binSize      = 0.01,
+  ppm          = PPM,
+  bw           = 2
+)
+mse <- groupChromPeaks(mse, param = param_c)
+
+subset_idx  <- which(QC_samples)
+param_align <- PeakGroupsParam(
+  minFraction  = 0.9,
+  extraPeaks   = 50,
+  span         = 0.5,
+  subsetAdjust = "average",
+  subset       = subset_idx
+)
+
+mse <- adjustRtime(mse, param = param_align)
+```
+
+```{r plot-alignment}
+#| label: plot-alignment
+#| fig-cap: "Retention time alignment (positive left, negative right)"
+
+par(mfrow = c(1, 2))
+for (.pol in c("pos", "neg")) {
+  .mse       <- if (.pol == "pos") posExp(mse) else negExp(mse)
+  col_sample <- get_sample_colors(sampleData(.mse)$sample_type, palette_sample_type)
+  plotAdjustedRtime(.mse, col = paste0(col_sample, "80"), peakGroupsPch = 1,
+                    main = paste("RT alignment -", .pol))
+  grid()
+  legend("topright", col = palette_sample_type,
+         legend = names(palette_sample_type), lty = 1, bty = "n")
+}
+rm(.pol, .mse, col_sample)
+```
+
+::: {.callout-caution}
+## `applyAdjustedRtime()`: explicit per-mode call
+`applyAdjustedRtime()` is not yet an S4 generic dispatched on `PosNegXcmsExp`.
+It must be called on each mode separately and the results re-wrapped manually.
+:::
+
+```{r apply-alignment}
+#| label: apply-alignment
+
+mse_raw <- dropAdjustedRtime(mse)
+mse <- PosNegXcmsExp(
+  applyAdjustedRtime(posExp(mse)),
+  applyAdjustedRtime(negExp(mse))
+)
+```
+
+## Correspondence Analysis
+
+```{r correspondence}
+#| label: correspondence
+
+group_mse <- sampleData(posExp(mse))$sample_type
+group_mse[group_mse == "QC"] <- NA
+group_mse <- as.factor(group_mse)
+
+param_cor <- PeakDensityParam(
+  sampleGroups = group_mse,
+  minFraction  = 0.5,
+  binSize      = 0.01,
+  ppm          = PPM,
+  bw           = 2
+)
+
+mse <- groupChromPeaks(mse, param = param_cor)
+
+for (.pol in c("pos", "neg")) {
+  .mse <- if (.pol == "pos") posExp(mse) else negExp(mse)
+  message(.pol, " correspondence: ", nrow(featureDefinitions(.mse)), " features")
+}
+rm(.pol, .mse)
+```
+
+## Gap Filling
+
+```{r gap-filling}
+#| label: gap-filling
+
+na_before <- list(
+  pos = sum(is.na(featureValues(posExp(mse)))) /
+          length(featureValues(posExp(mse))) * 100,
+  neg = sum(is.na(featureValues(negExp(mse)))) /
+          length(featureValues(negExp(mse))) * 100
+)
+
+mse <- fillChromPeaks(mse, param = ChromPeakAreaParam(), chunkSize = CORES_NB)
+
+for (.pol in c("pos", "neg")) {
+  .mse     <- if (.pol == "pos") posExp(mse) else negExp(mse)
+  na_after <- sum(is.na(featureValues(.mse))) / length(featureValues(.mse)) * 100
+  message(.pol, " gap filling: ", round(na_before[[.pol]], 1),
+          "% -> ", round(na_after, 1), "% NA")
+  if (na_before[[.pol]] > 50)
+    warning("High initial NA % in ", .pol, " mode (",
+            round(na_before[[.pol]], 1), "%).")
+}
+rm(.pol, .mse, na_after)
+```
+
+::: {.callout-note}
+## Gap Filling Guidance
+- **< 30% NA before filling**: Good — typical for well-detected features
+- **30-50% NA before filling**: Acceptable — may indicate lower abundance compounds
+- **> 50% NA before filling**: Review peak detection parameters or sample quality
+:::
+
+## Extract Results and Save
+
+```{r extract-results}
+#| label: extract-results
+
+mse_pos <- posExp(mse)
+mse_neg <- negExp(mse)
+
+res_pos <- quantify(mse_pos, method = "sum", filled = FALSE)
+assays(res_pos)$raw_filled <- featureValues(mse_pos, method = "sum", filled = TRUE)
+
+res_neg <- quantify(mse_neg, method = "sum", filled = FALSE)
+assays(res_neg)$raw_filled <- featureValues(mse_neg, method = "sum", filled = TRUE)
+```
+
+```{r validate-preprocessing}
+#| label: validate-preprocessing
+
+validate_result(res_pos, assay_name = "raw", min_features = 50)
+validate_result(res_neg, assay_name = "raw", min_features = 50)
+```
+
+```{r save-preprocessed}
+#| label: save-preprocessed
+
+for (.pol in c("pos", "neg")) {
+  .mse      <- if (.pol == "pos") mse_pos else mse_neg
+  .res      <- if (.pol == "pos") res_pos else res_neg
+  .obj_dir  <- if (.pol == "pos") OBJECTS_DIR_POS else OBJECTS_DIR_NEG
+
+  mse_save_path <- file.path(.obj_dir,
+                             paste0(SAVE_PREFIX, "_preprocessed_mse_", .pol))
+  res_save_path <- file.path(.obj_dir,
+                             paste0(SAVE_PREFIX, "_preprocessed_res_", .pol))
+
+  if (DATA_SOURCE == "sqlite") {
+    spectra(.mse) <- setBackend(spectra(.mse), MsBackendMemory())
+    save(.mse, file = paste0(mse_save_path, ".RData"))
+  } else {
+    if (dir.exists(mse_save_path)) unlink(mse_save_path, recursive = TRUE)
+    saveMsObject(.mse, AlabasterParam(path = mse_save_path))
+  }
+
+  .res@metadata <- list()
+  if (dir.exists(res_save_path)) unlink(res_save_path, recursive = TRUE)
+  saveObject(.res, res_save_path)
+
+  message("✓ Saved ", .pol, " objects to: ", .obj_dir)
+}
+rm(.pol, .mse, .res, .obj_dir, mse_save_path, res_save_path)
+
+message("\nNext step: Run Annotation.qmd for RT correction and annotation.")
+```
+
+---
+
+## Session Info
+
+```{r session-info}
+#| label: session-info
+
+sessionInfo()
+```
+
+---
+
+# Reference
+
+1. Metabonaut tutorial: <https://rformassspectrometry.github.io/Metabonaut/articles/a-end-to-end-untargeted-metabolomics.html#retention-time-alignment>

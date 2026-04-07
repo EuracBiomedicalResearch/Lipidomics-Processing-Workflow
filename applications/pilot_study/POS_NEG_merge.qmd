@@ -38,7 +38,7 @@ single `SummarizedExperiment`. It handles:
 
 # Configuration
 
-```{r config}
+```{r}
 #| label: configuration
 
 # ============================================================================

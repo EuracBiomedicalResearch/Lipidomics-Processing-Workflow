@@ -1,0 +1,2130 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.7.32">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="CEMBIO-EURAC Team">
+<meta name="dcterms.date" content="2026-04-07">
+
+<title>Pilot Study — LC-MS Data Preprocessing</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="Preprocessing_files/libs/clipboard/clipboard.min.js"></script>
+<script src="Preprocessing_files/libs/quarto-html/quarto.js" type="module"></script>
+<script src="Preprocessing_files/libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="Preprocessing_files/libs/quarto-html/popper.min.js"></script>
+<script src="Preprocessing_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="Preprocessing_files/libs/quarto-html/anchor.min.js"></script>
+<link href="Preprocessing_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="Preprocessing_files/libs/quarto-html/quarto-syntax-highlighting-37eea08aefeeee20ff55810ff984fec1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="Preprocessing_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="Preprocessing_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="Preprocessing_files/libs/bootstrap/bootstrap-49046d69503d69b970282e1967d5452d.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body class="quarto-light">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+<div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+  <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">Table of contents</h2>
+   
+  <ul>
+  <li><a href="#overview" id="toc-overview" class="nav-link active" data-scroll-target="#overview">Overview</a>
+  <ul class="collapse">
+  <li><a href="#the-posnegexp-framework" id="toc-the-posnegexp-framework" class="nav-link" data-scroll-target="#the-posnegexp-framework">The <code>PosNegExp</code> Framework</a></li>
+  <li><a href="#folder-hierarchy" id="toc-folder-hierarchy" class="nav-link" data-scroll-target="#folder-hierarchy">Folder Hierarchy</a></li>
+  <li><a href="#required-input-files" id="toc-required-input-files" class="nav-link" data-scroll-target="#required-input-files">Required Input Files</a></li>
+  </ul></li>
+  <li><a href="#configuration" id="toc-configuration" class="nav-link" data-scroll-target="#configuration">Configuration</a></li>
+  <li><a href="#setup" id="toc-setup" class="nav-link" data-scroll-target="#setup">Setup</a>
+  <ul class="collapse">
+  <li><a href="#load-packages-and-helper-functions" id="toc-load-packages-and-helper-functions" class="nav-link" data-scroll-target="#load-packages-and-helper-functions">Load Packages and Helper Functions</a></li>
+  <li><a href="#setup-paths-and-parallel-processing" id="toc-setup-paths-and-parallel-processing" class="nav-link" data-scroll-target="#setup-paths-and-parallel-processing">Setup Paths and Parallel Processing</a></li>
+  </ul></li>
+  <li><a href="#data-import" id="toc-data-import" class="nav-link" data-scroll-target="#data-import">Data Import</a>
+  <ul class="collapse">
+  <li><a href="#validate-input-files" id="toc-validate-input-files" class="nav-link" data-scroll-target="#validate-input-files">Validate Input Files</a></li>
+  <li><a href="#setup-color-palettes" id="toc-setup-color-palettes" class="nav-link" data-scroll-target="#setup-color-palettes">Setup Color Palettes</a></li>
+  </ul></li>
+  <li><a href="#dataset-investigation" id="toc-dataset-investigation" class="nav-link" data-scroll-target="#dataset-investigation">Dataset Investigation</a>
+  <ul class="collapse">
+  <li><a href="#chromatographic-data-visualization" id="toc-chromatographic-data-visualization" class="nav-link" data-scroll-target="#chromatographic-data-visualization">Chromatographic Data Visualization</a></li>
+  <li><a href="#reference-lipid-eics" id="toc-reference-lipid-eics" class="nav-link" data-scroll-target="#reference-lipid-eics">Reference Lipid EICs</a></li>
+  </ul></li>
+  <li><a href="#data-preprocessing" id="toc-data-preprocessing" class="nav-link" data-scroll-target="#data-preprocessing">Data Preprocessing</a>
+  <ul class="collapse">
+  <li><a href="#chromatographic-peak-detection" id="toc-chromatographic-peak-detection" class="nav-link" data-scroll-target="#chromatographic-peak-detection">Chromatographic Peak Detection</a></li>
+  <li><a href="#retention-time-alignment" id="toc-retention-time-alignment" class="nav-link" data-scroll-target="#retention-time-alignment">Retention Time Alignment</a></li>
+  <li><a href="#correspondence-analysis" id="toc-correspondence-analysis" class="nav-link" data-scroll-target="#correspondence-analysis">Correspondence Analysis</a></li>
+  <li><a href="#gap-filling" id="toc-gap-filling" class="nav-link" data-scroll-target="#gap-filling">Gap Filling</a></li>
+  <li><a href="#extract-results-and-save" id="toc-extract-results-and-save" class="nav-link" data-scroll-target="#extract-results-and-save">Extract Results and Save</a></li>
+  <li><a href="#session-info" id="toc-session-info" class="nav-link" data-scroll-target="#session-info">Session Info</a></li>
+  </ul></li>
+  <li><a href="#reference" id="toc-reference" class="nav-link" data-scroll-target="#reference">Reference</a></li>
+  </ul>
+</nav>
+</div>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Pilot Study — LC-MS Data Preprocessing</h1>
+<p class="subtitle lead">Peak detection, RT alignment, correspondence and gap filling (POS + NEG)</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    <div>
+    <div class="quarto-title-meta-heading">Author</div>
+    <div class="quarto-title-meta-contents">
+             <p>CEMBIO-EURAC Team </p>
+          </div>
+  </div>
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">April 7, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="overview" class="level1">
+<h1>Overview</h1>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Study-specific instance
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>This is the <strong>combined</strong> preprocessing for the <strong>pilot study</strong> (BμS device comparison), running positive and negative ionization modes simultaneously via <code>PosNegExp</code>. See <code>positive/</code> and <code>negative/</code> for the single-mode counterparts.</p>
+</div>
+</div>
+<p>This document handles the preprocessing of LC-MS lipidomics data:</p>
+<ol type="1">
+<li><strong>Data Import</strong> — Load raw <code>.mzML</code> data (local files, SQLite, or MetaboLights)</li>
+<li><strong>Dataset Investigation</strong> — BPC visualization and reference lipid EICs</li>
+<li><strong>Chromatographic Peak Detection</strong> — CentWave algorithm</li>
+<li><strong>Retention Time Alignment</strong> — QC-based peak group alignment</li>
+<li><strong>Correspondence</strong> — Feature grouping across samples</li>
+<li><strong>Gap Filling</strong> — Fill missing peak values</li>
+</ol>
+<p>Output is saved to <code>positive/objects/</code> and <code>negative/objects/</code>, ready for <code>Annotation.qmd</code>.</p>
+<section id="the-posnegexp-framework" class="level2">
+<h2 class="anchored" data-anchor-id="the-posnegexp-framework">The <code>PosNegExp</code> Framework</h2>
+<p>This workflow uses the <code>PosNegExp</code> S4 class system (defined in <code>R/pos_neg_exp.R</code>) to run both ionization modes in a single pipeline with minimal code duplication.</p>
+<p><strong>Classes</strong></p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Class</th>
+<th>Wraps</th>
+<th>Lifecycle</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>PosNegMsExp</code></td>
+<td>Two <code>MsExperiment</code></td>
+<td>From data load until <code>findChromPeaks()</code></td>
+</tr>
+<tr class="even">
+<td><code>PosNegXcmsExp</code></td>
+<td>Two <code>XcmsExperiment</code></td>
+<td>After <code>findChromPeaks()</code> onwards</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Accessors</strong> — extract individual modes at any point:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">posExp</span>(mse)   <span class="co"># returns the positive-mode MsExperiment / XcmsExperiment</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">negExp</span>(mse)   <span class="co"># returns the negative-mode counterpart</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><strong>Dispatched xcms functions</strong> — called once, applied to both modes automatically:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">findChromPeaks</span>(), <span class="fu">filterRt</span>(), <span class="fu">groupChromPeaks</span>(),</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">adjustRtime</span>(), <span class="fu">fillChromPeaks</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><strong><code>perMode()</code></strong> — pass mode-specific arguments to a dispatched function:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">filterRt</span>(mse, <span class="at">rt =</span> <span class="fu">perMode</span>(<span class="at">pos =</span> <span class="fu">c</span>(<span class="dv">10</span>, <span class="dv">950</span>), <span class="at">neg =</span> <span class="fu">c</span>(<span class="dv">10</span>, <span class="dv">800</span>)))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><strong>Limitation</strong> — <code>applyAdjustedRtime()</code> is not yet dispatched; it must be called explicitly per mode and the result re-wrapped:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>mse <span class="ot">&lt;-</span> <span class="fu">PosNegXcmsExp</span>(<span class="fu">applyAdjustedRtime</span>(<span class="fu">posExp</span>(mse)),</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>                     <span class="fu">applyAdjustedRtime</span>(<span class="fu">negExp</span>(mse)))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="folder-hierarchy" class="level2">
+<h2 class="anchored" data-anchor-id="folder-hierarchy">Folder Hierarchy</h2>
+<pre><code>pilot_study/
+├── LipidDatabase_R.xlsx
+├── Preprocessing.qmd           # Step 1: This file (combined POS + NEG)
+├── Annotation.qmd              # Step 2: Combined annotation
+├── POS_NEG_merge.qmd           # Step 3: Combine POS + NEG results
+├── positive/
+│   ├── seq_pos_pilot.xlsx              # Sample sequence
+│   ├── pos_lipid_reference_set.xlsx    # Reference lipids
+│   ├── data/                           # .mzML files (symlink → POS_data/)
+│   ├── objects/                        # Saved R objects (auto-generated)
+│   └── figures/                        # Output figures (auto-generated)
+└── negative/
+    ├── seq_neg_pilot.xlsx              # Sample sequence
+    ├── neg_lipid_reference_set.xlsx    # Reference lipids
+    ├── data/                           # .mzML files (symlink → NEG_data/)
+    ├── objects/                        # Saved R objects (auto-generated)
+    └── figures/                        # Output figures (auto-generated)</code></pre>
+<hr>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="citation" data-cites="SARA">@SARA</span>:
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>maybe the folder structure can be simplified by having xlsx at the top level and folders <code>data</code>, <code>objects</code> and <code>figures</code> with subfolders <code>positive</code> and <code>negative</code> inside them, e.g.&nbsp;<code>data/positive</code> and <code>data/negative</code> (instead of <code>negative/data</code>, etc.)</p>
+</div>
+</div>
+</section>
+<section id="required-input-files" class="level2">
+<h2 class="anchored" data-anchor-id="required-input-files">Required Input Files</h2>
+<p>Before running this workflow, ensure you have:</p>
+<ol type="1">
+<li><strong>Sequence files</strong> <code>positive/seq_pos_pilot.xlsx</code> and <code>negative/seq_neg_pilot.xlsx</code></li>
+<li><strong>Reference lipid lists</strong> <code>positive/pos_lipid_reference_set.xlsx</code> and <code>negative/neg_lipid_reference_set.xlsx</code></li>
+<li><strong>Raw data</strong> (<code>.mzML</code> files) in <code>positive/data/</code> and <code>negative/data/</code></li>
+<li><strong>Lipid database</strong> (<code>LipidDatabase_R.xlsx</code>) in this folder</li>
+</ol>
+<hr>
+</section>
+</section>
+<section id="configuration" class="level1">
+<h1>Configuration</h1>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ============================================================================</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="co"># PILOT STUDY CONFIGURATION</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="co"># ============================================================================</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Project root: relative path to the repository root (R/ helpers live there)</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>PROJECT_ROOT <span class="ot">&lt;-</span> <span class="st">"../.."</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="co"># Study identifier</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>STUDY_ID <span class="ot">&lt;-</span> <span class="st">"pilot"</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a><span class="co"># Prefix for saved objects — distinguishes PosNegExp PoC outputs from</span></span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a><span class="co"># per-mode outputs (which use STUDY_ID alone as prefix)</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>SAVE_PREFIX <span class="ot">&lt;-</span> <span class="st">"posNegExp"</span></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a><span class="co"># Data source: "local", "sqlite", or "metaboLights"</span></span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>DATA_SOURCE <span class="ot">&lt;-</span> <span class="st">"local"</span></span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a><span class="co"># MetaboLights study ID (only used if DATA_SOURCE = "metaboLights")</span></span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>MTBLS_ID <span class="ot">&lt;-</span> <span class="st">"MTBLS10722"</span></span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a><span class="co"># SQLite database paths (only used if DATA_SOURCE = "sqlite")</span></span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a>SQLITE_DB_POS <span class="ot">&lt;-</span> <span class="cn">NULL</span></span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a>SQLITE_DB_NEG <span class="ot">&lt;-</span> <span class="cn">NULL</span></span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of CPU cores for parallel processing</span></span>
+<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a>CORES_NB <span class="ot">&lt;-</span> <span class="dv">4</span></span>
+<span id="cb6-27"><a href="#cb6-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-28"><a href="#cb6-28" aria-hidden="true" tabindex="-1"></a><span class="co"># Expected sample types (for validation)</span></span>
+<span id="cb6-29"><a href="#cb6-29" aria-hidden="true" tabindex="-1"></a>EXPECTED_SAMPLE_TYPES <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"QC"</span>, <span class="st">"M-VAMS"</span>, <span class="st">"W-DBS"</span>, <span class="st">"C-qDBS"</span>, <span class="st">"Plasma"</span>)</span>
+<span id="cb6-30"><a href="#cb6-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-31"><a href="#cb6-31" aria-hidden="true" tabindex="-1"></a><span class="co"># Color palette for sample types</span></span>
+<span id="cb6-32"><a href="#cb6-32" aria-hidden="true" tabindex="-1"></a>SAMPLE_TYPE_COLORS <span class="ot">&lt;-</span> <span class="fu">c</span>(</span>
+<span id="cb6-33"><a href="#cb6-33" aria-hidden="true" tabindex="-1"></a>  <span class="st">"QC"</span>     <span class="ot">=</span> <span class="st">"#999999"</span>,</span>
+<span id="cb6-34"><a href="#cb6-34" aria-hidden="true" tabindex="-1"></a>  <span class="st">"M-VAMS"</span> <span class="ot">=</span> <span class="st">"#377EB8"</span>,</span>
+<span id="cb6-35"><a href="#cb6-35" aria-hidden="true" tabindex="-1"></a>  <span class="st">"W-DBS"</span>  <span class="ot">=</span> <span class="st">"#E41A1C"</span>,</span>
+<span id="cb6-36"><a href="#cb6-36" aria-hidden="true" tabindex="-1"></a>  <span class="st">"C-qDBS"</span> <span class="ot">=</span> <span class="st">"#4DAF4A"</span>,</span>
+<span id="cb6-37"><a href="#cb6-37" aria-hidden="true" tabindex="-1"></a>  <span class="st">"Plasma"</span> <span class="ot">=</span> <span class="st">"#984EA3"</span></span>
+<span id="cb6-38"><a href="#cb6-38" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb6-39"><a href="#cb6-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-40"><a href="#cb6-40" aria-hidden="true" tabindex="-1"></a><span class="co"># --- MetaboLights options (only used if DATA_SOURCE = "metaboLights") ---</span></span>
+<span id="cb6-41"><a href="#cb6-41" aria-hidden="true" tabindex="-1"></a>MTBLS_ASSAY_POS <span class="ot">&lt;-</span> <span class="st">"a_MTBLS10722_LC-MS_positive_reverse-phase_metabolite_profiling.txt"</span></span>
+<span id="cb6-42"><a href="#cb6-42" aria-hidden="true" tabindex="-1"></a>MTBLS_ASSAY_NEG <span class="ot">&lt;-</span> <span class="st">"a_MTBLS10722_LC-MS_negative_reverse-phase_metabolite_profiling.txt"</span></span>
+<span id="cb6-43"><a href="#cb6-43" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-44"><a href="#cb6-44" aria-hidden="true" tabindex="-1"></a>MTBLS_COLUMN_MAPPING <span class="ot">&lt;-</span> <span class="fu">list</span>(</span>
+<span id="cb6-45"><a href="#cb6-45" aria-hidden="true" tabindex="-1"></a>  <span class="at">sample_name     =</span> <span class="st">"Sample Name"</span>,</span>
+<span id="cb6-46"><a href="#cb6-46" aria-hidden="true" tabindex="-1"></a>  <span class="at">file_name       =</span> <span class="st">"Raw Spectral Data File"</span>,</span>
+<span id="cb6-47"><a href="#cb6-47" aria-hidden="true" tabindex="-1"></a>  <span class="at">sample_type     =</span> <span class="st">"Factor Value[Sample type]"</span>,</span>
+<span id="cb6-48"><a href="#cb6-48" aria-hidden="true" tabindex="-1"></a>  <span class="at">injection_index =</span> <span class="st">"Comment[injection_index]"</span></span>
+<span id="cb6-49"><a href="#cb6-49" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb6-50"><a href="#cb6-50" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-51"><a href="#cb6-51" aria-hidden="true" tabindex="-1"></a>MTBLS_FILTER_COLUMN <span class="ot">&lt;-</span> <span class="st">"Factor Value[Cohort]"</span></span>
+<span id="cb6-52"><a href="#cb6-52" aria-hidden="true" tabindex="-1"></a>MTBLS_FILTER_VALUE  <span class="ot">&lt;-</span> <span class="st">"Cohort_study"</span></span>
+<span id="cb6-53"><a href="#cb6-53" aria-hidden="true" tabindex="-1"></a>MTBLS_EXCLUDE_TYPES <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"Blank"</span>)</span>
+<span id="cb6-54"><a href="#cb6-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-55"><a href="#cb6-55" aria-hidden="true" tabindex="-1"></a><span class="co"># Retention time filter range (seconds) — may differ by polarity</span></span>
+<span id="cb6-56"><a href="#cb6-56" aria-hidden="true" tabindex="-1"></a>RT_FILTER_POS <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">10</span>, <span class="dv">950</span>)</span>
+<span id="cb6-57"><a href="#cb6-57" aria-hidden="true" tabindex="-1"></a>RT_FILTER_NEG <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">10</span>, <span class="dv">800</span>)</span>
+<span id="cb6-58"><a href="#cb6-58" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-59"><a href="#cb6-59" aria-hidden="true" tabindex="-1"></a><span class="co"># Chromatographic peak detection parameters</span></span>
+<span id="cb6-60"><a href="#cb6-60" aria-hidden="true" tabindex="-1"></a>PEAK_WIDTH   <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">8</span>)  <span class="co"># min and max peak width in seconds</span></span>
+<span id="cb6-61"><a href="#cb6-61" aria-hidden="true" tabindex="-1"></a>PPM          <span class="ot">&lt;-</span> <span class="dv">10</span>       <span class="co"># m/z tolerance in ppm</span></span>
+<span id="cb6-62"><a href="#cb6-62" aria-hidden="true" tabindex="-1"></a>SN_THRESHOLD <span class="ot">&lt;-</span> <span class="dv">2</span>        <span class="co"># signal-to-noise threshold</span></span>
+<span id="cb6-63"><a href="#cb6-63" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-64"><a href="#cb6-64" aria-hidden="true" tabindex="-1"></a><span class="co"># --- Per-mode input files ---</span></span>
+<span id="cb6-65"><a href="#cb6-65" aria-hidden="true" tabindex="-1"></a>SEQ_FILE_POS <span class="ot">&lt;-</span> <span class="st">"positive/seq_pos_pilot.xlsx"</span></span>
+<span id="cb6-66"><a href="#cb6-66" aria-hidden="true" tabindex="-1"></a>SEQ_FILE_NEG <span class="ot">&lt;-</span> <span class="st">"negative/seq_neg_pilot.xlsx"</span></span>
+<span id="cb6-67"><a href="#cb6-67" aria-hidden="true" tabindex="-1"></a>IS_FILE_POS  <span class="ot">&lt;-</span> <span class="st">"positive/pos_lipid_reference_set.xlsx"</span></span>
+<span id="cb6-68"><a href="#cb6-68" aria-hidden="true" tabindex="-1"></a>IS_FILE_NEG  <span class="ot">&lt;-</span> <span class="st">"negative/neg_lipid_reference_set.xlsx"</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<hr>
+</section>
+<section id="setup" class="level1">
+<h1>Setup</h1>
+<section id="load-packages-and-helper-functions" class="level2">
+<h2 class="anchored" data-anchor-id="load-packages-and-helper-functions">Load Packages and Helper Functions</h2>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">file.path</span>(PROJECT_ROOT, <span class="st">"R/lipid_helpers.R"</span>))</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">file.path</span>(PROJECT_ROOT, <span class="st">"R/pos_neg_exp.R"</span>))</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">file.path</span>(PROJECT_ROOT, <span class="st">"R/create_sqlite_database.R"</span>))</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="fu">load_lipid_packages</span>(<span class="at">verbose =</span> <span class="cn">TRUE</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="setup-paths-and-parallel-processing" class="level2">
+<h2 class="anchored" data-anchor-id="setup-paths-and-parallel-processing">Setup Paths and Parallel Processing</h2>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Data directories (symlinked to POS_data/ and NEG_data/ at repo root)</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>DATA_DIR_POS <span class="ot">&lt;-</span> <span class="st">"positive/data"</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>DATA_DIR_NEG <span class="ot">&lt;-</span> <span class="st">"negative/data"</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Output directories</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>OBJECTS_DIR_POS  <span class="ot">&lt;-</span> <span class="st">"positive/objects"</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>OBJECTS_DIR_NEG  <span class="ot">&lt;-</span> <span class="st">"negative/objects"</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>EIC_ISTD_DIR_POS <span class="ot">&lt;-</span> <span class="st">"positive/figures/EIC_internal_standards"</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>EIC_ISTD_DIR_NEG <span class="ot">&lt;-</span> <span class="st">"negative/figures/EIC_internal_standards"</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>PEAK_DET_DIR_POS <span class="ot">&lt;-</span> <span class="st">"positive/figures/peak_detection_ref_lipid"</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>PEAK_DET_DIR_NEG <span class="ot">&lt;-</span> <span class="st">"negative/figures/peak_detection_ref_lipid"</span></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a><span class="co"># Create output directories</span></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (.d <span class="cf">in</span> <span class="fu">c</span>(OBJECTS_DIR_POS, OBJECTS_DIR_NEG,</span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>             EIC_ISTD_DIR_POS, EIC_ISTD_DIR_NEG,</span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>             PEAK_DET_DIR_POS, PEAK_DET_DIR_NEG)) {</span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">dir.create</span>(.d, <span class="at">recursive =</span> <span class="cn">TRUE</span>, <span class="at">showWarnings =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a><span class="fu">rm</span>(.d)</span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a><span class="co"># Setup parallel processing</span></span>
+<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (.Platform<span class="sc">$</span>OS.type <span class="sc">==</span> <span class="st">"unix"</span>) {</span>
+<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">register</span>(<span class="fu">MulticoreParam</span>(CORES_NB))</span>
+<span id="cb8-24"><a href="#cb8-24" aria-hidden="true" tabindex="-1"></a>} <span class="cf">else</span> {</span>
+<span id="cb8-25"><a href="#cb8-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">register</span>(<span class="fu">SnowParam</span>(CORES_NB))</span>
+<span id="cb8-26"><a href="#cb8-26" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<hr>
+</section>
+</section>
+<section id="data-import" class="level1">
+<h1>Data Import</h1>
+<p>Load MS data based on the selected <code>DATA_SOURCE</code> option.</p>
+<div class="tabset-margin-container"></div><div class="panel-tabset">
+<ul class="nav nav-tabs" role="tablist"><li class="nav-item" role="presentation"><a class="nav-link active" id="tabset-1-1-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-1" role="tab" aria-controls="tabset-1-1" aria-selected="true" href="">Local mzML Files</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-1-2-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-2" role="tab" aria-controls="tabset-1-2" aria-selected="false" href="">SQLite Database</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-1-3-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-3" role="tab" aria-controls="tabset-1-3" aria-selected="false" href="">MetaboLights</a></li></ul>
+<div class="tab-content">
+<div id="tabset-1-1" class="tab-pane active" role="tabpanel" aria-labelledby="tabset-1-1-tab">
+<p>Load data from local <code>.mzML</code> files in <code>positive/data/</code> and <code>negative/data/</code>.</p>
+</div>
+<div id="tabset-1-2" class="tab-pane" role="tabpanel" aria-labelledby="tabset-1-2-tab">
+<p>Load from a pre-built SQLite database. Set <code>SQLITE_DB_POS</code> / <code>SQLITE_DB_NEG</code> in the Configuration section, or leave <code>NULL</code> to auto-generate from local files.</p>
+</div>
+<div id="tabset-1-3" class="tab-pane" role="tabpanel" aria-labelledby="tabset-1-3-tab">
+<p>Download data directly from MetaboLights (requires internet connection).</p>
+</div>
+</div>
+</div>
+<section id="validate-input-files" class="level2">
+<h2 class="anchored" data-anchor-id="validate-input-files">Validate Input Files</h2>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (.pol <span class="cf">in</span> <span class="fu">c</span>(<span class="st">"pos"</span>, <span class="st">"neg"</span>)) {</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  .seq_file <span class="ot">&lt;-</span> <span class="cf">if</span> (.pol <span class="sc">==</span> <span class="st">"pos"</span>) SEQ_FILE_POS <span class="cf">else</span> SEQ_FILE_NEG</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  .is_file  <span class="ot">&lt;-</span> <span class="cf">if</span> (.pol <span class="sc">==</span> <span class="st">"pos"</span>) IS_FILE_POS  <span class="cf">else</span> IS_FILE_NEG</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  .data_dir <span class="ot">&lt;-</span> <span class="cf">if</span> (.pol <span class="sc">==</span> <span class="st">"pos"</span>) DATA_DIR_POS <span class="cf">else</span> DATA_DIR_NEG</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">validate_metadata</span>(</span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>    .seq_file,</span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">expected_sample_types =</span> EXPECTED_SAMPLE_TYPES,</span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">data_dir =</span> <span class="cf">if</span> (DATA_SOURCE <span class="sc">==</span> <span class="st">"local"</span>) .data_dir <span class="cf">else</span> <span class="cn">NULL</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">validate_reference_lipids</span>(.is_file)</span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a><span class="fu">rm</span>(.pol, .seq_file, .is_file, .data_dir)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+📋 USER CHECKPOINT: Input Validation
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Check the output above for any <strong>errors</strong> or <strong>warnings</strong>. Fix any reported problems in your input files <strong>before</strong> continuing.</p>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>.load_mode <span class="ot">&lt;-</span> <span class="cf">function</span>(polarity, data_dir, seq_file) {</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>  seq_data <span class="ot">&lt;-</span> <span class="fu">read_xlsx</span>(seq_file, <span class="at">col_names =</span> <span class="cn">TRUE</span>) <span class="sc">|&gt;</span> <span class="fu">as.data.frame</span>()</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>  seq_data<span class="sc">$</span>polarity <span class="ot">&lt;-</span> polarity</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (DATA_SOURCE <span class="sc">==</span> <span class="st">"local"</span>) {</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>    spectra_files <span class="ot">&lt;-</span> <span class="fu">file.path</span>(data_dir, seq_data<span class="sc">$</span>file_name)</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>    missing_files <span class="ot">&lt;-</span> spectra_files[<span class="sc">!</span><span class="fu">file.exists</span>(spectra_files)]</span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">length</span>(missing_files) <span class="sc">&gt;</span> <span class="dv">0</span>)</span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>      <span class="fu">stop</span>(<span class="st">"Missing files ("</span>, polarity, <span class="st">"):</span><span class="sc">\n</span><span class="st">"</span>, <span class="fu">paste</span>(missing_files, <span class="at">collapse =</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span>))</span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">readMsExperiment</span>(<span class="at">spectraFiles =</span> spectra_files, <span class="at">sampleData =</span> seq_data)</span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> <span class="cf">if</span> (DATA_SOURCE <span class="sc">==</span> <span class="st">"sqlite"</span>) {</span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>    sqlite_db <span class="ot">&lt;-</span> <span class="cf">if</span> (polarity <span class="sc">==</span> <span class="st">"pos"</span>) SQLITE_DB_POS <span class="cf">else</span> SQLITE_DB_NEG</span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">is.null</span>(sqlite_db))</span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>      sqlite_db <span class="ot">&lt;-</span> <span class="fu">file.path</span>(data_dir, <span class="fu">paste0</span>(STUDY_ID, <span class="st">"_"</span>, polarity, <span class="st">".sqlite"</span>))</span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="sc">!</span><span class="fu">file.exists</span>(sqlite_db)) {</span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a>      <span class="fu">message</span>(<span class="st">"SQLite database not found. Creating from mzML files..."</span>)</span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a>      <span class="fu">create_sqlite_database</span>(</span>
+<span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a>        <span class="at">study_id  =</span> STUDY_ID,</span>
+<span id="cb10-20"><a href="#cb10-20" aria-hidden="true" tabindex="-1"></a>        <span class="at">polarity  =</span> polarity,</span>
+<span id="cb10-21"><a href="#cb10-21" aria-hidden="true" tabindex="-1"></a>        <span class="at">seq_file  =</span> seq_file,</span>
+<span id="cb10-22"><a href="#cb10-22" aria-hidden="true" tabindex="-1"></a>        <span class="at">data_dir  =</span> data_dir,</span>
+<span id="cb10-23"><a href="#cb10-23" aria-hidden="true" tabindex="-1"></a>        <span class="at">output_db =</span> sqlite_db</span>
+<span id="cb10-24"><a href="#cb10-24" aria-hidden="true" tabindex="-1"></a>      )</span>
+<span id="cb10-25"><a href="#cb10-25" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb10-26"><a href="#cb10-26" aria-hidden="true" tabindex="-1"></a>    <span class="fu">load_from_sqlite</span>(sqlite_db, seq_data)</span>
+<span id="cb10-27"><a href="#cb10-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-28"><a href="#cb10-28" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> <span class="cf">if</span> (DATA_SOURCE <span class="sc">==</span> <span class="st">"metaboLights"</span>) {</span>
+<span id="cb10-29"><a href="#cb10-29" aria-hidden="true" tabindex="-1"></a>    assay_name <span class="ot">&lt;-</span> <span class="cf">if</span> (polarity <span class="sc">==</span> <span class="st">"pos"</span>) MTBLS_ASSAY_POS <span class="cf">else</span> MTBLS_ASSAY_NEG</span>
+<span id="cb10-30"><a href="#cb10-30" aria-hidden="true" tabindex="-1"></a>    <span class="fu">load_from_metaboLights</span>(</span>
+<span id="cb10-31"><a href="#cb10-31" aria-hidden="true" tabindex="-1"></a>      <span class="at">mtbls_id             =</span> MTBLS_ID,</span>
+<span id="cb10-32"><a href="#cb10-32" aria-hidden="true" tabindex="-1"></a>      <span class="at">assay_name           =</span> assay_name,</span>
+<span id="cb10-33"><a href="#cb10-33" aria-hidden="true" tabindex="-1"></a>      <span class="at">column_mapping       =</span> MTBLS_COLUMN_MAPPING,</span>
+<span id="cb10-34"><a href="#cb10-34" aria-hidden="true" tabindex="-1"></a>      <span class="at">filter_column        =</span> MTBLS_FILTER_COLUMN,</span>
+<span id="cb10-35"><a href="#cb10-35" aria-hidden="true" tabindex="-1"></a>      <span class="at">filter_value         =</span> MTBLS_FILTER_VALUE,</span>
+<span id="cb10-36"><a href="#cb10-36" aria-hidden="true" tabindex="-1"></a>      <span class="at">exclude_sample_types =</span> MTBLS_EXCLUDE_TYPES,</span>
+<span id="cb10-37"><a href="#cb10-37" aria-hidden="true" tabindex="-1"></a>      <span class="at">polarity             =</span> polarity</span>
+<span id="cb10-38"><a href="#cb10-38" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb10-39"><a href="#cb10-39" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> {</span>
+<span id="cb10-40"><a href="#cb10-40" aria-hidden="true" tabindex="-1"></a>    <span class="fu">stop</span>(<span class="st">"Invalid DATA_SOURCE: '"</span>, DATA_SOURCE,</span>
+<span id="cb10-41"><a href="#cb10-41" aria-hidden="true" tabindex="-1"></a>         <span class="st">"'. Use 'local', 'sqlite', or 'metaboLights'."</span>)</span>
+<span id="cb10-42"><a href="#cb10-42" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb10-43"><a href="#cb10-43" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb10-44"><a href="#cb10-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-45"><a href="#cb10-45" aria-hidden="true" tabindex="-1"></a><span class="fu">message</span>(<span class="st">"Loading positive mode data..."</span>)</span>
+<span id="cb10-46"><a href="#cb10-46" aria-hidden="true" tabindex="-1"></a>mse_pos <span class="ot">&lt;-</span> <span class="fu">.load_mode</span>(<span class="st">"pos"</span>, DATA_DIR_POS, SEQ_FILE_POS)</span>
+<span id="cb10-47"><a href="#cb10-47" aria-hidden="true" tabindex="-1"></a><span class="fu">message</span>(<span class="st">"Loading negative mode data..."</span>)</span>
+<span id="cb10-48"><a href="#cb10-48" aria-hidden="true" tabindex="-1"></a>mse_neg <span class="ot">&lt;-</span> <span class="fu">.load_mode</span>(<span class="st">"neg"</span>, DATA_DIR_NEG, SEQ_FILE_NEG)</span>
+<span id="cb10-49"><a href="#cb10-49" aria-hidden="true" tabindex="-1"></a><span class="fu">rm</span>(.load_mode)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="callout callout-style-default callout-caution callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<code>PosNegMsExp</code>: wrapping both modes
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><code>PosNegMsExp</code> holds both <code>MsExperiment</code> objects in a single container so that subsequent xcms calls automatically process positive and negative mode together. <code>posExp()</code> / <code>negExp()</code> extract each mode at any time.</p>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>mse <span class="ot">&lt;-</span> <span class="fu">PosNegMsExp</span>(mse_pos, mse_neg)</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="fu">message</span>(<span class="st">"✓ Loaded "</span>, <span class="fu">length</span>(<span class="fu">posExp</span>(mse)), <span class="st">" samples (pos) and "</span>,</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>        <span class="fu">length</span>(<span class="fu">negExp</span>(mse)), <span class="st">" samples (neg)"</span>)</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="fu">sampleData</span>(<span class="fu">posExp</span>(mse))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>DataFrame with 48 rows and 7 columns
+              injection_index sample_name     file_name sample_type  ms_level
+                    &lt;numeric&gt; &lt;character&gt;   &lt;character&gt; &lt;character&gt; &lt;numeric&gt;
+QC_1_pos.mzML               1     QC1_POS QC_1_pos.m...          QC         1
+D08M_pos.mzML               2        D08M D08M_pos.m...      M-VAMS         1
+D05W_pos.mzML               3        D05W D05W_pos.m...       W-DBS         1
+D10M_pos.mzML               4        D10M D10M_pos.m...      M-VAMS         1
+D08W_pos.mzML               5        D08W D08W_pos.m...       W-DBS         1
+...                       ...         ...           ...         ...       ...
+D09M_pos.mzML              44        D09M D09M_pos.m...      M-VAMS         1
+D01P_pos.mzML              45        D01P D01P_pos.m...      Plasma         1
+D06M_pos.mzML              46        D06M D06M_pos.m...      M-VAMS         1
+D07M_pos.mzML              47        D07M D07M_pos.m...      M-VAMS         1
+QC_8_pos.mzML              48     QC8_POS QC_8_pos.m...          QC         1
+                 polarity spectraOrigin
+              &lt;character&gt;   &lt;character&gt;
+QC_1_pos.mzML         pos /home/gaus...
+D08M_pos.mzML         pos /home/gaus...
+D05W_pos.mzML         pos /home/gaus...
+D10M_pos.mzML         pos /home/gaus...
+D08W_pos.mzML         pos /home/gaus...
+...                   ...           ...
+D09M_pos.mzML         pos /home/gaus...
+D01P_pos.mzML         pos /home/gaus...
+D06M_pos.mzML         pos /home/gaus...
+D07M_pos.mzML         pos /home/gaus...
+QC_8_pos.mzML         pos /home/gaus...</code></pre>
+</div>
+</div>
+</section>
+<section id="setup-color-palettes" class="level2">
+<h2 class="anchored" data-anchor-id="setup-color-palettes">Setup Color Palettes</h2>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Both modes share the same sample structure — derive palette from pos mode</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>palette_sample_type <span class="ot">&lt;-</span> <span class="fu">create_color_palette</span>(</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">posExp</span>(mse),</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">column        =</span> <span class="st">"sample_type"</span>,</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">custom_colors =</span> SAMPLE_TYPE_COLORS</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a><span class="fu">message</span>(<span class="st">"Color palette for sample_type:"</span>)</span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(palette_sample_type)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>       QC    M-VAMS     W-DBS    C-qDBS    Plasma 
+"#999999" "#377EB8" "#E41A1C" "#4DAF4A" "#984EA3" </code></pre>
+</div>
+</div>
+<hr>
+</section>
+</section>
+<section id="dataset-investigation" class="level1">
+<h1>Dataset Investigation</h1>
+<section id="chromatographic-data-visualization" class="level2">
+<h2 class="anchored" data-anchor-id="chromatographic-data-visualization">Chromatographic Data Visualization</h2>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>))</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_bpc</span>(<span class="fu">posExp</span>(mse), <span class="at">palette =</span> palette_sample_type, <span class="at">main =</span> <span class="st">"BPC - Positive Mode"</span>)</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_bpc</span>(<span class="fu">negExp</span>(mse), <span class="at">palette =</span> palette_sample_type, <span class="at">main =</span> <span class="st">"BPC - Negative Mode"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="Preprocessing_files/figure-html/bpc-raw-1.png" class="img-fluid figure-img" width="960"></p>
+<figcaption>Base Peak Chromatogram — positive (left) and negative (right)</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+📋 USER CHECKPOINT: RT Filter Range
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Examine the BPCs above and adjust <code>RT_FILTER_POS</code> / <code>RT_FILTER_NEG</code> in the Configuration section if needed. Current: POS <strong>10–950</strong> s, NEG <strong>10–800</strong> s.</p>
+</div>
+</div>
+<div class="callout callout-style-default callout-caution callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<code>perMode()</code>: mode-specific arguments in a single call
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><code>perMode(pos = ..., neg = ...)</code> is an S3 container that tells the dispatched method to apply different values to each mode. Here it passes distinct RT ranges to a single <code>filterRt()</code> call that operates on both modes simultaneously.</p>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>mse <span class="ot">&lt;-</span> <span class="fu">filterRt</span>(mse, <span class="at">rt =</span> <span class="fu">perMode</span>(<span class="at">pos =</span> RT_FILTER_POS, <span class="at">neg =</span> RT_FILTER_NEG))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>))</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_bpc</span>(<span class="fu">posExp</span>(mse), <span class="at">palette =</span> palette_sample_type, <span class="at">main =</span> <span class="st">"BPC - Positive (filtered)"</span>)</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_bpc</span>(<span class="fu">negExp</span>(mse), <span class="at">palette =</span> palette_sample_type, <span class="at">main =</span> <span class="st">"BPC - Negative (filtered)"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="Preprocessing_files/figure-html/bpc-filtered-1.png" class="img-fluid figure-img" width="960"></p>
+<figcaption>BPC after retention time filtering</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="reference-lipid-eics" class="level2">
+<h2 class="anchored" data-anchor-id="reference-lipid-eics">Reference Lipid EICs</h2>
+<div class="cell" data-tbl-cap="Reference lipids for RT correction">
+<div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>intern_standard_pos <span class="ot">&lt;-</span> <span class="fu">prepare_reference_lipids</span>(</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>  IS_FILE_POS, <span class="at">rt_window_left =</span> <span class="dv">30</span>, <span class="at">rt_window_right =</span> <span class="dv">15</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>intern_standard_neg <span class="ot">&lt;-</span> <span class="fu">prepare_reference_lipids</span>(</span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>  IS_FILE_NEG, <span class="at">rt_window_left =</span> <span class="dv">30</span>, <span class="at">rt_window_right =</span> <span class="dv">20</span></span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a>eic_is_pos <span class="ot">&lt;-</span> <span class="fu">extract_is_eics</span>(<span class="fu">posExp</span>(mse), intern_standard_pos)</span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a>eic_is_neg <span class="ot">&lt;-</span> <span class="fu">extract_is_eics</span>(<span class="fu">negExp</span>(mse), intern_standard_neg)</span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a>fdata_pos  <span class="ot">&lt;-</span> <span class="fu">fData</span>(eic_is_pos)</span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a>fdata_neg  <span class="ot">&lt;-</span> <span class="fu">fData</span>(eic_is_neg)</span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a><span class="fu">message</span>(<span class="st">"Positive mode reference lipids:"</span>)</span>
+<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(intern_standard_pos[, <span class="fu">c</span>(<span class="st">"short_name"</span>, <span class="st">"mz"</span>, <span class="st">"RT"</span>)], <span class="at">format =</span> <span class="st">"pipe"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<thead>
+<tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: left;">short_name</th>
+<th style="text-align: right;">mz</th>
+<th style="text-align: right;">RT</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">CAR</td>
+<td style="text-align: left;">CAR</td>
+<td style="text-align: right;">246.1700</td>
+<td style="text-align: right;">48.00</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">LysoPC</td>
+<td style="text-align: left;">LysoPC</td>
+<td style="text-align: right;">496.3398</td>
+<td style="text-align: right;">153.60</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">dLysoPC</td>
+<td style="text-align: left;">dLysoPC</td>
+<td style="text-align: right;">529.3994</td>
+<td style="text-align: right;">164.58</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">dLysoPE</td>
+<td style="text-align: left;">dLysoPE</td>
+<td style="text-align: right;">487.3524</td>
+<td style="text-align: right;">170.88</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">LPC</td>
+<td style="text-align: left;">LPC</td>
+<td style="text-align: right;">552.4024</td>
+<td style="text-align: right;">254.40</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">SM</td>
+<td style="text-align: left;">SM</td>
+<td style="text-align: right;">701.5592</td>
+<td style="text-align: right;">371.40</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">dPG</td>
+<td style="text-align: left;">dPG</td>
+<td style="text-align: right;">759.5875</td>
+<td style="text-align: right;">387.60</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">dSM</td>
+<td style="text-align: left;">dSM</td>
+<td style="text-align: right;">738.6470</td>
+<td style="text-align: right;">436.26</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">PC</td>
+<td style="text-align: left;">PC</td>
+<td style="text-align: right;">758.5694</td>
+<td style="text-align: right;">465.60</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">dPC</td>
+<td style="text-align: left;">dPC</td>
+<td style="text-align: right;">753.6134</td>
+<td style="text-align: right;">490.26</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">dPE</td>
+<td style="text-align: left;">dPE</td>
+<td style="text-align: right;">711.5664</td>
+<td style="text-align: right;">510.18</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">SM1</td>
+<td style="text-align: left;">SM1</td>
+<td style="text-align: right;">759.6388</td>
+<td style="text-align: right;">685.80</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">dDG</td>
+<td style="text-align: left;">dDG</td>
+<td style="text-align: right;">605.5844</td>
+<td style="text-align: right;">700.80</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">HexCer</td>
+<td style="text-align: left;">HexCer</td>
+<td style="text-align: right;">812.6974</td>
+<td style="text-align: right;">735.00</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">TG</td>
+<td style="text-align: left;">TG</td>
+<td style="text-align: right;">900.8015</td>
+<td style="text-align: right;">838.20</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">dTG</td>
+<td style="text-align: left;">dTG</td>
+<td style="text-align: right;">829.7985</td>
+<td style="text-align: right;">839.88</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">dCE</td>
+<td style="text-align: left;">dCE</td>
+<td style="text-align: right;">675.6779</td>
+<td style="text-align: right;">927.60</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">TG1</td>
+<td style="text-align: left;">TG1</td>
+<td style="text-align: right;">880.8327</td>
+<td style="text-align: right;">963.00</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="fu">message</span>(<span class="st">"Negative mode reference lipids:"</span>)</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(intern_standard_neg[, <span class="fu">c</span>(<span class="st">"short_name"</span>, <span class="st">"mz"</span>, <span class="st">"RT"</span>)], <span class="at">format =</span> <span class="st">"pipe"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<thead>
+<tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: left;">short_name</th>
+<th style="text-align: right;">mz</th>
+<th style="text-align: right;">RT</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">LPInew</td>
+<td style="text-align: left;">LPInew</td>
+<td style="text-align: right;">619.2889</td>
+<td style="text-align: right;">98.40</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">LPC</td>
+<td style="text-align: left;">LPC</td>
+<td style="text-align: right;">580.3619</td>
+<td style="text-align: right;">153.60</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">LPE</td>
+<td style="text-align: left;">LPE</td>
+<td style="text-align: right;">452.2782</td>
+<td style="text-align: right;">160.20</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">dLPC</td>
+<td style="text-align: left;">dLPC</td>
+<td style="text-align: right;">587.4058</td>
+<td style="text-align: right;">163.20</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">dLPE</td>
+<td style="text-align: left;">dLPE</td>
+<td style="text-align: right;">485.3378</td>
+<td style="text-align: right;">169.80</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">LPI</td>
+<td style="text-align: left;">LPI</td>
+<td style="text-align: right;">599.3202</td>
+<td style="text-align: right;">170.40</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">LPCnew</td>
+<td style="text-align: left;">LPCnew</td>
+<td style="text-align: right;">582.3776</td>
+<td style="text-align: right;">206.40</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">dFA</td>
+<td style="text-align: left;">dFA</td>
+<td style="text-align: right;">286.4275</td>
+<td style="text-align: right;">211.26</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">dMG</td>
+<td style="text-align: left;">dMG</td>
+<td style="text-align: right;">422.3503</td>
+<td style="text-align: right;">219.00</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">FA</td>
+<td style="text-align: left;">FA</td>
+<td style="text-align: right;">339.3268</td>
+<td style="text-align: right;">380.40</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">dPI</td>
+<td style="text-align: left;">dPI</td>
+<td style="text-align: right;">828.5625</td>
+<td style="text-align: right;">382.20</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">PInew</td>
+<td style="text-align: left;">PInew</td>
+<td style="text-align: right;">861.5498</td>
+<td style="text-align: right;">447.60</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">PCnew2</td>
+<td style="text-align: left;">PCnew2</td>
+<td style="text-align: right;">816.5760</td>
+<td style="text-align: right;">474.60</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">PC</td>
+<td style="text-align: left;">PC</td>
+<td style="text-align: right;">866.5916</td>
+<td style="text-align: right;">487.20</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">dPC</td>
+<td style="text-align: left;">dPC</td>
+<td style="text-align: right;">811.6198</td>
+<td style="text-align: right;">493.20</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">dPE</td>
+<td style="text-align: left;">dPE</td>
+<td style="text-align: right;">709.5517</td>
+<td style="text-align: right;">512.40</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">PI</td>
+<td style="text-align: left;">PI</td>
+<td style="text-align: right;">863.5655</td>
+<td style="text-align: right;">520.20</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">PE</td>
+<td style="text-align: left;">PE</td>
+<td style="text-align: right;">716.5236</td>
+<td style="text-align: right;">589.20</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Pcnew</td>
+<td style="text-align: left;">Pcnew</td>
+<td style="text-align: right;">844.6073</td>
+<td style="text-align: right;">600.60</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">HexCer</td>
+<td style="text-align: left;">HexCer</td>
+<td style="text-align: right;">868.6883</td>
+<td style="text-align: right;">718.20</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Cer</td>
+<td style="text-align: left;">Cer</td>
+<td style="text-align: right;">710.6667</td>
+<td style="text-align: right;">761.40</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Reference lipids for RT correction</p>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_eic_batch</span>(eic_is_pos, fdata_pos, <span class="at">palette =</span> palette_sample_type,</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>               <span class="at">output_dir =</span> EIC_ISTD_DIR_POS)</span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_eic_batch</span>(eic_is_neg, fdata_neg, <span class="at">palette =</span> palette_sample_type,</span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>               <span class="at">output_dir =</span> EIC_ISTD_DIR_NEG)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+📋 USER CHECKPOINT: Reference Lipid EICs
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Check the EIC plots saved in <strong>positive/figures/EIC_internal_standards</strong> (positive) and <strong>negative/figures/EIC_internal_standards</strong> (negative).</p>
+<ul>
+<li>The red dashed line indicates the expected RT</li>
+<li>Each peak should be detected in most/all samples</li>
+<li>Note any compounds with poor signal or unexpected RT shifts</li>
+<li>Note peak width to inform <code>PEAK_WIDTH</code></li>
+</ul>
+</div>
+</div>
+<hr>
+</section>
+</section>
+<section id="data-preprocessing" class="level1">
+<h1>Data Preprocessing</h1>
+<section id="chromatographic-peak-detection" class="level2">
+<h2 class="anchored" data-anchor-id="chromatographic-peak-detection">Chromatographic Peak Detection</h2>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>param_pd <span class="ot">&lt;-</span> <span class="fu">CentWaveParam</span>(</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">peakwidth          =</span> PEAK_WIDTH,</span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">ppm                =</span> PPM,</span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">integrate          =</span> <span class="dv">2</span>,</span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">snthresh           =</span> SN_THRESHOLD,</span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">firstBaselineCheck =</span> <span class="cn">FALSE</span></span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a>param_pd</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Object of class:  CentWaveParam 
+ Parameters:
+ - ppm: [1] 10
+ - peakwidth: [1] 4 8
+ - snthresh: [1] 2
+ - prefilter: [1]   3 100
+ - mzCenterFun: [1] "wMean"
+ - integrate: [1] 2
+ - mzdiff: [1] -0.001
+ - fitgauss: [1] FALSE
+ - noise: [1] 0
+ - verboseColumns: [1] FALSE
+ - roiList: list()
+ - firstBaselineCheck: [1] FALSE
+ - roiScales: numeric(0)
+ - extendLengthMSW: [1] FALSE
+ - verboseBetaColumns: [1] FALSE</code></pre>
+</div>
+</div>
+<div class="callout callout-style-default callout-caution callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Dispatched xcms functions
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><code>findChromPeaks()</code>, <code>groupChromPeaks()</code>, <code>adjustRtime()</code>, and <code>fillChromPeaks()</code> are all dispatched on <code>PosNegXcmsExp</code>. A single call processes both modes in sequence; the result is automatically re-wrapped in a <code>PosNegXcmsExp</code>.</p>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>mse <span class="ot">&lt;-</span> <span class="fu">findChromPeaks</span>(mse, <span class="at">param =</span> param_pd, <span class="at">chunkSize =</span> CORES_NB)</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Update EICs with detected peaks for each mode</span></span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>eic_is_pos <span class="ot">&lt;-</span> <span class="fu">extract_is_eics</span>(<span class="fu">posExp</span>(mse), intern_standard_pos)</span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a><span class="fu">fData</span>(eic_is_pos) <span class="ot">&lt;-</span> fdata_pos</span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>eic_is_neg <span class="ot">&lt;-</span> <span class="fu">extract_is_eics</span>(<span class="fu">negExp</span>(mse), intern_standard_neg)</span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a><span class="fu">fData</span>(eic_is_neg) <span class="ot">&lt;-</span> fdata_neg</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (.pol <span class="cf">in</span> <span class="fu">c</span>(<span class="st">"pos"</span>, <span class="st">"neg"</span>)) {</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>  .mse <span class="ot">&lt;-</span> <span class="cf">if</span> (.pol <span class="sc">==</span> <span class="st">"pos"</span>) <span class="fu">posExp</span>(mse) <span class="cf">else</span> <span class="fu">negExp</span>(mse)</span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>  df <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">sample_name =</span> <span class="fu">sampleData</span>(.mse)<span class="sc">$</span>sample_name,</span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">peak_count  =</span> <span class="fu">as.integer</span>(<span class="fu">table</span>(<span class="fu">chromPeaks</span>(.mse)[, <span class="st">"sample"</span>]))</span>
+<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">"</span><span class="sc">\n\n</span><span class="st">**"</span>, <span class="fu">toupper</span>(.pol), <span class="st">"mode — peaks per sample**</span><span class="sc">\n\n</span><span class="st">"</span>, <span class="at">sep =</span> <span class="st">""</span>)</span>
+<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cat</span>(knitr<span class="sc">::</span><span class="fu">kable</span>(df, <span class="at">format =</span> <span class="st">"pipe"</span>), <span class="at">sep =</span> <span class="st">"</span><span class="sc">\n</span><span class="st">"</span>)</span>
+<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">"</span><span class="sc">\n</span><span class="st">"</span>)</span>
+<span id="cb24-10"><a href="#cb24-10" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p><strong>POSmode — peaks per sample</strong></p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th style="text-align: left;">sample_name</th>
+<th style="text-align: right;">peak_count</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">QC1_POS</td>
+<td style="text-align: right;">23275</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D08M</td>
+<td style="text-align: right;">20786</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D05W</td>
+<td style="text-align: right;">16289</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D10M</td>
+<td style="text-align: right;">22331</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D08W</td>
+<td style="text-align: right;">15333</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D04C</td>
+<td style="text-align: right;">21790</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">QC2_POS</td>
+<td style="text-align: right;">22838</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D02M</td>
+<td style="text-align: right;">21162</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D03M</td>
+<td style="text-align: right;">21557</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D06P</td>
+<td style="text-align: right;">16365</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D09P</td>
+<td style="text-align: right;">14990</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D02W</td>
+<td style="text-align: right;">15080</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D04W</td>
+<td style="text-align: right;">15535</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">QC3_POS</td>
+<td style="text-align: right;">22646</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D05C</td>
+<td style="text-align: right;">21052</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D10C</td>
+<td style="text-align: right;">21722</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D01C</td>
+<td style="text-align: right;">20873</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D07C</td>
+<td style="text-align: right;">19880</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D03W</td>
+<td style="text-align: right;">15600</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D03P</td>
+<td style="text-align: right;">17056</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">QC4_POS</td>
+<td style="text-align: right;">22288</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D04P</td>
+<td style="text-align: right;">15435</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D03C</td>
+<td style="text-align: right;">21613</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D09W</td>
+<td style="text-align: right;">14072</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D01M</td>
+<td style="text-align: right;">19885</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D01W</td>
+<td style="text-align: right;">14785</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D07P</td>
+<td style="text-align: right;">15632</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">QC5_POS</td>
+<td style="text-align: right;">21664</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D06W</td>
+<td style="text-align: right;">15550</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D10W</td>
+<td style="text-align: right;">13935</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D08P</td>
+<td style="text-align: right;">15257</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D05P</td>
+<td style="text-align: right;">15184</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D06C</td>
+<td style="text-align: right;">20758</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D10P</td>
+<td style="text-align: right;">14714</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">QC6_POS</td>
+<td style="text-align: right;">21686</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D02C</td>
+<td style="text-align: right;">20627</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D04M</td>
+<td style="text-align: right;">19343</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D02P</td>
+<td style="text-align: right;">15072</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D09C</td>
+<td style="text-align: right;">19336</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D07W</td>
+<td style="text-align: right;">13343</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D05M</td>
+<td style="text-align: right;">20352</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">QC7_POS</td>
+<td style="text-align: right;">21442</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D08C</td>
+<td style="text-align: right;">21261</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D09M</td>
+<td style="text-align: right;">19584</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D01P</td>
+<td style="text-align: right;">14599</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D06M</td>
+<td style="text-align: right;">21794</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D07M</td>
+<td style="text-align: right;">20758</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">QC8_POS</td>
+<td style="text-align: right;">22083</td>
+</tr>
+</tbody>
+</table>
+<p><strong>NEGmode — peaks per sample</strong></p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th style="text-align: left;">sample_name</th>
+<th style="text-align: right;">peak_count</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">QC1_POS</td>
+<td style="text-align: right;">19154</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D08M</td>
+<td style="text-align: right;">13505</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D05W</td>
+<td style="text-align: right;">10359</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D10M</td>
+<td style="text-align: right;">14516</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D08W</td>
+<td style="text-align: right;">10538</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D04C</td>
+<td style="text-align: right;">19026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">QC2_POS</td>
+<td style="text-align: right;">19254</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D02M</td>
+<td style="text-align: right;">13774</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D03M</td>
+<td style="text-align: right;">14201</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D06P</td>
+<td style="text-align: right;">11140</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D09P</td>
+<td style="text-align: right;">10092</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D02W</td>
+<td style="text-align: right;">10146</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D04W</td>
+<td style="text-align: right;">10569</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">QC3_POS</td>
+<td style="text-align: right;">20018</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D05C</td>
+<td style="text-align: right;">19495</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D10C</td>
+<td style="text-align: right;">19455</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D01C</td>
+<td style="text-align: right;">18973</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D07C</td>
+<td style="text-align: right;">18711</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D03W</td>
+<td style="text-align: right;">10475</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D03P</td>
+<td style="text-align: right;">10417</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">QC4_POS</td>
+<td style="text-align: right;">18967</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D04P</td>
+<td style="text-align: right;">10775</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D03C</td>
+<td style="text-align: right;">19297</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D09W</td>
+<td style="text-align: right;">9999</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D01M</td>
+<td style="text-align: right;">13912</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D01W</td>
+<td style="text-align: right;">10657</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D07P</td>
+<td style="text-align: right;">10667</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">QC5_POS</td>
+<td style="text-align: right;">19070</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D06W</td>
+<td style="text-align: right;">10177</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D10W</td>
+<td style="text-align: right;">9865</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D08P</td>
+<td style="text-align: right;">10703</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D05P</td>
+<td style="text-align: right;">10719</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D06C</td>
+<td style="text-align: right;">19018</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D10P</td>
+<td style="text-align: right;">10820</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">QC6_POS</td>
+<td style="text-align: right;">19701</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D02C</td>
+<td style="text-align: right;">19567</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D04M</td>
+<td style="text-align: right;">13650</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D02P</td>
+<td style="text-align: right;">10047</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D09C</td>
+<td style="text-align: right;">18418</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D07W</td>
+<td style="text-align: right;">10253</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D05M</td>
+<td style="text-align: right;">14799</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">QC7_POS</td>
+<td style="text-align: right;">20178</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D08C</td>
+<td style="text-align: right;">20266</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D09M</td>
+<td style="text-align: right;">14238</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D01P</td>
+<td style="text-align: right;">10633</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">D06M</td>
+<td style="text-align: right;">15038</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">D07M</td>
+<td style="text-align: right;">14707</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">QC8_POS</td>
+<td style="text-align: right;">20040</td>
+</tr>
+</tbody>
+</table>
+<div class="sourceCode cell-code" id="cb25"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="fu">rm</span>(.pol, .mse, df)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb26"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_eic_batch</span>(eic_is_pos, fdata_pos, <span class="at">palette =</span> palette_sample_type,</span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>               <span class="at">output_dir =</span> PEAK_DET_DIR_POS)</span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_eic_batch</span>(eic_is_neg, fdata_neg, <span class="at">palette =</span> palette_sample_type,</span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a>               <span class="at">output_dir =</span> PEAK_DET_DIR_NEG)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+📋 USER CHECKPOINT: Peak Detection Results
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Review the plots in <strong>positive/figures/peak_detection_ref_lipid</strong> (positive) and <strong>negative/figures/peak_detection_ref_lipid</strong> (negative).</p>
+<ul>
+<li>Each peak should be detected in most samples</li>
+<li>Check that peaks are not merged incorrectly</li>
+<li>Adjust <code>PEAK_WIDTH</code>, <code>PPM</code>, or <code>SN_THRESHOLD</code> if needed</li>
+</ul>
+</div>
+</div>
+</section>
+<section id="retention-time-alignment" class="level2">
+<h2 class="anchored" data-anchor-id="retention-time-alignment">Retention Time Alignment</h2>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb27"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Both modes share the same sample structure — use pos to derive groups</span></span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>QC_samples <span class="ot">&lt;-</span> <span class="fu">sampleData</span>(<span class="fu">posExp</span>(mse))<span class="sc">$</span>sample_type <span class="sc">==</span> <span class="st">"QC"</span></span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a>param_c <span class="ot">&lt;-</span> <span class="fu">PeakDensityParam</span>(</span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">sampleGroups =</span> QC_samples,</span>
+<span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">minFraction  =</span> <span class="fl">0.9</span>,</span>
+<span id="cb27-7"><a href="#cb27-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">binSize      =</span> <span class="fl">0.01</span>,</span>
+<span id="cb27-8"><a href="#cb27-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">ppm          =</span> PPM,</span>
+<span id="cb27-9"><a href="#cb27-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">bw           =</span> <span class="dv">2</span></span>
+<span id="cb27-10"><a href="#cb27-10" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb27-11"><a href="#cb27-11" aria-hidden="true" tabindex="-1"></a>mse <span class="ot">&lt;-</span> <span class="fu">groupChromPeaks</span>(mse, <span class="at">param =</span> param_c)</span>
+<span id="cb27-12"><a href="#cb27-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-13"><a href="#cb27-13" aria-hidden="true" tabindex="-1"></a>subset_idx  <span class="ot">&lt;-</span> <span class="fu">which</span>(QC_samples)</span>
+<span id="cb27-14"><a href="#cb27-14" aria-hidden="true" tabindex="-1"></a>param_align <span class="ot">&lt;-</span> <span class="fu">PeakGroupsParam</span>(</span>
+<span id="cb27-15"><a href="#cb27-15" aria-hidden="true" tabindex="-1"></a>  <span class="at">minFraction  =</span> <span class="fl">0.9</span>,</span>
+<span id="cb27-16"><a href="#cb27-16" aria-hidden="true" tabindex="-1"></a>  <span class="at">extraPeaks   =</span> <span class="dv">50</span>,</span>
+<span id="cb27-17"><a href="#cb27-17" aria-hidden="true" tabindex="-1"></a>  <span class="at">span         =</span> <span class="fl">0.5</span>,</span>
+<span id="cb27-18"><a href="#cb27-18" aria-hidden="true" tabindex="-1"></a>  <span class="at">subsetAdjust =</span> <span class="st">"average"</span>,</span>
+<span id="cb27-19"><a href="#cb27-19" aria-hidden="true" tabindex="-1"></a>  <span class="at">subset       =</span> subset_idx</span>
+<span id="cb27-20"><a href="#cb27-20" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb27-21"><a href="#cb27-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-22"><a href="#cb27-22" aria-hidden="true" tabindex="-1"></a>mse <span class="ot">&lt;-</span> <span class="fu">adjustRtime</span>(mse, <span class="at">param =</span> param_align)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb28"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>))</span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (.pol <span class="cf">in</span> <span class="fu">c</span>(<span class="st">"pos"</span>, <span class="st">"neg"</span>)) {</span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a>  .mse       <span class="ot">&lt;-</span> <span class="cf">if</span> (.pol <span class="sc">==</span> <span class="st">"pos"</span>) <span class="fu">posExp</span>(mse) <span class="cf">else</span> <span class="fu">negExp</span>(mse)</span>
+<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a>  col_sample <span class="ot">&lt;-</span> <span class="fu">get_sample_colors</span>(<span class="fu">sampleData</span>(.mse)<span class="sc">$</span>sample_type, palette_sample_type)</span>
+<span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plotAdjustedRtime</span>(.mse, <span class="at">col =</span> <span class="fu">paste0</span>(col_sample, <span class="st">"80"</span>), <span class="at">peakGroupsPch =</span> <span class="dv">1</span>,</span>
+<span id="cb28-6"><a href="#cb28-6" aria-hidden="true" tabindex="-1"></a>                    <span class="at">main =</span> <span class="fu">paste</span>(<span class="st">"RT alignment -"</span>, .pol))</span>
+<span id="cb28-7"><a href="#cb28-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">grid</span>()</span>
+<span id="cb28-8"><a href="#cb28-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">legend</span>(<span class="st">"topright"</span>, <span class="at">col =</span> palette_sample_type,</span>
+<span id="cb28-9"><a href="#cb28-9" aria-hidden="true" tabindex="-1"></a>         <span class="at">legend =</span> <span class="fu">names</span>(palette_sample_type), <span class="at">lty =</span> <span class="dv">1</span>, <span class="at">bty =</span> <span class="st">"n"</span>)</span>
+<span id="cb28-10"><a href="#cb28-10" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="Preprocessing_files/figure-html/plot-alignment-1.png" class="img-fluid figure-img" width="960"></p>
+<figcaption>Retention time alignment (positive left, negative right)</figcaption>
+</figure>
+</div>
+</div>
+<div class="sourceCode cell-code" id="cb29"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="fu">rm</span>(.pol, .mse, col_sample)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="callout callout-style-default callout-caution callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<code>applyAdjustedRtime()</code>: explicit per-mode call
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><code>applyAdjustedRtime()</code> is not yet an S4 generic dispatched on <code>PosNegXcmsExp</code>. It must be called on each mode separately and the results re-wrapped manually.</p>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb30"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a>mse_raw <span class="ot">&lt;-</span> <span class="fu">dropAdjustedRtime</span>(mse)</span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>mse <span class="ot">&lt;-</span> <span class="fu">PosNegXcmsExp</span>(</span>
+<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">applyAdjustedRtime</span>(<span class="fu">posExp</span>(mse)),</span>
+<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">applyAdjustedRtime</span>(<span class="fu">negExp</span>(mse))</span>
+<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="correspondence-analysis" class="level2">
+<h2 class="anchored" data-anchor-id="correspondence-analysis">Correspondence Analysis</h2>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb31"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a>group_mse <span class="ot">&lt;-</span> <span class="fu">sampleData</span>(<span class="fu">posExp</span>(mse))<span class="sc">$</span>sample_type</span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>group_mse[group_mse <span class="sc">==</span> <span class="st">"QC"</span>] <span class="ot">&lt;-</span> <span class="cn">NA</span></span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a>group_mse <span class="ot">&lt;-</span> <span class="fu">as.factor</span>(group_mse)</span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb31-5"><a href="#cb31-5" aria-hidden="true" tabindex="-1"></a>param_cor <span class="ot">&lt;-</span> <span class="fu">PeakDensityParam</span>(</span>
+<span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">sampleGroups =</span> group_mse,</span>
+<span id="cb31-7"><a href="#cb31-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">minFraction  =</span> <span class="fl">0.5</span>,</span>
+<span id="cb31-8"><a href="#cb31-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">binSize      =</span> <span class="fl">0.01</span>,</span>
+<span id="cb31-9"><a href="#cb31-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">ppm          =</span> PPM,</span>
+<span id="cb31-10"><a href="#cb31-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">bw           =</span> <span class="dv">2</span></span>
+<span id="cb31-11"><a href="#cb31-11" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb31-12"><a href="#cb31-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb31-13"><a href="#cb31-13" aria-hidden="true" tabindex="-1"></a>mse <span class="ot">&lt;-</span> <span class="fu">groupChromPeaks</span>(mse, <span class="at">param =</span> param_cor)</span>
+<span id="cb31-14"><a href="#cb31-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb31-15"><a href="#cb31-15" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (.pol <span class="cf">in</span> <span class="fu">c</span>(<span class="st">"pos"</span>, <span class="st">"neg"</span>)) {</span>
+<span id="cb31-16"><a href="#cb31-16" aria-hidden="true" tabindex="-1"></a>  .mse <span class="ot">&lt;-</span> <span class="cf">if</span> (.pol <span class="sc">==</span> <span class="st">"pos"</span>) <span class="fu">posExp</span>(mse) <span class="cf">else</span> <span class="fu">negExp</span>(mse)</span>
+<span id="cb31-17"><a href="#cb31-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">message</span>(.pol, <span class="st">" correspondence: "</span>, <span class="fu">nrow</span>(<span class="fu">featureDefinitions</span>(.mse)), <span class="st">" features"</span>)</span>
+<span id="cb31-18"><a href="#cb31-18" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb31-19"><a href="#cb31-19" aria-hidden="true" tabindex="-1"></a><span class="fu">rm</span>(.pol, .mse)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="gap-filling" class="level2">
+<h2 class="anchored" data-anchor-id="gap-filling">Gap Filling</h2>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb32"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a>na_before <span class="ot">&lt;-</span> <span class="fu">list</span>(</span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">pos =</span> <span class="fu">sum</span>(<span class="fu">is.na</span>(<span class="fu">featureValues</span>(<span class="fu">posExp</span>(mse)))) <span class="sc">/</span></span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>          <span class="fu">length</span>(<span class="fu">featureValues</span>(<span class="fu">posExp</span>(mse))) <span class="sc">*</span> <span class="dv">100</span>,</span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">neg =</span> <span class="fu">sum</span>(<span class="fu">is.na</span>(<span class="fu">featureValues</span>(<span class="fu">negExp</span>(mse)))) <span class="sc">/</span></span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a>          <span class="fu">length</span>(<span class="fu">featureValues</span>(<span class="fu">negExp</span>(mse))) <span class="sc">*</span> <span class="dv">100</span></span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a>mse <span class="ot">&lt;-</span> <span class="fu">fillChromPeaks</span>(mse, <span class="at">param =</span> <span class="fu">ChromPeakAreaParam</span>(), <span class="at">chunkSize =</span> CORES_NB)</span>
+<span id="cb32-9"><a href="#cb32-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-10"><a href="#cb32-10" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (.pol <span class="cf">in</span> <span class="fu">c</span>(<span class="st">"pos"</span>, <span class="st">"neg"</span>)) {</span>
+<span id="cb32-11"><a href="#cb32-11" aria-hidden="true" tabindex="-1"></a>  .mse     <span class="ot">&lt;-</span> <span class="cf">if</span> (.pol <span class="sc">==</span> <span class="st">"pos"</span>) <span class="fu">posExp</span>(mse) <span class="cf">else</span> <span class="fu">negExp</span>(mse)</span>
+<span id="cb32-12"><a href="#cb32-12" aria-hidden="true" tabindex="-1"></a>  na_after <span class="ot">&lt;-</span> <span class="fu">sum</span>(<span class="fu">is.na</span>(<span class="fu">featureValues</span>(.mse))) <span class="sc">/</span> <span class="fu">length</span>(<span class="fu">featureValues</span>(.mse)) <span class="sc">*</span> <span class="dv">100</span></span>
+<span id="cb32-13"><a href="#cb32-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">message</span>(.pol, <span class="st">" gap filling: "</span>, <span class="fu">round</span>(na_before[[.pol]], <span class="dv">1</span>),</span>
+<span id="cb32-14"><a href="#cb32-14" aria-hidden="true" tabindex="-1"></a>          <span class="st">"% -&gt; "</span>, <span class="fu">round</span>(na_after, <span class="dv">1</span>), <span class="st">"% NA"</span>)</span>
+<span id="cb32-15"><a href="#cb32-15" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (na_before[[.pol]] <span class="sc">&gt;</span> <span class="dv">50</span>)</span>
+<span id="cb32-16"><a href="#cb32-16" aria-hidden="true" tabindex="-1"></a>    <span class="fu">warning</span>(<span class="st">"High initial NA % in "</span>, .pol, <span class="st">" mode ("</span>,</span>
+<span id="cb32-17"><a href="#cb32-17" aria-hidden="true" tabindex="-1"></a>            <span class="fu">round</span>(na_before[[.pol]], <span class="dv">1</span>), <span class="st">"%)."</span>)</span>
+<span id="cb32-18"><a href="#cb32-18" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb32-19"><a href="#cb32-19" aria-hidden="true" tabindex="-1"></a><span class="fu">rm</span>(.pol, .mse, na_after)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Gap Filling Guidance
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<ul>
+<li><strong>&lt; 30% NA before filling</strong>: Good — typical for well-detected features</li>
+<li><strong>30-50% NA before filling</strong>: Acceptable — may indicate lower abundance compounds</li>
+<li><strong>&gt; 50% NA before filling</strong>: Review peak detection parameters or sample quality</li>
+</ul>
+</div>
+</div>
+</section>
+<section id="extract-results-and-save" class="level2">
+<h2 class="anchored" data-anchor-id="extract-results-and-save">Extract Results and Save</h2>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb33"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a>mse_pos <span class="ot">&lt;-</span> <span class="fu">posExp</span>(mse)</span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a>mse_neg <span class="ot">&lt;-</span> <span class="fu">negExp</span>(mse)</span>
+<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-4"><a href="#cb33-4" aria-hidden="true" tabindex="-1"></a>res_pos <span class="ot">&lt;-</span> <span class="fu">quantify</span>(mse_pos, <span class="at">method =</span> <span class="st">"sum"</span>, <span class="at">filled =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb33-5"><a href="#cb33-5" aria-hidden="true" tabindex="-1"></a><span class="fu">assays</span>(res_pos)<span class="sc">$</span>raw_filled <span class="ot">&lt;-</span> <span class="fu">featureValues</span>(mse_pos, <span class="at">method =</span> <span class="st">"sum"</span>, <span class="at">filled =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb33-6"><a href="#cb33-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-7"><a href="#cb33-7" aria-hidden="true" tabindex="-1"></a>res_neg <span class="ot">&lt;-</span> <span class="fu">quantify</span>(mse_neg, <span class="at">method =</span> <span class="st">"sum"</span>, <span class="at">filled =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb33-8"><a href="#cb33-8" aria-hidden="true" tabindex="-1"></a><span class="fu">assays</span>(res_neg)<span class="sc">$</span>raw_filled <span class="ot">&lt;-</span> <span class="fu">featureValues</span>(mse_neg, <span class="at">method =</span> <span class="st">"sum"</span>, <span class="at">filled =</span> <span class="cn">TRUE</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb34"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="fu">validate_result</span>(res_pos, <span class="at">assay_name =</span> <span class="st">"raw"</span>, <span class="at">min_features =</span> <span class="dv">50</span>)</span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a><span class="fu">validate_result</span>(res_neg, <span class="at">assay_name =</span> <span class="st">"raw"</span>, <span class="at">min_features =</span> <span class="dv">50</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb35"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (.pol <span class="cf">in</span> <span class="fu">c</span>(<span class="st">"pos"</span>, <span class="st">"neg"</span>)) {</span>
+<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a>  .mse      <span class="ot">&lt;-</span> <span class="cf">if</span> (.pol <span class="sc">==</span> <span class="st">"pos"</span>) mse_pos <span class="cf">else</span> mse_neg</span>
+<span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a>  .res      <span class="ot">&lt;-</span> <span class="cf">if</span> (.pol <span class="sc">==</span> <span class="st">"pos"</span>) res_pos <span class="cf">else</span> res_neg</span>
+<span id="cb35-4"><a href="#cb35-4" aria-hidden="true" tabindex="-1"></a>  .obj_dir  <span class="ot">&lt;-</span> <span class="cf">if</span> (.pol <span class="sc">==</span> <span class="st">"pos"</span>) OBJECTS_DIR_POS <span class="cf">else</span> OBJECTS_DIR_NEG</span>
+<span id="cb35-5"><a href="#cb35-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-6"><a href="#cb35-6" aria-hidden="true" tabindex="-1"></a>  mse_save_path <span class="ot">&lt;-</span> <span class="fu">file.path</span>(.obj_dir,</span>
+<span id="cb35-7"><a href="#cb35-7" aria-hidden="true" tabindex="-1"></a>                             <span class="fu">paste0</span>(SAVE_PREFIX, <span class="st">"_preprocessed_mse_"</span>, .pol))</span>
+<span id="cb35-8"><a href="#cb35-8" aria-hidden="true" tabindex="-1"></a>  res_save_path <span class="ot">&lt;-</span> <span class="fu">file.path</span>(.obj_dir,</span>
+<span id="cb35-9"><a href="#cb35-9" aria-hidden="true" tabindex="-1"></a>                             <span class="fu">paste0</span>(SAVE_PREFIX, <span class="st">"_preprocessed_res_"</span>, .pol))</span>
+<span id="cb35-10"><a href="#cb35-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-11"><a href="#cb35-11" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (DATA_SOURCE <span class="sc">==</span> <span class="st">"sqlite"</span>) {</span>
+<span id="cb35-12"><a href="#cb35-12" aria-hidden="true" tabindex="-1"></a>    <span class="fu">spectra</span>(.mse) <span class="ot">&lt;-</span> <span class="fu">setBackend</span>(<span class="fu">spectra</span>(.mse), <span class="fu">MsBackendMemory</span>())</span>
+<span id="cb35-13"><a href="#cb35-13" aria-hidden="true" tabindex="-1"></a>    <span class="fu">save</span>(.mse, <span class="at">file =</span> <span class="fu">paste0</span>(mse_save_path, <span class="st">".RData"</span>))</span>
+<span id="cb35-14"><a href="#cb35-14" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> {</span>
+<span id="cb35-15"><a href="#cb35-15" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">dir.exists</span>(mse_save_path)) <span class="fu">unlink</span>(mse_save_path, <span class="at">recursive =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb35-16"><a href="#cb35-16" aria-hidden="true" tabindex="-1"></a>    <span class="fu">saveMsObject</span>(.mse, <span class="fu">AlabasterParam</span>(<span class="at">path =</span> mse_save_path))</span>
+<span id="cb35-17"><a href="#cb35-17" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb35-18"><a href="#cb35-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-19"><a href="#cb35-19" aria-hidden="true" tabindex="-1"></a>  .res<span class="sc">@</span>metadata <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
+<span id="cb35-20"><a href="#cb35-20" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">dir.exists</span>(res_save_path)) <span class="fu">unlink</span>(res_save_path, <span class="at">recursive =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb35-21"><a href="#cb35-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">saveObject</span>(.res, res_save_path)</span>
+<span id="cb35-22"><a href="#cb35-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-23"><a href="#cb35-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">message</span>(<span class="st">"✓ Saved "</span>, .pol, <span class="st">" objects to: "</span>, .obj_dir)</span>
+<span id="cb35-24"><a href="#cb35-24" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb35-25"><a href="#cb35-25" aria-hidden="true" tabindex="-1"></a><span class="fu">rm</span>(.pol, .mse, .res, .obj_dir, mse_save_path, res_save_path)</span>
+<span id="cb35-26"><a href="#cb35-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-27"><a href="#cb35-27" aria-hidden="true" tabindex="-1"></a><span class="fu">message</span>(<span class="st">"</span><span class="sc">\n</span><span class="st">Next step: Run Annotation.qmd for RT correction and annotation."</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<hr>
+</section>
+<section id="session-info" class="level2">
+<h2 class="anchored" data-anchor-id="session-info">Session Info</h2>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb36"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sessionInfo</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>R version 4.5.2 (2025-10-31)
+Platform: x86_64-pc-linux-gnu
+Running under: Ubuntu 22.04.5 LTS
+
+Matrix products: default
+BLAS:   /usr/lib/x86_64-linux-gnu/blas/libblas.so.3.10.0 
+LAPACK: /usr/lib/x86_64-linux-gnu/lapack/liblapack.so.3.10.0  LAPACK version 3.10.0
+
+locale:
+ [1] LC_CTYPE=es_ES.UTF-8       LC_NUMERIC=C              
+ [3] LC_TIME=es_ES.UTF-8        LC_COLLATE=es_ES.UTF-8    
+ [5] LC_MONETARY=es_ES.UTF-8    LC_MESSAGES=es_ES.UTF-8   
+ [7] LC_PAPER=es_ES.UTF-8       LC_NAME=C                 
+ [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+[11] LC_MEASUREMENT=es_ES.UTF-8 LC_IDENTIFICATION=C       
+
+time zone: Europe/Madrid
+tzcode source: system (glibc)
+
+attached base packages:
+[1] stats4    stats     graphics  grDevices utils     datasets  methods  
+[8] base     
+
+other attached packages:
+ [1] UpSetR_1.4.0                ggVennDiagram_1.5.7        
+ [3] enviPat_2.8                 MetaboAnnotation_1.14.0    
+ [5] CompoundDb_1.14.2           AnnotationFilter_1.34.0    
+ [7] AnnotationHub_4.0.0         BiocFileCache_3.0.0        
+ [9] dbplyr_2.5.1                gridExtra_2.3              
+[11] ggfortify_0.4.19            ggplot2_4.0.2              
+[13] vioplot_0.5.1               zoo_1.8-15                 
+[15] sm_2.2-6.0                  pheatmap_1.0.13            
+[17] RColorBrewer_1.1-3          pander_0.6.6               
+[19] limma_3.66.0                RSQLite_2.4.5              
+[21] MsBackendSql_1.10.1         MetaboCoreUtils_1.18.1     
+[23] MsBackendMetaboLights_1.4.2 Spectra_1.20.1             
+[25] alabaster.se_1.10.0         alabaster.base_1.10.0      
+[27] SummarizedExperiment_1.40.0 Biobase_2.70.0             
+[29] GenomicRanges_1.62.1        Seqinfo_1.0.0              
+[31] IRanges_2.44.0              S4Vectors_0.48.0           
+[33] BiocGenerics_0.56.0         generics_0.1.4             
+[35] MatrixGenerics_1.22.0       matrixStats_1.5.0          
+[37] MsIO_0.0.12                 MsExperiment_1.12.0        
+[39] ProtGenerics_1.42.0         writexl_1.5.4              
+[41] readxl_1.4.5                knitr_1.51                 
+[43] xcms_4.8.0                  BiocParallel_1.44.0        
+
+loaded via a namespace (and not attached):
+  [1] rstudioapi_0.18.0           jsonlite_2.0.0             
+  [3] MultiAssayExperiment_1.36.1 magrittr_2.0.4             
+  [5] farver_2.1.2                MALDIquant_1.22.3          
+  [7] rmarkdown_2.30              fs_1.6.6                   
+  [9] vctrs_0.7.1                 memoise_2.0.1              
+ [11] RCurl_1.98-1.17             base64enc_0.1-6            
+ [13] htmltools_0.5.9             S4Arrays_1.10.1            
+ [15] BiocBaseUtils_1.12.0        progress_1.2.3             
+ [17] curl_7.0.0                  cellranger_1.1.0           
+ [19] Rhdf5lib_1.32.0             SparseArray_1.10.8         
+ [21] rhdf5_2.54.1                mzID_1.48.0                
+ [23] htmlwidgets_1.6.4           plyr_1.8.9                 
+ [25] httr2_1.2.2                 impute_1.84.0              
+ [27] cachem_1.1.0                igraph_2.2.1               
+ [29] lifecycle_1.0.5             iterators_1.0.14           
+ [31] pkgconfig_2.0.3             Matrix_1.7-4               
+ [33] R6_2.6.1                    fastmap_1.2.0              
+ [35] clue_0.3-66                 digest_0.6.39              
+ [37] rsvg_2.7.0                  pcaMethods_2.2.0           
+ [39] AnnotationDbi_1.72.0        filelock_1.0.3             
+ [41] httr_1.4.7                  abind_1.4-8                
+ [43] compiler_4.5.2              withr_3.0.2                
+ [45] bit64_4.6.0-1               doParallel_1.0.17          
+ [47] S7_0.2.1                    DBI_1.2.3                  
+ [49] HDF5Array_1.38.0            alabaster.ranges_1.10.0    
+ [51] alabaster.schemas_1.10.0    MASS_7.3-65                
+ [53] ChemmineR_3.62.0            rappdirs_0.3.4             
+ [55] DelayedArray_0.36.0         rjson_0.2.23               
+ [57] mzR_2.44.0                  tools_4.5.2                
+ [59] PSMatch_1.14.0              otel_0.2.0                 
+ [61] glue_1.8.0                  h5mread_1.2.1              
+ [63] QFeatures_1.20.0            rhdf5filters_1.22.0        
+ [65] grid_4.5.2                  cluster_2.1.8.2            
+ [67] reshape2_1.4.5              gtable_0.3.6               
+ [69] preprocessCore_1.72.0       tidyr_1.3.2                
+ [71] data.table_1.18.2.1         hms_1.1.4                  
+ [73] xml2_1.5.2                  XVector_0.50.0             
+ [75] BiocVersion_3.22.0          foreach_1.5.2              
+ [77] pillar_1.11.1               stringr_1.6.0              
+ [79] dplyr_1.2.0                 lattice_0.22-9             
+ [81] bit_4.6.0                   tidyselect_1.2.1           
+ [83] Biostrings_2.78.0           xfun_0.56                  
+ [85] statmod_1.5.1               MSnbase_2.36.0             
+ [87] DT_0.34.0                   stringi_1.8.7              
+ [89] lazyeval_0.2.2              yaml_2.3.12                
+ [91] evaluate_1.0.5              codetools_0.2-19           
+ [93] MsCoreUtils_1.22.1          tibble_3.3.1               
+ [95] alabaster.matrix_1.10.0     BiocManager_1.30.27        
+ [97] cli_3.6.5                   affyio_1.80.0              
+ [99] Rcpp_1.1.1                  MassSpecWavelet_1.76.0     
+[101] png_0.1-8                   XML_3.99-0.20              
+[103] parallel_4.5.2              blob_1.3.0                 
+[105] prettyunits_1.2.0           bitops_1.0-9               
+[107] MsFeatures_1.18.0           scales_1.4.0               
+[109] affy_1.88.0                 ncdf4_1.24                 
+[111] purrr_1.2.1                 crayon_1.5.3               
+[113] rlang_1.1.7                 KEGGREST_1.50.0            
+[115] fastmatch_1.1-8             vsn_3.78.1                 </code></pre>
+</div>
+</div>
+<hr>
+</section>
+</section>
+<section id="reference" class="level1">
+<h1>Reference</h1>
+<ol type="1">
+<li>Metabonaut tutorial: <a href="https://rformassspectrometry.github.io/Metabonaut/articles/a-end-to-end-untargeted-metabolomics.html#retention-time-alignment" class="uri">https://rformassspectrometry.github.io/Metabonaut/articles/a-end-to-end-untargeted-metabolomics.html#retention-time-alignment</a></li>
+</ol>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+        const codeEl = trigger.previousElementSibling.cloneNode(true);
+        for (const childEl of codeEl.children) {
+          if (isCodeAnnotation(childEl)) {
+            childEl.remove();
+          }
+        }
+        return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

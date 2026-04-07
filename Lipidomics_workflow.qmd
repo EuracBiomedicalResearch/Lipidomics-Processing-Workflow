@@ -122,7 +122,7 @@ SQLITE_DB_NEG <- NULL  # e.g., "NEG_data/pilot_neg.sqlite"
 CORES_NB <- 4
 
 # Retention time filter range (seconds) per ionization mode
-RT_FILTER_POS <- c(10, 800)
+RT_FILTER_POS <- c(10, 950)
 RT_FILTER_NEG <- c(10, 800)
 
 # Chromatographic peak detection parameters
@@ -145,10 +145,10 @@ VOLUME_FACTORS <- list(
 )
 
 # --- Per-mode file configuration ---
-SEQ_FILE_POS <- "seq_pos.xlsx"
-SEQ_FILE_NEG <- "seq_neg.xlsx"
-IS_FILE_POS  <- "splashlipidomix_list.xlsx"
-IS_FILE_NEG  <- "neg_splashlipidomix_list.xlsx"
+SEQ_FILE_POS <- "applications/pilot_study/positive/seq_pos_pilot.xlsx"
+SEQ_FILE_NEG <- "applications/pilot_study/negative/seq_neg_pilot.xlsx"
+IS_FILE_POS  <- "applications/pilot_study/positive/pos_lipid_reference_set.xlsx"
+IS_FILE_NEG  <- "applications/pilot_study/negative/neg_lipid_reference_set.xlsx"
 DB_SHEET_POS <- 4L
 DB_SHEET_NEG <- 5L
 RT_COL_POS   <- "RT ESI(+) (min)"
@@ -277,6 +277,10 @@ rm(.pol)
 # Create folder structure for both modes
 folders_pos <- setup_folders(polarity = "pos")
 folders_neg <- setup_folders(polarity = "neg")
+
+# Override data directories to match actual file locations
+folders_pos$data <- "POS_data"
+folders_neg$data <- "NEG_data"
 
 # Setup parallel processing
 if (.Platform$OS.type == "unix") {
