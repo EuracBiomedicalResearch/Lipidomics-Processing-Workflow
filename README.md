@@ -104,18 +104,18 @@ install.packages(c(
 Each polarity folder is self-contained. Place these files inside your
 polarity folder (e.g. `applications/my_study/positive/`):
 
-1. **Sample sequence file** (`seq_pos_<study_id>.xlsx` or `seq_neg_<study_id>.xlsx`):
+1. **LC-MS raw data**: Place `.mzML` files in the `data/` subfolder
+
+2. **Sample sequence file** (`seq_pos_<study_id>.xlsx` or `seq_neg_<study_id>.xlsx`):
 
    | file_name | sample_name | sample_type | injection_index |
    |-----------|-------------|-------------|------------------|
    | D01P_pos.mzML | D01P | Plasma | 1 |
    | QC_1_pos.mzML | QC_1 | QC | 2 |
 
-2. **Reference lipid list**: `pos_lipid_reference_set.xlsx` or `neg_lipid_reference_set.xlsx`
-
 3. **Lipid database**: `LipidDatabase_R.xlsx` in the study folder (one level above each polarity folder)
 
-4. **Raw data**: Place `.mzML` files in the `data/` subfolder
+4. **Lipid Reference Set**: `pos_lipid_reference_set.xlsx` or `neg_lipid_reference_set.xlsx`
 
 ### 3. Run the Workflow
 

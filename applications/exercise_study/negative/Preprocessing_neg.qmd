@@ -19,6 +19,11 @@ execute:
 knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 6)
 ```
 
+```{r}
+library("tictoc")
+tic("Quarto compilation")
+```
+
 # Overview
 
 ::: {.callout-tip}
@@ -90,7 +95,7 @@ STUDY_ID <- "exercise"
 POLARITY <- "neg"
 
 # Data source: "local", "sqlite", or "metaboLights"
-DATA_SOURCE <- "local"
+DATA_SOURCE <- "sqlite"
 
 # MetaboLights study ID (only used if DATA_SOURCE = "metaboLights")
 MTBLS_ID <- NULL
@@ -102,15 +107,13 @@ SQLITE_DB <- NULL
 CORES_NB <- 4
 
 # Expected sample types in your sequence file (for validation)
-EXPECTED_SAMPLE_TYPES <- c("QC", "M-VAMS", "W-DBS", "C-qDBS", "Plasma")
+EXPECTED_SAMPLE_TYPES <- c("QC", "Exercise", "Resting")
 
 # Color palette for sample types
 SAMPLE_TYPE_COLORS <- c(
   "QC" = "#999999",
-  "M-VAMS" = "#377EB8",
-  "W-DBS" = "#E41A1C",
-  "C-qDBS" = "#4DAF4A",
-  "Plasma" = "#984EA3"
+  "Exercise" = "#377EB8",
+  "Resting" = "#E41A1C"
 )
 
 # --- MetaboLights options (only used if DATA_SOURCE = "metaboLights") ---
@@ -130,7 +133,7 @@ MTBLS_EXCLUDE_TYPES <- c("Blank")
 
 # Retention time filter range (seconds) - adjust based on your BPC
 RT_FILTER_MIN <- 10
-RT_FILTER_MAX <- 800
+RT_FILTER_MAX <- 950
 
 # Chromatographic peak detection parameters
 PEAK_WIDTH <- c(4, 8)
@@ -322,8 +325,8 @@ plot_bpc(mse, palette = palette_sample_type,
 
 intern_standard <- prepare_reference_lipids(
   IS_FILE,
-  rt_window_left = 30,
-  rt_window_right = ifelse(POLARITY == "pos", 15, 20)
+  rt_window_left = 50,#it was on 30
+  rt_window_right = ifelse(POLARITY == "pos", 50, 55)#it was 15 and 20
 )
 
 eic_is <- extract_is_eics(mse, intern_standard)
@@ -540,6 +543,9 @@ message("\nNext step: Run Annotation.qmd for RT correction and annotation.")
 sessionInfo()
 ```
 
+```{r}
+toc()
+```
 ---
 
 # Reference
