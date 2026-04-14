@@ -24,7 +24,7 @@ knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 6)
 ::: {.callout-tip}
 ## Study-specific instance
 This is a configured copy of `generic_workflow/POS_NEG_merge.qmd` for the
-**pilot study**. Run after completing `Annotation_pos.qmd` and `Annotation_neg.qmd`.
+**pilot study**. Run after completing `Annotation.qmd`.
 :::
 
 This document merges positive and negative mode annotation results into a
@@ -38,8 +38,7 @@ single `SummarizedExperiment`. It handles:
 
 # Configuration
 
-```{r}
-#| label: configuration
+```{r config}
 
 # ============================================================================
 # PILOT STUDY CONFIGURATION
@@ -48,12 +47,15 @@ single `SummarizedExperiment`. It handles:
 # Study identifier: must match what was used in the annotation workflow
 STUDY_ID <- "pilot"
 
+# Prefix used by the unified Preprocessing.qmd / Annotation.qmd workflows.
+SAVE_PREFIX <- "posNegExp"
+
 # Paths to the final result objects (from Annotation.qmd)
-RES_POS_PATH <- file.path("positive", "objects", paste0(STUDY_ID, "_final_res_pos"))
-RES_NEG_PATH <- file.path("negative", "objects", paste0(STUDY_ID, "_final_res_neg"))
+RES_POS_PATH <- file.path("positive", "objects", paste0(SAVE_PREFIX, "_final_res_pos"))
+RES_NEG_PATH <- file.path("negative", "objects", paste0(SAVE_PREFIX, "_final_res_neg"))
 
 # Output path for combined result
-RES_COMBINED_PATH <- file.path("objects", paste0(STUDY_ID, "_res_combined"))
+RES_COMBINED_PATH <- file.path("objects", paste0(SAVE_PREFIX, "_res_combined"))
 
 # RT difference threshold for duplicate resolution (seconds)
 RT_DIFF_THRESHOLD <- 30
@@ -75,6 +77,15 @@ library(RColorBrewer)
 
 ```{r}
 #| label: load-data
+if (!dir.exists(RES_POS_PATH)) {
+    stop("Positive final result not found: ", RES_POS_PATH,
+         "\nRun Annotation.qmd first, or update SAVE_PREFIX / RES_POS_PATH.")
+}
+if (!dir.exists(RES_NEG_PATH)) {
+    stop("Negative final result not found: ", RES_NEG_PATH,
+         "\nRun Annotation.qmd first, or update SAVE_PREFIX / RES_NEG_PATH.")
+}
+
 res_pos <- readObject(RES_POS_PATH)
 res_neg <- readObject(RES_NEG_PATH)
 
@@ -94,13 +105,26 @@ rowData(res_neg)$ionization_mode <- "negative"
 
 ```{r}
 #| label: align-samples
-pos_order <- sub("_pos\\.mzML$", "", colnames(res_pos))
-neg_order <- sub("_neg\\.mzML$", "", colnames(res_neg))
+strip_mode_suffix <- function(x) {
+    x <- sub("\\.mzML$", "", x, ignore.case = TRUE)
+    sub("_(pos|neg)$", "", x, ignore.case = TRUE)
+}
+
+pos_order <- strip_mode_suffix(colnames(res_pos))
+neg_order <- strip_mode_suffix(colnames(res_neg))
 
 neg_reorder_idx <- match(pos_order, neg_order)
+if (anyNA(neg_reorder_idx)) {
+    stop("Could not align negative-mode samples to positive-mode samples. ",
+         "Missing in NEG: ",
+         paste(pos_order[is.na(neg_reorder_idx)], collapse = ", "))
+}
+
 res_neg <- res_neg[, neg_reorder_idx]
 
-stopifnot(all(pos_order == sub("_neg\\.mzML$", "", colnames(res_neg))))
+if (!identical(pos_order, strip_mode_suffix(colnames(res_neg)))) {
+    stop("Sample order mismatch remains after reordering negative mode.")
+}
 ```
 
 # Resolve Duplicate Lipids
@@ -157,19 +181,23 @@ neg_remove_idx <- comparison_df$neg_idx[
 cat("Removing", length(pos_remove_idx), "duplicates from positive mode\n")
 cat("Removing", length(neg_remove_idx), "duplicates from negative mode\n")
 
-res_pos_filtered <- res_pos[-pos_remove_idx, ]
-res_neg_filtered <- res_neg[-neg_remove_idx, ]
+res_pos_filtered <- if (length(pos_remove_idx)) res_pos[-pos_remove_idx, ] else res_pos
+res_neg_filtered <- if (length(neg_remove_idx)) res_neg[-neg_remove_idx, ] else res_neg
 ```
 
 # Combine
 
 ```{r}
 #| label: combine-results
-colnames(res_pos_filtered) <- sub("_pos\\.mzML$", "", colnames(res_pos_filtered))
-colnames(res_neg_filtered) <- sub("_neg\\.mzML$", "", colnames(res_neg_filtered))
+colnames(res_pos_filtered) <- strip_mode_suffix(colnames(res_pos_filtered))
+colnames(res_neg_filtered) <- strip_mode_suffix(colnames(res_neg_filtered))
 
-colData(res_pos_filtered)$file_name <- sub("_pos\\.mzML$", "", colData(res_pos_filtered)$file_name)
-colData(res_neg_filtered)$file_name <- sub("_neg\\.mzML$", "", colData(res_neg_filtered)$file_name)
+if ("file_name" %in% colnames(colData(res_pos_filtered))) {
+    colData(res_pos_filtered)$file_name <- strip_mode_suffix(colData(res_pos_filtered)$file_name)
+}
+if ("file_name" %in% colnames(colData(res_neg_filtered))) {
+    colData(res_neg_filtered)$file_name <- strip_mode_suffix(colData(res_neg_filtered)$file_name)
+}
 
 colData(res_pos_filtered)$spectraOrigin <- NULL
 colData(res_neg_filtered)$spectraOrigin <- NULL
@@ -192,6 +220,8 @@ cat("Features from negative mode:", sum(rowData(res_combined)$ionization_mode ==
 
 ```{r}
 #| label: save-combined
+dir.create(dirname(RES_COMBINED_PATH), recursive = TRUE, showWarnings = FALSE)
+if (dir.exists(RES_COMBINED_PATH)) unlink(RES_COMBINED_PATH, recursive = TRUE)
 saveObject(res_combined, RES_COMBINED_PATH)
 ```
 
