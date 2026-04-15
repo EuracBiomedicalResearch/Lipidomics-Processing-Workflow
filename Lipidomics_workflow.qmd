@@ -174,75 +174,7 @@ load_lipid_packages(verbose = TRUE)
 #| label: snapshot-helper
 #| include: false
 
-# Save a lightweight regression snapshot to SNAPSHOT_DIR.
-# Always runs (both SMOKE and full modes); the filename encodes polarity and
-# mode so the two sets can be compared independently.
-#   step_name    : short identifier, e.g. "step3_chrompeaks"
-#   object       : the R object to serialise (keep it small — data frames, vectors)
-#   min_rows     : for data frames, minimum acceptable row count (default 1)
-#   min_r2       : for RT correction list, minimum acceptable R² (default 0.5)
-#   snap_dir     : output directory; defaults to SNAPSHOT_DIR from config
-#
-# Validation rules applied per object type:
-#   data.frame  → nrow >= min_rows; warn on NA-dominated key columns
-#   list        → each named numeric element checked for all-NA
-#   numeric/list of vectors (adjustedRtime) → each element length > 0
-save_snapshot <- function(object, step_name, polarity, smoke,
-                          min_rows = 1L, min_r2 = 0.5,
-                          snap_dir = SNAPSHOT_DIR) {
-    if (!dir.exists(snap_dir)) dir.create(snap_dir, recursive = TRUE)
-    mode_tag <- if (isTRUE(smoke)) "smoke" else "full"
-    fname <- file.path(snap_dir,
-                       paste0(step_name, "_", polarity, "_", mode_tag, ".rds"))
-
-    issues <- character(0)
-
-    if (is.data.frame(object)) {
-        if (nrow(object) < min_rows)
-            issues <- c(issues, sprintf("data frame has %d rows (min %d)",
-                                        nrow(object), min_rows))
-        # Warn on columns where >80% of values are NA
-        na_frac <- colMeans(is.na(object))
-        bad_cols <- names(na_frac[na_frac > 0.8])
-        if (length(bad_cols))
-            issues <- c(issues, sprintf(
-                "column(s) >80%% NA: %s", paste(bad_cols, collapse = ", ")))
-
-    } else if (is.list(object) && !is.data.frame(object)) {
-        # adjustedRtime returns a list of per-sample numeric vectors
-        if (all(vapply(object, is.numeric, logical(1)))) {
-            empty_els <- sum(vapply(object, function(x) length(x) == 0L, logical(1)))
-            if (empty_els > 0)
-                issues <- c(issues, sprintf("%d element(s) have length 0", empty_els))
-            allna_els <- sum(vapply(object, function(x) all(is.na(x)), logical(1)))
-            if (allna_els > 0)
-                issues <- c(issues, sprintf("%d element(s) are all-NA", allna_els))
-        } else {
-            # Structured list (step7, step8)
-            if (!is.null(object$r_squared) && object$r_squared < min_r2)
-                issues <- c(issues, sprintf("R² = %.3f < %.1f", object$r_squared, min_r2))
-            if (!is.null(object$n_features) && object$n_features < 1L)
-                issues <- c(issues, "n_features = 0")
-            na_nums <- Filter(function(x) is.numeric(x) && all(is.na(x)), object)
-            if (length(na_nums))
-                issues <- c(issues, sprintf("all-NA element(s): %s",
-                                            paste(names(na_nums), collapse = ", ")))
-        }
-    }
-
-    if (length(issues)) {
-        warning("Snapshot '", step_name, "' (", mode_tag, "/", polarity, "): ",
-                paste(issues, collapse = "; "),
-                " — snapshot saved but may be degenerate for regression use")
-    }
-
-    saveRDS(object, fname)
-    message(sprintf("Snapshot saved [%s/%s]: %s  (%s)",
-                    mode_tag, polarity,
-                    basename(fname),
-                    if (length(issues)) "WARNINGS — see above" else "OK"))
-    invisible(fname)
-}
+source("R/snapshot_helpers.R")
 ```
 
 ## Validate Configuration

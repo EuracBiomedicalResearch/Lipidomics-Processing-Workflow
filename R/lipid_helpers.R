@@ -1293,10 +1293,10 @@ match_features_to_database <- function(res,
     message("  - Database coverage: ", round(coverage, 1), "%")
   }
 
-  return(list(
-    mtched_data = mtched_data,
-    query = query,
-    lipid_db_r1 = lipid_db_r1
+  return(AnnotationResult(
+    matches  = mtched_data,
+    query    = query,
+    database = lipid_database
   ))
 }
 
@@ -1311,6 +1311,33 @@ match_features_to_database <- function(res,
 calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
                                          isopeak_threshold = 2,
                                          similarity_threshold = 0.78) {
+  if (inherits(mse, "PosNegXcmsExp")) {
+      if (!inherits(mtched_data, "PosNegAnnotation"))
+          stop("When 'mse' is a PosNegXcmsExp, 'mtched_data' must be a ",
+               "PosNegAnnotation.")
+      pos_result <- calculate_isotope_similarity(
+          posExp(mse), annotMatches(posAnnot(mtched_data)),
+          polarity             = "pos",
+          isopeak_threshold    = isopeak_threshold,
+          similarity_threshold = similarity_threshold
+      )
+      neg_result <- calculate_isotope_similarity(
+          negExp(mse), annotMatches(negAnnot(mtched_data)),
+          polarity             = "neg",
+          isopeak_threshold    = isopeak_threshold,
+          similarity_threshold = similarity_threshold
+      )
+      .pos <- posAnnot(mtched_data)
+      annotMatches(.pos) <- pos_result$mtched_data
+      posAnnot(mtched_data) <- .pos
+      .neg <- negAnnot(mtched_data)
+      annotMatches(.neg) <- neg_result$mtched_data
+      negAnnot(mtched_data) <- .neg
+      return(list(
+          annotation  = mtched_data,
+          iso_results = list(pos = pos_result, neg = neg_result)
+      ))
+  }
   data(isotopes, package = "enviPat", envir = environment())
 
   # Set charge based on polarity
@@ -1392,11 +1419,75 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
               theoretical_spectra = theoretical_spectra_filtered))
 }
 
+#' Resolve annotation ambiguities in matched data
+#'
+#' Two sequential filters are applied:
+#' 1. Lipid-to-feature conflicts (same lipid+adduct key, multiple features):
+#'    keep the row with the highest adduct_ratio.
+#' 2. RT-score conflicts (remaining duplicates): remove rows whose absolute
+#'    RT score deviates more than 4 s from the best score for that key.
+#'
+#' @param mtched_data Matched data frame produced by
+#'   \code{match_features_to_database} / \code{match_adducts}.
+#' @return Filtered \code{mtched_data}.
+resolve_annotation_ambiguities <- function(mtched_data) {
+    if (inherits(mtched_data, "PosNegAnnotation")) {
+        posAnnot(mtched_data) <- resolve_annotation_ambiguities(posAnnot(mtched_data))
+        negAnnot(mtched_data) <- resolve_annotation_ambiguities(negAnnot(mtched_data))
+        return(mtched_data)
+    }
+    if (inherits(mtched_data, "AnnotationResult")) {
+        annotMatches(mtched_data) <- resolve_annotation_ambiguities(mtched_data@matches)
+        return(mtched_data)
+    }
+    # --- Pass 1: keep highest adduct_ratio per lipid+adduct key ---------------
+    key       <- paste(mtched_data$target_lipid_name_unique,
+                       mtched_data$target_adduct, sep = "_")
+    rm_vector <- c()
+    for (i in key[duplicated(key)]) {
+        idxs  <- which(key == i)
+        count <- mtched_data$adduct_ratio[idxs]
+        if (which.max(count) == which.min(count)) next
+        best_idx  <- idxs[which.max(count)]
+        rm_vector <- c(rm_vector, setdiff(idxs, best_idx))
+    }
+    if (length(rm_vector) > 0) {
+        mtched_data <- mtched_data[-rm_vector, ]
+        message("Removed ", length(rm_vector), " rows (lower adduct counts)")
+    }
+
+    # --- Pass 2: drop rows with RT score > 4 s from the best for that key ----
+    key          <- paste(mtched_data$target_lipid_name_unique,
+                          mtched_data$target_adduct, sep = "_")
+    dupe_keys    <- unique(key[duplicated(key)])
+    rows_to_keep <- rep(TRUE, nrow(mtched_data))
+    for (k in dupe_keys) {
+        idxs       <- which(key == k)
+        scores     <- abs(mtched_data$score_rt[idxs])
+        best_score <- min(scores, na.rm = TRUE)
+        to_remove  <- idxs[(scores - best_score) > 4]
+        if (length(to_remove) > 0) rows_to_keep[to_remove] <- FALSE
+    }
+    mtched_data <- mtched_data[rows_to_keep, ]
+    message("After RT score filter: ", nrow(mtched_data), " matches")
+
+    mtched_data
+}
+
 #' Resolve SM1/SM2 isomer ambiguity
 #'
 #' @param mtched_data Matched data frame
 #' @return Filtered mtched_data with resolved isomers
 resolve_sm_isomers <- function(mtched_data) {
+  if (inherits(mtched_data, "PosNegAnnotation")) {
+      posAnnot(mtched_data) <- resolve_sm_isomers(posAnnot(mtched_data))
+      negAnnot(mtched_data) <- resolve_sm_isomers(negAnnot(mtched_data))
+      return(mtched_data)
+  }
+  if (inherits(mtched_data, "AnnotationResult")) {
+      annotMatches(mtched_data) <- resolve_sm_isomers(mtched_data@matches)
+      return(mtched_data)
+  }
   # Helper functions
   get_lipid_base <- function(names) gsub("0:0/|/0:0", "", names)
   is_sm2 <- function(name) grepl("0:0/", name, fixed = TRUE)
@@ -1477,6 +1568,22 @@ na_unidis <- function(z) {
 apply_volume_correction <- function(se, sample_pattern_factors,
                                     assay_name = "raw",
                                     new_assay_name = "raw_corr") {
+  if (inherits(se, "PosNegSumExp")) {
+      if (missing(sample_pattern_factors)) {
+          posRes(se) <- apply_volume_correction(posRes(se),
+              assay_name = assay_name, new_assay_name = new_assay_name)
+          negRes(se) <- apply_volume_correction(negRes(se),
+              assay_name = assay_name, new_assay_name = new_assay_name)
+      } else {
+          posRes(se) <- apply_volume_correction(posRes(se),
+              sample_pattern_factors,
+              assay_name = assay_name, new_assay_name = new_assay_name)
+          negRes(se) <- apply_volume_correction(negRes(se),
+              sample_pattern_factors,
+              assay_name = assay_name, new_assay_name = new_assay_name)
+      }
+      return(se)
+  }
   # Default factors for this study
   if (missing(sample_pattern_factors)) {
     sample_pattern_factors <- list(
@@ -1509,6 +1616,15 @@ normalize_by_is <- function(se, input_assay = "corr_filled",
                             output_assay = "ISnorm_filled",
                             is_col = "target_IS_norm",
                             lipid_col = "target_lipid.name") {
+  if (inherits(se, "PosNegSumExp")) {
+      posRes(se) <- normalize_by_is(posRes(se),
+          input_assay = input_assay, output_assay = output_assay,
+          is_col = is_col, lipid_col = lipid_col)
+      negRes(se) <- normalize_by_is(negRes(se),
+          input_assay = input_assay, output_assay = output_assay,
+          is_col = is_col, lipid_col = lipid_col)
+      return(se)
+  }
 
   assay(se, output_assay) <- assay(se, input_assay)
 
@@ -1554,6 +1670,13 @@ normalize_by_is <- function(se, input_assay = "corr_filled",
 #' @return Filtered SummarizedExperiment
 filter_by_qc_rsd <- function(se, threshold = 0.3, qc_col = "sample_type",
                              qc_value = "QC") {
+  if (inherits(se, "PosNegSumExp")) {
+      posRes(se) <- filter_by_qc_rsd(posRes(se),
+          threshold = threshold, qc_col = qc_col, qc_value = qc_value)
+      negRes(se) <- filter_by_qc_rsd(negRes(se),
+          threshold = threshold, qc_col = qc_col, qc_value = qc_value)
+      return(se)
+  }
   rsd_filter <- RsdFilter(threshold = threshold,
                           qcIndex = colData(se)[[qc_col]] == qc_value)
   se_filtered <- filterFeatures(se, filter = rsd_filter)
@@ -1561,6 +1684,62 @@ filter_by_qc_rsd <- function(se, threshold = 0.3, qc_col = "sample_type",
   message("✓ RSD filter: ", nrow(se), " -> ", nrow(se_filtered), " features",
           " (", round(nrow(se_filtered) / nrow(se) * 100, 1), "% retained)")
   return(se_filtered)
+}
+
+#' Join annotation results into a SummarizedExperiment
+#'
+#' Filters \code{se} to annotated features and adds annotation columns from
+#' \code{annotation} into \code{rowData}.
+#'
+#' @param se A \code{SummarizedExperiment} or \code{PosNegSumExp}.
+#' @param annotation A data.frame of matched features, an
+#'   \code{AnnotationResult}, a \code{PosNegAnnotation}, or a named list with
+#'   \code{pos}/\code{neg} elements (data.frames or \code{AnnotationResult}
+#'   objects).
+#' @param annotation_cols Character vector of columns to copy from the
+#'   annotation matches data frame into \code{rowData}.
+#' @return A \code{SummarizedExperiment} (or \code{PosNegSumExp}) containing
+#'   only annotated features, with annotation columns added to \code{rowData}.
+annotate_features <- function(se, annotation,
+    annotation_cols = c(
+        "target_lipid.name", "target_lipid_name_unique",
+        "target_LIPID.CATEGORY..ABBREV.", "target_LIPID.SUBCLASS..ABBREV.",
+        "target_Adduct", "target_IS_norm")) {
+
+    if (inherits(se, "PosNegSumExp")) {
+        if (inherits(annotation, "PosNegAnnotation")) {
+            posRes(se) <- annotate_features(posRes(se), posAnnot(annotation),
+                                            annotation_cols)
+            negRes(se) <- annotate_features(negRes(se), negAnnot(annotation),
+                                            annotation_cols)
+        } else if (is.list(annotation) &&
+                   all(c("pos", "neg") %in% names(annotation))) {
+            posRes(se) <- annotate_features(posRes(se), annotation[["pos"]],
+                                            annotation_cols)
+            negRes(se) <- annotate_features(negRes(se), annotation[["neg"]],
+                                            annotation_cols)
+        } else {
+            stop("When 'se' is a PosNegSumExp, 'annotation' must be a ",
+                 "PosNegAnnotation or a named list with 'pos'/'neg' elements.")
+        }
+        return(se)
+    }
+
+    if (!inherits(annotation, "AnnotationResult") && !is.data.frame(annotation))
+        stop("'annotation' must be an AnnotationResult or a data.frame, got: ",
+             class(annotation)[1])
+
+    if (inherits(annotation, "AnnotationResult"))
+        annotation <- annotMatches(annotation)
+
+    se_filt <- se[rownames(se) %in% annotation$feature_id, ]
+    rowData(se_filt) <- cbind(
+        rowData(se_filt),
+        annotation[match(rownames(se_filt), annotation$feature_id),
+                   annotation_cols]
+    )
+    message("Annotated result: ", nrow(se_filt), " features")
+    se_filt
 }
 
 # =============================================================================
@@ -1871,11 +2050,30 @@ get_adduct_lookup <- function(polarity = c("pos", "neg")) {
 #' @examples
 #' mtched_data <- match_adducts(mtched_data, lipid_database, query, ppm = 20)
 match_adducts <- function(mtched_data,
-                          lipid_database,
-                          query,
+                          lipid_database = NULL,
+                          query = NULL,
                           ppm = 20,
                           rt_tol = 5,
                           verbose = TRUE) {
+
+  if (inherits(mtched_data, "PosNegAnnotation")) {
+      posAnnot(mtched_data) <- match_adducts(posAnnot(mtched_data),
+                                              ppm = ppm, rt_tol = rt_tol,
+                                              verbose = verbose)
+      negAnnot(mtched_data) <- match_adducts(negAnnot(mtched_data),
+                                              ppm = ppm, rt_tol = rt_tol,
+                                              verbose = verbose)
+      return(mtched_data)
+  }
+  if (inherits(mtched_data, "AnnotationResult")) {
+      annotMatches(mtched_data) <- match_adducts(
+          mtched_data@matches, mtched_data@database, mtched_data@query,
+          ppm = ppm, rt_tol = rt_tol, verbose = verbose
+      )
+      return(mtched_data)
+  }
+  if (is.null(lipid_database) || is.null(query))
+      stop("lipid_database and query are required when mtched_data is not an AnnotationResult")
 
   if (verbose) message("Matching secondary adducts (rank > 1)...")
 

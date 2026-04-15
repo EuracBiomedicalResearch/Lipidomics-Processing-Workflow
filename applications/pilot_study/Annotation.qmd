@@ -100,6 +100,11 @@ SAMPLE_TYPE_COLORS <- c(
     "Plasma" = "#984EA3"
 )
 
+# Regression snapshot directory (relative to project root).
+# "tests/snapshots_annotation"     → golden baselines (committed, never overwrite)
+# "tests/snapshots_annotation_dev" → written during active development / refactor
+SNAPSHOT_DIR <- file.path(PROJECT_ROOT, "tests/snapshots_annotation_dev")
+
 # --- Per-mode configuration ---
 IS_FILE_POS  <- "positive/pos_lipid_reference_set.xlsx"
 IS_FILE_NEG  <- "negative/neg_lipid_reference_set.xlsx"
@@ -118,7 +123,10 @@ RT_COL_NEG   <- "RT ESI(\u2013) (min)"
 ```{r load-helpers}
 #| label: load-helpers
 
+source(file.path(PROJECT_ROOT, "R/annotation_result.R"))
+source(file.path(PROJECT_ROOT, "R/pos_neg_exp.R"))
 source(file.path(PROJECT_ROOT, "R/lipid_helpers.R"))
+source(file.path(PROJECT_ROOT, "R/snapshot_helpers.R"))
 load_lipid_packages(verbose = TRUE)
 ```
 
@@ -223,11 +231,9 @@ palette_sample_type <- create_color_palette(
 
 rt_fit_list              <- list()
 lipid_db_list            <- list()
-mtched_data_list         <- list()
+mtched_data_list             <- list()
 mtched_data_precuration_list <- list()
-query_list               <- list()
-lipid_db_r1_list         <- list()
-iso_result_list          <- list()
+iso_result_list              <- list()
 res_corr_list            <- list()
 res_unfilt_list          <- list()
 annotated_res_list       <- list()
@@ -363,25 +369,21 @@ Matching uses both m/z (ppm tolerance) and RT (time tolerance) constraints.
 ```{r rank1-matching}
 #| label: rank1-matching
 
-for (POLARITY in c("pos", "neg")) {
-    res            <- if (POLARITY == "pos") res_pos else res_neg
-    lipid_database <- lipid_db_list[[POLARITY]]
+annotation <- PosNegAnnotation(
+    pos = match_features_to_database(res_pos, lipid_db_list[["pos"]],
+                                     ppm = MATCH_PPM, rt_tol = MATCH_RT_TOL),
+    neg = match_features_to_database(res_neg, lipid_db_list[["neg"]],
+                                     ppm = MATCH_PPM, rt_tol = MATCH_RT_TOL)
+)
 
-    match_result <- match_features_to_database(
-        res,
-        lipid_database,
-        ppm    = MATCH_PPM,
-        rt_tol = MATCH_RT_TOL
-    )
-
-    mtched_data_list[[POLARITY]] <- match_result$mtched_data
-    query_list[[POLARITY]]       <- match_result$query
-    lipid_db_r1_list[[POLARITY]] <- match_result$lipid_db_r1
-
-    validate_matches(match_result$mtched_data, min_matches = 10,
-                     max_ppm_error = 15)
+snap_cols <- c("feature_id", "target_lipid_name_unique", "target_adduct",
+               "ppm_error", "score", "score_rt")
+for (.pol in c("pos", "neg")) {
+    .a <- if (.pol == "pos") posAnnot(annotation) else negAnnot(annotation)
+    validate_matches(annotMatches(.a), min_matches = 10, max_ppm_error = 15)
+    save_snapshot(annotMatches(.a)[, snap_cols], "annot_rank1", .pol)
 }
-rm(POLARITY, res, lipid_database, match_result)
+rm(.pol, .a, snap_cols)
 ```
 
 ## Isotope Pattern Validation
@@ -389,41 +391,42 @@ rm(POLARITY, res, lipid_database, match_result)
 ```{r isotope-validation}
 #| label: isotope-validation
 
+iso_combined    <- calculate_isotope_similarity(
+    PosNegXcmsExp(mse_pos, mse_neg),
+    annotation,
+    isopeak_threshold    = 2,
+    similarity_threshold = ISOPEAK_SIM_THRESHOLD
+)
+annotation      <- iso_combined$annotation
+iso_result_list <- iso_combined$iso_results
+
+snap_cols <- c("feature_id", "target_lipid_name_unique",
+               "isopeak_count", "isopeak_sim")
 for (POLARITY in c("pos", "neg")) {
-    mse         <- if (POLARITY == "pos") mse_pos else mse_neg
-    mtched_data <- mtched_data_list[[POLARITY]]
-
-    iso_result <- calculate_isotope_similarity(
-        mse, mtched_data, polarity = POLARITY,
-        isopeak_threshold    = 2,
-        similarity_threshold = ISOPEAK_SIM_THRESHOLD
-    )
-
-    mtched_data_list[[POLARITY]] <- iso_result$mtched_data
-    iso_result_list[[POLARITY]]  <- iso_result
-
+    .annot <- if (POLARITY == "pos") posAnnot(annotation) else negAnnot(annotation)
     message(POLARITY, " matches after isotope filter: ",
-            nrow(iso_result$mtched_data))
+            nrow(annotMatches(.annot)))
+    save_snapshot(annotMatches(.annot)[, snap_cols], "annot_isotope", POLARITY)
 }
-rm(POLARITY, mse, mtched_data, iso_result)
+rm(iso_combined, POLARITY, .annot, snap_cols)
 ```
 
 ```{r plot-isotope-patterns}
 #| label: plot-isotope-patterns
 
 for (POLARITY in c("pos", "neg")) {
-    .iso_dir    <- if (POLARITY == "pos") ISO_PATTERN_DIR_POS else ISO_PATTERN_DIR_NEG
-    mtched_data <- mtched_data_list[[POLARITY]]
-    iso_result  <- iso_result_list[[POLARITY]]
+    .iso_dir   <- if (POLARITY == "pos") ISO_PATTERN_DIR_POS else ISO_PATTERN_DIR_NEG
+    .annot     <- if (POLARITY == "pos") posAnnot(annotation) else negAnnot(annotation)
+    iso_result <- iso_result_list[[POLARITY]]
 
     plot_isotope_patterns(
-        mtched_data,
+        annotMatches(.annot),
         iso_result$iso_spectra,
         iso_result$theoretical_spectra,
         .iso_dir
     )
 }
-rm(POLARITY, .iso_dir, mtched_data, iso_result)
+rm(POLARITY, .iso_dir, .annot, iso_result)
 ```
 
 ::: {.callout-important}
@@ -447,22 +450,13 @@ annotation confidence.
 ```{r adduct-matching}
 #| label: adduct-matching
 
-for (POLARITY in c("pos", "neg")) {
-    mtched_data    <- mtched_data_list[[POLARITY]]
-    lipid_database <- lipid_db_list[[POLARITY]]
-    query          <- query_list[[POLARITY]]
+annotation <- match_adducts(annotation, ppm = MATCH_PPM, rt_tol = 5)
 
-    mtched_data <- match_adducts(
-        mtched_data,
-        lipid_database,
-        query,
-        ppm    = MATCH_PPM,
-        rt_tol = 5
-    )
-
-    mtched_data_list[[POLARITY]] <- mtched_data
-}
-rm(POLARITY, mtched_data, lipid_database, query)
+snap_cols <- c("feature_id", "target_lipid_name_unique", "target_adduct",
+               "adduct_ratio")
+save_snapshot(annotMatches(posAnnot(annotation))[, snap_cols], "annot_adducts", "pos")
+save_snapshot(annotMatches(negAnnot(annotation))[, snap_cols], "annot_adducts", "neg")
+rm(snap_cols)
 ```
 
 ## Resolve Ambiguities
@@ -470,48 +464,7 @@ rm(POLARITY, mtched_data, lipid_database, query)
 ```{r resolve-ambiguities}
 #| label: resolve-ambiguities
 
-for (POLARITY in c("pos", "neg")) {
-    mtched_data <- mtched_data_list[[POLARITY]]
-
-    cols_amb <- c("feature_id", "target_mz", "mzmed", "target_rt_adjusted",
-                  "rtmed", "target_lipid_name_unique", "target_adduct",
-                  "ppm_error", "score_rt", "target_rank", "score",
-                  "isopeak_count", "isopeak_sim", "adduct_ratio", "ntch_idx")
-
-    # Resolve lipid -> multiple features (keep highest adduct count)
-    key       <- paste(mtched_data$target_lipid_name_unique,
-                       mtched_data$target_adduct, sep = "_")
-    rm_vector <- c()
-    for (i in key[duplicated(key)]) {
-        idxs  <- which(key == i)
-        count <- mtched_data$adduct_ratio[idxs]
-        if (which.max(count) == which.min(count)) next
-        best_idx  <- idxs[which.max(count)]
-        rm_vector <- c(rm_vector, setdiff(idxs, best_idx))
-    }
-    if (length(rm_vector) > 0) {
-        mtched_data <- mtched_data[-rm_vector, ]
-        message("Removed ", length(rm_vector), " rows (lower adduct counts)")
-    }
-
-    # Resolve by RT score
-    key          <- paste(mtched_data$target_lipid_name_unique,
-                          mtched_data$target_adduct, sep = "_")
-    dupe_keys    <- unique(key[duplicated(key)])
-    rows_to_keep <- rep(TRUE, nrow(mtched_data))
-    for (k in dupe_keys) {
-        idxs       <- which(key == k)
-        scores     <- abs(mtched_data$score_rt[idxs])
-        best_score <- min(scores, na.rm = TRUE)
-        to_remove  <- idxs[(scores - best_score) > 4]
-        if (length(to_remove) > 0) rows_to_keep[to_remove] <- FALSE
-    }
-    mtched_data <- mtched_data[rows_to_keep, ]
-    message("After RT score filter: ", nrow(mtched_data), " matches")
-
-    mtched_data_list[[POLARITY]] <- mtched_data
-}
-rm(POLARITY, mtched_data, cols_amb, key, rm_vector, dupe_keys, rows_to_keep)
+annotation <- resolve_annotation_ambiguities(annotation)
 ```
 
 ## SM1/SM2 Isomer Resolution
@@ -519,16 +472,18 @@ rm(POLARITY, mtched_data, cols_amb, key, rm_vector, dupe_keys, rows_to_keep)
 ```{r sm-resolution}
 #| label: sm-resolution
 
-for (POLARITY in c("pos", "neg")) {
-    mtched_data <- mtched_data_list[[POLARITY]]
+annotation <- resolve_sm_isomers(annotation)
 
-    mtched_data <- resolve_sm_isomers(mtched_data)
+mtched_data_precuration_list <- list(
+    pos = annotMatches(posAnnot(annotation)),
+    neg = annotMatches(negAnnot(annotation))
+)
 
-    # Snapshot pre-curation state for re-runnability of apply-curation
-    mtched_data_precuration_list[[POLARITY]] <- mtched_data
-    mtched_data_list[[POLARITY]]             <- mtched_data
-}
-rm(POLARITY, mtched_data)
+snap_cols <- c("feature_id", "target_lipid_name_unique", "target_adduct",
+               "score", "ntch_idx")
+save_snapshot(annotMatches(posAnnot(annotation))[, snap_cols], "annot_resolved", "pos")
+save_snapshot(annotMatches(negAnnot(annotation))[, snap_cols], "annot_resolved", "neg")
+rm(snap_cols)
 ```
 
 ## Export Ambiguity Tables for Manual Curation
@@ -543,15 +498,13 @@ Export tables for manual review of ambiguous matches:
 #| label: export-ambiguity
 
 for (POLARITY in c("pos", "neg")) {
-    mtched_data <- mtched_data_list[[POLARITY]]
-
     ambiguities <- export_ambiguity_tables(
-        mtched_data,
+        mtched_data_precuration_list[[POLARITY]],
         lipid_file   = paste0("lipid_ambiguity_resolution_",   POLARITY, ".xlsx"),
         feature_file = paste0("feature_ambiguity_resolution_", POLARITY, ".xlsx")
     )
 }
-rm(POLARITY, mtched_data, ambiguities)
+rm(POLARITY, ambiguities)
 ```
 
 ::: {.callout-important}
@@ -630,7 +583,7 @@ rm(POLARITY, mtched_data, lip_file, ft_file, fids_ambiguous)
 
 for (POLARITY in c("pos", "neg")) {
     mtched_data  <- mtched_data_list[[POLARITY]]
-    lipid_db_r1  <- lipid_db_r1_list[[POLARITY]]
+    lipid_db_r1  <- lipid_db_list[[POLARITY]][lipid_db_list[[POLARITY]]$rank == 1, ]
 
     n_unique_lipids <- length(unique(mtched_data$target_lipid_name_unique))
     n_db_lipids     <- length(unique(lipid_db_r1$lipid_name_unique))
@@ -658,19 +611,15 @@ rm(POLARITY, mtched_data, lipid_db_r1, n_unique_lipids, n_db_lipids, coverage,
 ```{r volume-correction}
 #| label: volume-correction
 
-for (POLARITY in c("pos", "neg")) {
-    res <- if (POLARITY == "pos") res_pos else res_neg
-
-    res <- apply_volume_correction(res, VOLUME_FACTORS,
-                                   assay_name     = "raw",
-                                   new_assay_name = "raw_corr")
-    res <- apply_volume_correction(res, VOLUME_FACTORS,
-                                   assay_name     = "raw_filled",
-                                   new_assay_name = "corr_filled")
-
-    res_corr_list[[POLARITY]] <- res
-}
-rm(POLARITY, res)
+res_both <- PosNegSumExp(res_pos, res_neg)
+res_both <- apply_volume_correction(res_both, VOLUME_FACTORS,
+                                    assay_name     = "raw",
+                                    new_assay_name = "raw_corr")
+res_both <- apply_volume_correction(res_both, VOLUME_FACTORS,
+                                    assay_name     = "raw_filled",
+                                    new_assay_name = "corr_filled")
+res_corr_list <- list(pos = posRes(res_both), neg = negRes(res_both))
+rm(res_both)
 ```
 
 ## Create Annotated Result Object
@@ -678,25 +627,13 @@ rm(POLARITY, res)
 ```{r annotated-res}
 #| label: annotated-res
 
-for (POLARITY in c("pos", "neg")) {
-    res         <- res_corr_list[[POLARITY]]
-    mtched_data <- mtched_data_list[[POLARITY]]
-
-    annotated_res <- res[rownames(res) %in% mtched_data$feature_id, ]
-    rowData(annotated_res) <- cbind(
-        rowData(annotated_res),
-        mtched_data[match(rownames(annotated_res), mtched_data$feature_id),
-                    c("target_lipid.name", "target_lipid_name_unique",
-                      "target_LIPID.CATEGORY..ABBREV.",
-                      "target_LIPID.SUBCLASS..ABBREV.", "target_Adduct",
-                      "target_IS_norm")]
-    )
-
-    message("Annotated result object (", POLARITY, "): ",
-            nrow(annotated_res), " features")
-    annotated_res_list[[POLARITY]] <- annotated_res
-}
-rm(POLARITY, res, mtched_data, annotated_res)
+annotated_res_both <- annotate_features(
+    PosNegSumExp(res_corr_list[["pos"]], res_corr_list[["neg"]]),
+    mtched_data_list
+)
+annotated_res_list <- list(pos = posRes(annotated_res_both),
+                           neg = negRes(annotated_res_both))
+rm(annotated_res_both)
 ```
 
 ## Missing Value Imputation
@@ -725,23 +662,36 @@ rm(POLARITY, annotated_res, tmp)
 ```{r is-normalization}
 #| label: is-normalization
 
-for (POLARITY in c("pos", "neg")) {
-    annotated_res <- annotated_res_list[[POLARITY]]
+annotated_res_both <- PosNegSumExp(
+    annotated_res_list[["pos"]],
+    annotated_res_list[["neg"]]
+)
+annotated_res_both <- normalize_by_is(
+    annotated_res_both,
+    input_assay  = "corr_filled",
+    output_assay = "ISnorm_filled",
+    is_col       = "target_IS_norm",
+    lipid_col    = "target_lipid.name"
+)
 
-    annotated_res <- normalize_by_is(
-        annotated_res,
-        input_assay  = "corr_filled",
-        output_assay = "ISnorm_filled",
-        is_col       = "target_IS_norm",
-        lipid_col    = "target_lipid.name"
-    )
+for (POLARITY in c("pos", "neg")) {
+    annotated_res <- if (POLARITY == "pos") posRes(annotated_res_both) else
+        negRes(annotated_res_both)
 
     tmp <- apply(assay(annotated_res, "ISnorm_filled"), MARGIN = 1, na_unidis)
     assays(annotated_res)$ISnorm_filled_imputed <- t(tmp)
 
+    save_snapshot(
+        list(
+            n_features     = nrow(annotated_res),
+            feature_ids    = rownames(annotated_res),
+            is_assignments = as.character(rowData(annotated_res)$target_IS_norm)
+        ),
+        "annot_isnorm", POLARITY
+    )
     annotated_res_list[[POLARITY]] <- annotated_res
 }
-rm(POLARITY, annotated_res, tmp)
+rm(POLARITY, annotated_res, tmp, annotated_res_both)
 ```
 
 ---
@@ -753,18 +703,17 @@ rm(POLARITY, annotated_res, tmp)
 ```{r rsd-filter}
 #| label: rsd-filter
 
-for (POLARITY in c("pos", "neg")) {
-    annotated_res <- annotated_res_list[[POLARITY]]
+res_unfilt_list <- annotated_res_list
 
-    # Store unfiltered object
-    res_unfilt_list[[POLARITY]] <- annotated_res
-
-    # Apply RSD filter
-    annotated_res <- filter_by_qc_rsd(annotated_res, threshold = RSD_THRESHOLD)
-
-    annotated_res_list[[POLARITY]] <- annotated_res
-}
-rm(POLARITY, annotated_res)
+annotated_res_both <- PosNegSumExp(
+    annotated_res_list[["pos"]],
+    annotated_res_list[["neg"]]
+)
+annotated_res_both <- filter_by_qc_rsd(annotated_res_both,
+                                        threshold = RSD_THRESHOLD)
+annotated_res_list[["pos"]] <- posRes(annotated_res_both)
+annotated_res_list[["neg"]] <- negRes(annotated_res_both)
+rm(annotated_res_both)
 ```
 
 ## Quality Assessment Plots
@@ -883,9 +832,18 @@ for (POLARITY in c("pos", "neg")) {
     saveObject(res_final, final_save_path)
     message("\u2713 Saved final results (", POLARITY, ") to: ", .obj_dir)
 
+    snap_cols <- intersect(
+        c("target_lipid_name_unique", "target_LIPID.CATEGORY..ABBREV.",
+          "target_IS_norm", "qc_cv"),
+        colnames(rowData(res_final))
+    )
+    save_snapshot(as.data.frame(rowData(res_final)[, snap_cols]),
+                  "annot_final", POLARITY)
+
     res_final_list[[POLARITY]] <- res_final
 }
-rm(POLARITY, annotated_res, .obj_dir, res_qc, res_final, final_save_path)
+rm(POLARITY, annotated_res, .obj_dir, res_qc, res_final, final_save_path,
+   snap_cols)
 
 res_final_pos <- res_final_list$pos
 res_final_neg <- res_final_list$neg

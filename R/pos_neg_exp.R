@@ -360,3 +360,56 @@ setMethod("show", "PosNegXcmsExp", function(object) {
         cat(",", nrow(featureDefinitions(object@neg)), "features")
     cat("\n")
 })
+
+# =============================================================================
+# PosNegSumExp — dual-mode quantitative result container
+# =============================================================================
+#
+# Wraps two SummarizedExperiment objects (one per ionization mode).
+# Functions that accept a SummarizedExperiment can accept a PosNegSumExp
+# via inherits() guards, applying the operation to both modes and
+# returning an updated PosNegSumExp.
+#
+# Usage:
+#   res_both <- PosNegSumExp(res_pos, res_neg)
+#   res_both <- apply_volume_correction(res_both, VOLUME_FACTORS, ...)
+#   res_both <- normalize_by_is(res_both, ...)
+#   res_both <- filter_by_qc_rsd(res_both, threshold = 0.3)
+
+setClass("PosNegSumExp",
+    slots = c(pos = "SummarizedExperiment", neg = "SummarizedExperiment"))
+
+#' Create a dual-mode quantitative result container.
+#'
+#' @param pos A \code{SummarizedExperiment} for positive ionization mode.
+#' @param neg A \code{SummarizedExperiment} for negative ionization mode.
+#' @return A \code{PosNegSumExp} object.
+PosNegSumExp <- function(pos, neg)
+    new("PosNegSumExp", pos = pos, neg = neg)
+
+# Accessors
+setGeneric("posRes", function(x) standardGeneric("posRes"))
+setGeneric("negRes", function(x) standardGeneric("negRes"))
+
+setMethod("posRes", "PosNegSumExp", function(x) x@pos)
+setMethod("negRes", "PosNegSumExp", function(x) x@neg)
+
+setGeneric("posRes<-", function(x, value) standardGeneric("posRes<-"))
+setGeneric("negRes<-", function(x, value) standardGeneric("negRes<-"))
+
+setReplaceMethod("posRes", "PosNegSumExp", function(x, value) {
+    x@pos <- value
+    x
+})
+setReplaceMethod("negRes", "PosNegSumExp", function(x, value) {
+    x@neg <- value
+    x
+})
+
+setMethod("show", "PosNegSumExp", function(object) {
+    cat("PosNegSumExp\n")
+    cat("  Positive:", nrow(object@pos), "features,",
+        ncol(object@pos), "samples\n")
+    cat("  Negative:", nrow(object@neg), "features,",
+        ncol(object@neg), "samples\n")
+})
