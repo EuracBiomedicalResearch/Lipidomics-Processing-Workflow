@@ -606,8 +606,8 @@ load_lipid_packages <- function(verbose = TRUE) {
     # Core data handling
     "knitr", "readxl", "writexl",
     # MS data handling
-    "MsExperiment", "MsIO", "alabaster.se", "MsBackendMetaboLights",
-    "SummarizedExperiment", "xcms", "Spectra", "MetaboCoreUtils",
+    "MsExperiment", "MsIO", "alabaster.se", "SummarizedExperiment",
+    "xcms", "Spectra", "MetaboCoreUtils", "MsBackendMetaboLights",
     # SQL backend (for SQLite data loading)
     "MsBackendSql", "RSQLite",
     # Statistics
@@ -2017,5 +2017,4 @@ export_ambiguity_tables <- function(mtched_data,
     feature_ambiguities = table_amb
   ))
 }
-
 

@@ -8,6 +8,7 @@ params:
 format:
   html:
     output-file: "pilot_POS_NEG_merge.html"
+    embed-resources: true
     toc: true
     toc-depth: 3
 execute:
@@ -71,6 +72,8 @@ library(UpSetR)
 library(ggfortify)
 library(ggplot2)
 library(RColorBrewer)
+
+source("../../R/pos_neg_merge.R")
 ```
 
 # Load Results
@@ -105,61 +108,22 @@ rowData(res_neg)$ionization_mode <- "negative"
 
 ```{r}
 #| label: align-samples
-strip_mode_suffix <- function(x) {
-    x <- sub("\\.mzML$", "", x, ignore.case = TRUE)
-    sub("_(pos|neg)$", "", x, ignore.case = TRUE)
-}
-
-pos_order <- strip_mode_suffix(colnames(res_pos))
-neg_order <- strip_mode_suffix(colnames(res_neg))
-
-neg_reorder_idx <- match(pos_order, neg_order)
-if (anyNA(neg_reorder_idx)) {
-    stop("Could not align negative-mode samples to positive-mode samples. ",
-         "Missing in NEG: ",
-         paste(pos_order[is.na(neg_reorder_idx)], collapse = ", "))
-}
-
-res_neg <- res_neg[, neg_reorder_idx]
-
-if (!identical(pos_order, strip_mode_suffix(colnames(res_neg)))) {
-    stop("Sample order mismatch remains after reordering negative mode.")
-}
+aligned <- align_neg_to_pos_samples(res_pos, res_neg)
+res_neg <- aligned$res_neg
+pos_order <- aligned$pos_order
 ```
 
 # Resolve Duplicate Lipids
 
 ```{r}
 #| label: find-duplicates
-common_lipids <- intersect(
-    rowData(res_pos)$target_lipid_name_unique,
-    rowData(res_neg)$target_lipid_name_unique
+comparison_df <- find_pos_neg_duplicates(
+    res_pos = res_pos,
+    res_neg = res_neg,
+    rt_diff_threshold = RT_DIFF_THRESHOLD
 )
 
-cat("Number of common lipids:", length(common_lipids), "\n")
-
-comparison_df <- data.frame(
-    lipid_name_unique = common_lipids,
-    pos_idx = match(common_lipids, rowData(res_pos)$target_lipid_name_unique),
-    neg_idx = match(common_lipids, rowData(res_neg)$target_lipid_name_unique)
-)
-
-comparison_df$pos_mean_abundance <- sapply(comparison_df$pos_idx, function(i) {
-    mean(assay(res_pos, "ISnorm_filled_imputed")[i, ], na.rm = TRUE)
-})
-comparison_df$neg_mean_abundance <- sapply(comparison_df$neg_idx, function(i) {
-    mean(assay(res_neg, "ISnorm_filled_imputed")[i, ], na.rm = TRUE)
-})
-
-comparison_df$pos_rt <- rowData(res_pos)$rtmed[comparison_df$pos_idx]
-comparison_df$neg_rt <- rowData(res_neg)$rtmed[comparison_df$neg_idx]
-comparison_df$rt_diff <- abs(comparison_df$pos_rt - comparison_df$neg_rt)
-comparison_df$rt_similar <- comparison_df$rt_diff < RT_DIFF_THRESHOLD
-
-comparison_df$keep_mode <- ifelse(
-    comparison_df$pos_mean_abundance >= comparison_df$neg_mean_abundance,
-    "positive", "negative"
-)
+cat("Number of common lipids:", nrow(comparison_df), "\n")
 
 cat("\nRetention time differences summary:\n")
 summary(comparison_df$rt_diff)
@@ -199,10 +163,10 @@ if ("file_name" %in% colnames(colData(res_neg_filtered))) {
     colData(res_neg_filtered)$file_name <- strip_mode_suffix(colData(res_neg_filtered)$file_name)
 }
 
-colData(res_pos_filtered)$spectraOrigin <- NULL
-colData(res_neg_filtered)$spectraOrigin <- NULL
-colData(res_pos_filtered)$polarity <- NULL
-colData(res_neg_filtered)$polarity <- NULL
+res_pos_filtered <- drop_col_data_columns(res_pos_filtered,
+                                          c("spectraOrigin", "polarity"))
+res_neg_filtered <- drop_col_data_columns(res_neg_filtered,
+                                          c("spectraOrigin", "polarity"))
 
 if (!"ionization_mode" %in% colnames(rowData(res_pos_filtered)))
     rowData(res_pos_filtered)$ionization_mode <- "positive"
