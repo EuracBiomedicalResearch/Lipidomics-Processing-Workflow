@@ -224,15 +224,17 @@ DATA_DIR_POS <- "positive/data"
 DATA_DIR_NEG <- "negative/data"
 
 # Output directories
-OBJECTS_DIR_POS  <- "positive/objects"
-OBJECTS_DIR_NEG  <- "negative/objects"
+OBJECTS_DIR     <- "objects"                # combined POS+NEG objects (handover to Annotation.qmd)
+OBJECTS_DIR_POS <- "positive/objects"       # mode-specific (EICs, etc.)
+OBJECTS_DIR_NEG <- "negative/objects"
 EIC_ISTD_DIR_POS <- "positive/figures/EIC_internal_standards"
 EIC_ISTD_DIR_NEG <- "negative/figures/EIC_internal_standards"
 PEAK_DET_DIR_POS <- "positive/figures/peak_detection_ref_lipid"
 PEAK_DET_DIR_NEG <- "negative/figures/peak_detection_ref_lipid"
 
 # Create output directories
-for (.d in c(OBJECTS_DIR_POS, OBJECTS_DIR_NEG,
+for (.d in c(OBJECTS_DIR,
+             OBJECTS_DIR_POS, OBJECTS_DIR_NEG,
              EIC_ISTD_DIR_POS, EIC_ISTD_DIR_NEG,
              PEAK_DET_DIR_POS, PEAK_DET_DIR_NEG)) {
   dir.create(.d, recursive = TRUE, showWarnings = FALSE)
@@ -691,32 +693,29 @@ validate_result(res_neg, assay_name = "raw", min_features = 50)
 ```{r save-preprocessed}
 #| label: save-preprocessed
 
-for (.pol in c("pos", "neg")) {
-  .mse      <- if (.pol == "pos") mse_pos else mse_neg
-  .res      <- if (.pol == "pos") res_pos else res_neg
-  .obj_dir  <- if (.pol == "pos") OBJECTS_DIR_POS else OBJECTS_DIR_NEG
-
-  mse_save_path <- file.path(.obj_dir,
-                             paste0(SAVE_PREFIX, "_preprocessed_mse_", .pol))
-  res_save_path <- file.path(.obj_dir,
-                             paste0(SAVE_PREFIX, "_preprocessed_res_", .pol))
-
-  if (DATA_SOURCE == "sqlite") {
-    spectra(.mse) <- setBackend(spectra(.mse), MsBackendMemory())
-    save(.mse, file = paste0(mse_save_path, ".RData"))
-  } else {
-    if (dir.exists(mse_save_path)) unlink(mse_save_path, recursive = TRUE)
-    saveMsObject(.mse, AlabasterParam(path = mse_save_path))
+# For SQLite-backed experiments, materialise spectra into memory before
+# serialising — the file-backed backend cannot be restored from an RDS.
+if (DATA_SOURCE == "sqlite") {
+  .swap <- function(xcms_exp) {
+    spectra(xcms_exp) <- setBackend(spectra(xcms_exp), MsBackendMemory())
+    xcms_exp
   }
-
-  .res@metadata <- list()
-  if (dir.exists(res_save_path)) unlink(res_save_path, recursive = TRUE)
-  saveObject(.res, res_save_path)
-
-  message("✓ Saved ", .pol, " objects to: ", .obj_dir)
+  mse <- PosNegXcmsExp(.swap(posMode(mse)), .swap(negMode(mse)))
+  rm(.swap)
 }
-rm(.pol, .mse, .res, .obj_dir, mse_save_path, res_save_path)
 
+res_pos@metadata <- list()
+res_neg@metadata <- list()
+
+saveRDS(mse,
+        file.path(OBJECTS_DIR, paste0(SAVE_PREFIX, "_preprocessed_mse.rds")))
+saveRDS(PosNegSumExp(res_pos, res_neg),
+        file.path(OBJECTS_DIR, paste0(SAVE_PREFIX, "_preprocessed_res.rds")))
+
+message("✓ Saved PosNegXcmsExp → ",
+        file.path(OBJECTS_DIR, paste0(SAVE_PREFIX, "_preprocessed_mse.rds")))
+message("✓ Saved PosNegSumExp  → ",
+        file.path(OBJECTS_DIR, paste0(SAVE_PREFIX, "_preprocessed_res.rds")))
 message("\nNext step: Run Annotation.qmd for RT correction and annotation.")
 ```
 

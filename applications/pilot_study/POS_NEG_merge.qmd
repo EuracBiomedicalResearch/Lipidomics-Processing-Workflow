@@ -63,11 +63,7 @@ RES_COMBINED_PATH <- file.path("objects", paste0(STUDY_ID, "_res_combined"))
 # RT difference threshold for duplicate resolution (seconds)
 RT_DIFF_THRESHOLD <- 30
 
-# Regression snapshot directory (relative to project root).
-# "tests/snapshots_merge"     → golden baselines (committed, never overwrite)
-# "tests/snapshots_merge_dev" → written during active development / refactor
 PROJECT_ROOT <- "../.."
-SNAPSHOT_DIR <- file.path(PROJECT_ROOT, "tests/snapshots_merge_dev")
 ```
 
 # Setup
@@ -81,7 +77,6 @@ library(ggfortify)
 library(ggplot2)
 library(RColorBrewer)
 source(file.path(PROJECT_ROOT, "R/pos_neg_exp.R"))
-source(file.path(PROJECT_ROOT, "R/snapshot_helpers.R"))
 ```
 
 # Load Results
@@ -116,12 +111,6 @@ neg_reorder_idx <- match(pos_order, neg_order)
 negMode(res_both) <- negMode(res_both)[, neg_reorder_idx]
 
 stopifnot(all(pos_order == sub("_neg\\.mzML$", "", colnames(negMode(res_both)))))
-
-save_snapshot(
-    data.frame(pos = colnames(posMode(res_both)),
-               neg = colnames(negMode(res_both))),
-    "merge_aligned", "both"
-)
 ```
 
 # Resolve Duplicate Lipids
@@ -164,8 +153,6 @@ summary(comparison_df$rt_diff)
 cat("\nLipids with dissimilar RT (kept in both modes):\n")
 comparison_df[!comparison_df$rt_similar,
               c("lipid_name_unique", "pos_rt", "neg_rt", "rt_diff")]
-
-save_snapshot(comparison_df, "merge_duplicates", "both")
 ```
 
 ```{r}
@@ -212,13 +199,6 @@ res_combined <- rbind(res_pos_filtered, res_neg_filtered)
 cat("Combined dataset:", nrow(res_combined), "features x", ncol(res_combined), "samples\n")
 cat("Features from positive mode:", sum(rowData(res_combined)$ionization_mode == "positive"), "\n")
 cat("Features from negative mode:", sum(rowData(res_combined)$ionization_mode == "negative"), "\n")
-
-save_snapshot(
-    as.data.frame(rowData(res_combined)[,
-        c("ionization_mode", "target_lipid_name_unique",
-          "target_LIPID.CATEGORY..ABBREV.")]),
-    "merge_combined", "both"
-)
 ```
 
 # Save
