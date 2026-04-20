@@ -408,6 +408,13 @@ data.frame(
 ) |> t() |> kable(format = "pipe")
 ```
 
+::: {.callout-note}
+This is the second EIC plot in the file (after peak detection). If you
+adjust `rt_window_left` / `rt_window_right` when tuning the first plot
+above, make sure the same values are reflected here — both extractions
+must use matching windows for the before/after comparison to be valid.
+:::
+
 ```{r save-peak-detection-plots}
 #| label: save-peak-detection-plots
 
