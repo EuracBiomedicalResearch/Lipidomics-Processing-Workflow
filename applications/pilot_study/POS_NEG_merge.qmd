@@ -8,6 +8,7 @@ params:
 format:
   html:
     output-file: "pilot_POS_NEG_merge.html"
+    embed-resources: true
     toc: true
     toc-depth: 3
 execute:
@@ -24,7 +25,7 @@ knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 6)
 ::: {.callout-tip}
 ## Study-specific instance
 This is a configured copy of `generic_workflow/POS_NEG_merge.qmd` for the
-**pilot study**. Run after completing `Annotation_pos.qmd` and `Annotation_neg.qmd`.
+**pilot study**. Run after completing `Annotation.qmd`.
 :::
 
 This document merges positive and negative mode annotation results into a
@@ -38,8 +39,7 @@ single `SummarizedExperiment`. It handles:
 
 # Configuration
 
-```{r}
-#| label: configuration
+```{r config}
 
 # ============================================================================
 # PILOT STUDY CONFIGURATION
@@ -48,12 +48,15 @@ single `SummarizedExperiment`. It handles:
 # Study identifier: must match what was used in the annotation workflow
 STUDY_ID <- "pilot"
 
+# Prefix used by the unified Preprocessing.qmd / Annotation.qmd workflows.
+SAVE_PREFIX <- "posNegExp"
+
 # Paths to the final result objects (from Annotation.qmd)
-RES_POS_PATH <- file.path("positive", "objects", paste0(STUDY_ID, "_final_res_pos"))
-RES_NEG_PATH <- file.path("negative", "objects", paste0(STUDY_ID, "_final_res_neg"))
+RES_POS_PATH <- file.path("positive", "objects", paste0(SAVE_PREFIX, "_final_res_pos"))
+RES_NEG_PATH <- file.path("negative", "objects", paste0(SAVE_PREFIX, "_final_res_neg"))
 
 # Output path for combined result
-RES_COMBINED_PATH <- file.path("objects", paste0(STUDY_ID, "_res_combined"))
+RES_COMBINED_PATH <- file.path("objects", paste0(SAVE_PREFIX, "_res_combined"))
 
 # RT difference threshold for duplicate resolution (seconds)
 RT_DIFF_THRESHOLD <- 30
@@ -69,12 +72,23 @@ library(UpSetR)
 library(ggfortify)
 library(ggplot2)
 library(RColorBrewer)
+
+source("../../R/pos_neg_merge.R")
 ```
 
 # Load Results
 
 ```{r}
 #| label: load-data
+if (!dir.exists(RES_POS_PATH)) {
+    stop("Positive final result not found: ", RES_POS_PATH,
+         "\nRun Annotation.qmd first, or update SAVE_PREFIX / RES_POS_PATH.")
+}
+if (!dir.exists(RES_NEG_PATH)) {
+    stop("Negative final result not found: ", RES_NEG_PATH,
+         "\nRun Annotation.qmd first, or update SAVE_PREFIX / RES_NEG_PATH.")
+}
+
 res_pos <- readObject(RES_POS_PATH)
 res_neg <- readObject(RES_NEG_PATH)
 
@@ -94,48 +108,22 @@ rowData(res_neg)$ionization_mode <- "negative"
 
 ```{r}
 #| label: align-samples
-pos_order <- sub("_pos\\.mzML$", "", colnames(res_pos))
-neg_order <- sub("_neg\\.mzML$", "", colnames(res_neg))
-
-neg_reorder_idx <- match(pos_order, neg_order)
-res_neg <- res_neg[, neg_reorder_idx]
-
-stopifnot(all(pos_order == sub("_neg\\.mzML$", "", colnames(res_neg))))
+aligned <- align_neg_to_pos_samples(res_pos, res_neg)
+res_neg <- aligned$res_neg
+pos_order <- aligned$pos_order
 ```
 
 # Resolve Duplicate Lipids
 
 ```{r}
 #| label: find-duplicates
-common_lipids <- intersect(
-    rowData(res_pos)$target_lipid_name_unique,
-    rowData(res_neg)$target_lipid_name_unique
+comparison_df <- find_pos_neg_duplicates(
+    res_pos = res_pos,
+    res_neg = res_neg,
+    rt_diff_threshold = RT_DIFF_THRESHOLD
 )
 
-cat("Number of common lipids:", length(common_lipids), "\n")
-
-comparison_df <- data.frame(
-    lipid_name_unique = common_lipids,
-    pos_idx = match(common_lipids, rowData(res_pos)$target_lipid_name_unique),
-    neg_idx = match(common_lipids, rowData(res_neg)$target_lipid_name_unique)
-)
-
-comparison_df$pos_mean_abundance <- sapply(comparison_df$pos_idx, function(i) {
-    mean(assay(res_pos, "ISnorm_filled_imputed")[i, ], na.rm = TRUE)
-})
-comparison_df$neg_mean_abundance <- sapply(comparison_df$neg_idx, function(i) {
-    mean(assay(res_neg, "ISnorm_filled_imputed")[i, ], na.rm = TRUE)
-})
-
-comparison_df$pos_rt <- rowData(res_pos)$rtmed[comparison_df$pos_idx]
-comparison_df$neg_rt <- rowData(res_neg)$rtmed[comparison_df$neg_idx]
-comparison_df$rt_diff <- abs(comparison_df$pos_rt - comparison_df$neg_rt)
-comparison_df$rt_similar <- comparison_df$rt_diff < RT_DIFF_THRESHOLD
-
-comparison_df$keep_mode <- ifelse(
-    comparison_df$pos_mean_abundance >= comparison_df$neg_mean_abundance,
-    "positive", "negative"
-)
+cat("Number of common lipids:", nrow(comparison_df), "\n")
 
 cat("\nRetention time differences summary:\n")
 summary(comparison_df$rt_diff)
@@ -157,24 +145,28 @@ neg_remove_idx <- comparison_df$neg_idx[
 cat("Removing", length(pos_remove_idx), "duplicates from positive mode\n")
 cat("Removing", length(neg_remove_idx), "duplicates from negative mode\n")
 
-res_pos_filtered <- res_pos[-pos_remove_idx, ]
-res_neg_filtered <- res_neg[-neg_remove_idx, ]
+res_pos_filtered <- if (length(pos_remove_idx)) res_pos[-pos_remove_idx, ] else res_pos
+res_neg_filtered <- if (length(neg_remove_idx)) res_neg[-neg_remove_idx, ] else res_neg
 ```
 
 # Combine
 
 ```{r}
 #| label: combine-results
-colnames(res_pos_filtered) <- sub("_pos\\.mzML$", "", colnames(res_pos_filtered))
-colnames(res_neg_filtered) <- sub("_neg\\.mzML$", "", colnames(res_neg_filtered))
+colnames(res_pos_filtered) <- strip_mode_suffix(colnames(res_pos_filtered))
+colnames(res_neg_filtered) <- strip_mode_suffix(colnames(res_neg_filtered))
 
-colData(res_pos_filtered)$file_name <- sub("_pos\\.mzML$", "", colData(res_pos_filtered)$file_name)
-colData(res_neg_filtered)$file_name <- sub("_neg\\.mzML$", "", colData(res_neg_filtered)$file_name)
+if ("file_name" %in% colnames(colData(res_pos_filtered))) {
+    colData(res_pos_filtered)$file_name <- strip_mode_suffix(colData(res_pos_filtered)$file_name)
+}
+if ("file_name" %in% colnames(colData(res_neg_filtered))) {
+    colData(res_neg_filtered)$file_name <- strip_mode_suffix(colData(res_neg_filtered)$file_name)
+}
 
-colData(res_pos_filtered)$spectraOrigin <- NULL
-colData(res_neg_filtered)$spectraOrigin <- NULL
-colData(res_pos_filtered)$polarity <- NULL
-colData(res_neg_filtered)$polarity <- NULL
+res_pos_filtered <- drop_col_data_columns(res_pos_filtered,
+                                          c("spectraOrigin", "polarity"))
+res_neg_filtered <- drop_col_data_columns(res_neg_filtered,
+                                          c("spectraOrigin", "polarity"))
 
 if (!"ionization_mode" %in% colnames(rowData(res_pos_filtered)))
     rowData(res_pos_filtered)$ionization_mode <- "positive"
@@ -192,6 +184,8 @@ cat("Features from negative mode:", sum(rowData(res_combined)$ionization_mode ==
 
 ```{r}
 #| label: save-combined
+dir.create(dirname(RES_COMBINED_PATH), recursive = TRUE, showWarnings = FALSE)
+if (dir.exists(RES_COMBINED_PATH)) unlink(RES_COMBINED_PATH, recursive = TRUE)
 saveObject(res_combined, RES_COMBINED_PATH)
 ```
 

@@ -2,6 +2,7 @@
 *.RData
 *.png
 *.html
+*_files/
 *.pdf
 *.mzML
 *.MGF
@@ -40,8 +41,8 @@ tutorial_pilot_pos.tex
 tutorial_pilot_pos_files/
 
 
-feature_ambiguity_resolution.xlsx
-lipid_ambiguity_resolution.xlsx
+feature_ambiguity_resolution*.xlsx
+lipid_ambiguity_resolution*.xlsx
 CLAUDE.md
 MODs_on_workflow.md
 WORKFLOW_COMPARISON.md
@@ -51,4 +52,6 @@ tests/snapshots_dev/
 tests/snapshots.backup/
 unifying_pos_and_neg.md
 
-
+__temp/
+applications/*_study/positive/data
+applications/*_study/negative/data
