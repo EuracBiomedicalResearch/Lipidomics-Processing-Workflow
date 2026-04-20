@@ -29,13 +29,11 @@ comparison), running positive and negative ionization modes in parallel
 loops. Expects preprocessed objects from `Preprocessing.qmd`.
 :::
 
-This document handles steps 8–10 of the targeted lipidomics workflow:
+This is the second step of the targeted lipidomics workflow. It handles
+**RT correction, annotation, normalization and QC** for targeted lipidomic
+profiling using LC-MS data. It expects preprocessed objects from
+`Preprocessing.qmd`.
 
-8. **Database RT Correction** — Polynomial fit on reference lipids
-9. **Annotation** — m/z + RT matching, isotope pattern validation,
-   adduct matching
-10. **Ambiguity Resolution + Normalization + QC** — Manual curation,
-    IS normalization, RSD filter
 
 ## Required Input Files
 
@@ -48,6 +46,12 @@ This document handles steps 8–10 of the targeted lipidomics workflow:
 ---
 
 # Configuration
+
+::: {.callout-important}
+## @SARA:
+Maybe we can create a shared configuration document that is loaded from both `Preprocessing.qmd` and `Annotation.qmd` to avoid duplicating configuration chunks
+:::
+
 
 Set the analysis parameters here. `STUDY_ID` and `SAVE_PREFIX` must match
 what was used in `Preprocessing.qmd`.
@@ -123,7 +127,6 @@ RT_COL_NEG   <- "RT ESI(\u2013) (min)"
 ```{r load-helpers}
 #| label: load-helpers
 
-source(file.path(PROJECT_ROOT, "R/annotation_result.R"))
 source(file.path(PROJECT_ROOT, "R/pos_neg_exp.R"))
 source(file.path(PROJECT_ROOT, "R/lipid_helpers.R"))
 source(file.path(PROJECT_ROOT, "R/snapshot_helpers.R"))
@@ -379,7 +382,7 @@ annotation <- PosNegAnnotation(
 snap_cols <- c("feature_id", "target_lipid_name_unique", "target_adduct",
                "ppm_error", "score", "score_rt")
 for (.pol in c("pos", "neg")) {
-    .a <- if (.pol == "pos") posAnnot(annotation) else negAnnot(annotation)
+    .a <- if (.pol == "pos") posMode(annotation) else negMode(annotation)
     validate_matches(annotMatches(.a), min_matches = 10, max_ppm_error = 15)
     save_snapshot(annotMatches(.a)[, snap_cols], "annot_rank1", .pol)
 }
@@ -403,7 +406,7 @@ iso_result_list <- iso_combined$iso_results
 snap_cols <- c("feature_id", "target_lipid_name_unique",
                "isopeak_count", "isopeak_sim")
 for (POLARITY in c("pos", "neg")) {
-    .annot <- if (POLARITY == "pos") posAnnot(annotation) else negAnnot(annotation)
+    .annot <- if (POLARITY == "pos") posMode(annotation) else negMode(annotation)
     message(POLARITY, " matches after isotope filter: ",
             nrow(annotMatches(.annot)))
     save_snapshot(annotMatches(.annot)[, snap_cols], "annot_isotope", POLARITY)
@@ -416,7 +419,7 @@ rm(iso_combined, POLARITY, .annot, snap_cols)
 
 for (POLARITY in c("pos", "neg")) {
     .iso_dir   <- if (POLARITY == "pos") ISO_PATTERN_DIR_POS else ISO_PATTERN_DIR_NEG
-    .annot     <- if (POLARITY == "pos") posAnnot(annotation) else negAnnot(annotation)
+    .annot     <- if (POLARITY == "pos") posMode(annotation) else negMode(annotation)
     iso_result <- iso_result_list[[POLARITY]]
 
     plot_isotope_patterns(
@@ -454,8 +457,8 @@ annotation <- match_adducts(annotation, ppm = MATCH_PPM, rt_tol = 5)
 
 snap_cols <- c("feature_id", "target_lipid_name_unique", "target_adduct",
                "adduct_ratio")
-save_snapshot(annotMatches(posAnnot(annotation))[, snap_cols], "annot_adducts", "pos")
-save_snapshot(annotMatches(negAnnot(annotation))[, snap_cols], "annot_adducts", "neg")
+save_snapshot(annotMatches(posMode(annotation))[, snap_cols], "annot_adducts", "pos")
+save_snapshot(annotMatches(negMode(annotation))[, snap_cols], "annot_adducts", "neg")
 rm(snap_cols)
 ```
 
@@ -475,14 +478,14 @@ annotation <- resolve_annotation_ambiguities(annotation)
 annotation <- resolve_sm_isomers(annotation)
 
 mtched_data_precuration_list <- list(
-    pos = annotMatches(posAnnot(annotation)),
-    neg = annotMatches(negAnnot(annotation))
+    pos = annotMatches(posMode(annotation)),
+    neg = annotMatches(negMode(annotation))
 )
 
 snap_cols <- c("feature_id", "target_lipid_name_unique", "target_adduct",
                "score", "ntch_idx")
-save_snapshot(annotMatches(posAnnot(annotation))[, snap_cols], "annot_resolved", "pos")
-save_snapshot(annotMatches(negAnnot(annotation))[, snap_cols], "annot_resolved", "neg")
+save_snapshot(annotMatches(posMode(annotation))[, snap_cols], "annot_resolved", "pos")
+save_snapshot(annotMatches(negMode(annotation))[, snap_cols], "annot_resolved", "neg")
 rm(snap_cols)
 ```
 
@@ -618,7 +621,7 @@ res_both <- apply_volume_correction(res_both, VOLUME_FACTORS,
 res_both <- apply_volume_correction(res_both, VOLUME_FACTORS,
                                     assay_name     = "raw_filled",
                                     new_assay_name = "corr_filled")
-res_corr_list <- list(pos = posRes(res_both), neg = negRes(res_both))
+res_corr_list <- list(pos = posMode(res_both), neg = negMode(res_both))
 rm(res_both)
 ```
 
@@ -631,8 +634,8 @@ annotated_res_both <- annotate_features(
     PosNegSumExp(res_corr_list[["pos"]], res_corr_list[["neg"]]),
     mtched_data_list
 )
-annotated_res_list <- list(pos = posRes(annotated_res_both),
-                           neg = negRes(annotated_res_both))
+annotated_res_list <- list(pos = posMode(annotated_res_both),
+                           neg = negMode(annotated_res_both))
 rm(annotated_res_both)
 ```
 
@@ -675,8 +678,8 @@ annotated_res_both <- normalize_by_is(
 )
 
 for (POLARITY in c("pos", "neg")) {
-    annotated_res <- if (POLARITY == "pos") posRes(annotated_res_both) else
-        negRes(annotated_res_both)
+    annotated_res <- if (POLARITY == "pos") posMode(annotated_res_both) else
+        negMode(annotated_res_both)
 
     tmp <- apply(assay(annotated_res, "ISnorm_filled"), MARGIN = 1, na_unidis)
     assays(annotated_res)$ISnorm_filled_imputed <- t(tmp)
@@ -711,8 +714,8 @@ annotated_res_both <- PosNegSumExp(
 )
 annotated_res_both <- filter_by_qc_rsd(annotated_res_both,
                                         threshold = RSD_THRESHOLD)
-annotated_res_list[["pos"]] <- posRes(annotated_res_both)
-annotated_res_list[["neg"]] <- negRes(annotated_res_both)
+annotated_res_list[["pos"]] <- posMode(annotated_res_both)
+annotated_res_list[["neg"]] <- negMode(annotated_res_both)
 rm(annotated_res_both)
 ```
 

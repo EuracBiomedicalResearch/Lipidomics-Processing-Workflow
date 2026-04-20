@@ -66,15 +66,15 @@ test_that("PosNegMsExp() constructs from two MsExperiment objects", {
     expect_s4_class(pn, "PosNegMsExp")
 })
 
-test_that("posExp() and negExp() work on PosNegMsExp", {
+test_that("posMode() and negMode() work on PosNegMsExp", {
     skip_no_data()
     mse_pos <- load_mse("POS_data")
     mse_neg <- load_mse("NEG_data")
     skip_if(is.null(mse_pos) || is.null(mse_neg))
 
     pn <- PosNegMsExp(mse_pos, mse_neg)
-    expect_s4_class(posExp(pn), "MsExperiment")
-    expect_s4_class(negExp(pn), "MsExperiment")
+    expect_s4_class(posMode(pn), "MsExperiment")
+    expect_s4_class(negMode(pn), "MsExperiment")
 })
 
 test_that("show() on PosNegMsExp runs without error", {
@@ -106,15 +106,15 @@ test_that("PosNegXcmsExp() constructs from two XcmsExperiment objects", {
     expect_s4_class(pn, "PosNegXcmsExp")
 })
 
-test_that("posExp() and negExp() work on PosNegXcmsExp", {
+test_that("posMode() and negMode() work on PosNegXcmsExp", {
     skip_no_data()
     xcms_pos <- as(load_mse("POS_data"), "XcmsExperiment")
     xcms_neg <- as(load_mse("NEG_data"), "XcmsExperiment")
     skip_if(is.null(xcms_pos) || is.null(xcms_neg))
 
     pn <- PosNegXcmsExp(xcms_pos, xcms_neg)
-    expect_identical(posExp(pn), xcms_pos)
-    expect_identical(negExp(pn), xcms_neg)
+    expect_identical(posMode(pn), xcms_pos)
+    expect_identical(negMode(pn), xcms_neg)
 })
 
 test_that("show() on PosNegXcmsExp runs without error", {
@@ -153,8 +153,8 @@ test_that("filterRt() on PosNegMsExp applies same RT range to both modes", {
     pn     <- PosNegMsExp(mse_pos, mse_neg)
     pn_flt <- filterRt(pn, c(100, 500))
 
-    rt_pos <- range(rtime(spectra(posExp(pn_flt))))
-    rt_neg <- range(rtime(spectra(negExp(pn_flt))))
+    rt_pos <- range(rtime(spectra(posMode(pn_flt))))
+    rt_neg <- range(rtime(spectra(negMode(pn_flt))))
     expect_gte(rt_pos[1], 100); expect_lte(rt_pos[2], 500)
     expect_gte(rt_neg[1], 100); expect_lte(rt_neg[2], 500)
 })
@@ -183,8 +183,8 @@ test_that("filterRt() on PosNegXcmsExp applies same RT range to both modes", {
     pn     <- PosNegXcmsExp(xcms_pos, xcms_neg)
     pn_flt <- filterRt(pn, c(100, 500))
 
-    rt_pos <- range(rtime(spectra(posExp(pn_flt))))
-    rt_neg <- range(rtime(spectra(negExp(pn_flt))))
+    rt_pos <- range(rtime(spectra(posMode(pn_flt))))
+    rt_neg <- range(rtime(spectra(negMode(pn_flt))))
     expect_gte(rt_pos[1], 100); expect_lte(rt_pos[2], 500)
     expect_gte(rt_neg[1], 100); expect_lte(rt_neg[2], 500)
 })
@@ -205,8 +205,8 @@ test_that("perMode() routes distinct params to the correct mode (PosNegMsExp)", 
         neg = c(200, 700)
     ))
 
-    rt_pos <- range(rtime(spectra(posExp(pn_flt))))
-    rt_neg <- range(rtime(spectra(negExp(pn_flt))))
+    rt_pos <- range(rtime(spectra(posMode(pn_flt))))
+    rt_neg <- range(rtime(spectra(negMode(pn_flt))))
 
     expect_gte(rt_pos[1], 100); expect_lte(rt_pos[2], 600)
     expect_gte(rt_neg[1], 200); expect_lte(rt_neg[2], 700)
@@ -221,8 +221,8 @@ test_that("perMode(pos = X) applies X to both modes identically (PosNegMsExp)", 
     pn     <- PosNegMsExp(mse_pos, mse_neg)
     pn_flt <- filterRt(pn, rt = perMode(pos = c(100, 500)))
 
-    rt_pos <- range(rtime(spectra(posExp(pn_flt))))
-    rt_neg <- range(rtime(spectra(negExp(pn_flt))))
+    rt_pos <- range(rtime(spectra(posMode(pn_flt))))
+    rt_neg <- range(rtime(spectra(negMode(pn_flt))))
 
     expect_gte(rt_pos[1], 100); expect_lte(rt_pos[2], 500)
     expect_gte(rt_neg[1], 100); expect_lte(rt_neg[2], 500)

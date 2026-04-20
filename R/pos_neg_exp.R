@@ -127,14 +127,17 @@ PosNegMsExp <- function(pos, neg) new("PosNegMsExp", pos = pos, neg = neg)
 #' @return A \code{PosNegXcmsExp} object.
 PosNegXcmsExp <- function(pos, neg) new("PosNegXcmsExp", pos = pos, neg = neg)
 
-# Accessors — same generics registered for both classes.
-setGeneric("posExp", function(x) standardGeneric("posExp"))
-setMethod("posExp", "PosNegMsExp",   function(x) x@pos)
-setMethod("posExp", "PosNegXcmsExp", function(x) x@pos)
+# Accessors — posMode()/negMode() registered for all PosNeg* classes
+# (PosNegMsExp, PosNegXcmsExp, PosNegSumExp, PosNegAnnotation).
+setGeneric("posMode", function(x) standardGeneric("posMode"))
+setGeneric("negMode", function(x) standardGeneric("negMode"))
+setGeneric("posMode<-", function(x, value) standardGeneric("posMode<-"))
+setGeneric("negMode<-", function(x, value) standardGeneric("negMode<-"))
 
-setGeneric("negExp", function(x) standardGeneric("negExp"))
-setMethod("negExp", "PosNegMsExp",   function(x) x@neg)
-setMethod("negExp", "PosNegXcmsExp", function(x) x@neg)
+setMethod("posMode", "PosNegMsExp",   function(x) x@pos)
+setMethod("posMode", "PosNegXcmsExp", function(x) x@pos)
+setMethod("negMode", "PosNegMsExp",   function(x) x@neg)
+setMethod("negMode", "PosNegXcmsExp", function(x) x@neg)
 
 # =============================================================================
 # PosNegMsExp methods  (pre-peak detection)
@@ -202,8 +205,8 @@ setMethod("findChromPeaks", "PosNegMsExp", function(object, param, ...) {
 # Note: applyAdjustedRtime is NOT an S4 generic in xcms 4.8.0 — it is a
 # plain function. It cannot be overloaded with setMethod(). Call it on each
 # mode separately:
-#   data@pos <- applyAdjustedRtime(posExp(data))
-#   data@neg <- applyAdjustedRtime(negExp(data))
+#   data@pos <- applyAdjustedRtime(posMode(data))
+#   data@neg <- applyAdjustedRtime(negMode(data))
 # or use dropAdjustedRtime / adjustRtime which are proper generics.
 
 setMethod("filterRt", "PosNegXcmsExp", function(object, ...) {
@@ -387,21 +390,15 @@ setClass("PosNegSumExp",
 PosNegSumExp <- function(pos, neg)
     new("PosNegSumExp", pos = pos, neg = neg)
 
-# Accessors
-setGeneric("posRes", function(x) standardGeneric("posRes"))
-setGeneric("negRes", function(x) standardGeneric("negRes"))
+# Accessors — posMode()/negMode() generics defined above.
+setMethod("posMode", "PosNegSumExp", function(x) x@pos)
+setMethod("negMode", "PosNegSumExp", function(x) x@neg)
 
-setMethod("posRes", "PosNegSumExp", function(x) x@pos)
-setMethod("negRes", "PosNegSumExp", function(x) x@neg)
-
-setGeneric("posRes<-", function(x, value) standardGeneric("posRes<-"))
-setGeneric("negRes<-", function(x, value) standardGeneric("negRes<-"))
-
-setReplaceMethod("posRes", "PosNegSumExp", function(x, value) {
+setReplaceMethod("posMode", "PosNegSumExp", function(x, value) {
     x@pos <- value
     x
 })
-setReplaceMethod("negRes", "PosNegSumExp", function(x, value) {
+setReplaceMethod("negMode", "PosNegSumExp", function(x, value) {
     x@neg <- value
     x
 })
@@ -412,4 +409,101 @@ setMethod("show", "PosNegSumExp", function(object) {
         ncol(object@pos), "samples\n")
     cat("  Negative:", nrow(object@neg), "features,",
         ncol(object@neg), "samples\n")
+})
+
+# =============================================================================
+# AnnotationResult — single-mode annotation state container
+# =============================================================================
+#
+# Bundles the three objects that always travel together through the annotation
+# pipeline after rank-1 matching:
+#
+#   matches  — evolving matched data frame (mtched_data)
+#   query    — experimental features extracted from the SummarizedExperiment
+#   database — full lipid database for this ionization mode (all ranks)
+#
+# The database is stored in full (not rank-1 only) so that match_adducts()
+# can filter for rank > 1 entries internally without needing an external arg.
+
+#' @slot matches  data.frame. Matched lipid-feature pairs (evolves at each step).
+#' @slot query    data.frame. Experimental feature table from the SE rowData.
+#' @slot database data.frame. Full lipid database (all ranks) for this mode.
+setClass("AnnotationResult",
+    slots = c(
+        matches  = "data.frame",
+        query    = "data.frame",
+        database = "data.frame"
+    )
+)
+
+#' Create an AnnotationResult object
+#'
+#' @param matches  data.frame of matched lipid-feature pairs.
+#' @param query    data.frame of experimental features.
+#' @param database data.frame of the full lipid database (all ranks).
+#' @return An \code{AnnotationResult} object.
+AnnotationResult <- function(matches, query, database)
+    new("AnnotationResult",
+        matches = matches, query = query, database = database)
+
+setGeneric("annotMatches",  function(x) standardGeneric("annotMatches"))
+setGeneric("annotQuery",    function(x) standardGeneric("annotQuery"))
+setGeneric("annotDatabase", function(x) standardGeneric("annotDatabase"))
+
+setMethod("annotMatches",  "AnnotationResult", function(x) x@matches)
+setMethod("annotQuery",    "AnnotationResult", function(x) x@query)
+setMethod("annotDatabase", "AnnotationResult", function(x) x@database)
+
+setGeneric("annotMatches<-",
+    function(x, value) standardGeneric("annotMatches<-"))
+setReplaceMethod("annotMatches", "AnnotationResult", function(x, value) {
+    x@matches <- value
+    x
+})
+
+setMethod("show", "AnnotationResult", function(object) {
+    cat("AnnotationResult\n")
+    cat("  Matches: ", nrow(object@matches),  " rows\n",   sep = "")
+    cat("  Features:", nrow(object@query),    "\n",         sep = "")
+    cat("  Database:", nrow(object@database), " entries\n", sep = "")
+})
+
+# =============================================================================
+# PosNegAnnotation — dual-mode annotation state container
+# =============================================================================
+#
+# Wraps one AnnotationResult per ionization mode. Functions that accept an
+# AnnotationResult automatically accept a PosNegAnnotation via the inherits()
+# guards in lipid_helpers.R, applying the operation to both modes and
+# returning an updated PosNegAnnotation.
+
+setClass("PosNegAnnotation",
+    slots = c(pos = "AnnotationResult", neg = "AnnotationResult"))
+
+#' Create a dual-mode annotation container
+#'
+#' @param pos An \code{AnnotationResult} for positive ionization mode.
+#' @param neg An \code{AnnotationResult} for negative ionization mode.
+#' @return A \code{PosNegAnnotation} object.
+PosNegAnnotation <- function(pos, neg)
+    new("PosNegAnnotation", pos = pos, neg = neg)
+
+setMethod("posMode", "PosNegAnnotation", function(x) x@pos)
+setMethod("negMode", "PosNegAnnotation", function(x) x@neg)
+
+setReplaceMethod("posMode", "PosNegAnnotation", function(x, value) {
+    x@pos <- value
+    x
+})
+setReplaceMethod("negMode", "PosNegAnnotation", function(x, value) {
+    x@neg <- value
+    x
+})
+
+setMethod("show", "PosNegAnnotation", function(object) {
+    cat("PosNegAnnotation\n")
+    cat("  Positive:", nrow(object@pos@matches), "matches,",
+        nrow(object@pos@database), "db entries\n")
+    cat("  Negative:", nrow(object@neg@matches), "matches,",
+        nrow(object@neg@database), "db entries\n")
 })

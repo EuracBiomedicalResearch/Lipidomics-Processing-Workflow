@@ -352,9 +352,9 @@ rm(.load_mode)
 
 # Wrap both modes in a single dual-mode object (PosNegMsExp until findChromPeaks)
 data <- PosNegMsExp(mse_pos, mse_neg)
-message("✓ Loaded ", length(posExp(data)), " samples (pos) and ",
-        length(negExp(data)), " samples (neg)")
-sampleData(posExp(data))
+message("✓ Loaded ", length(posMode(data)), " samples (pos) and ",
+        length(negMode(data)), " samples (neg)")
+sampleData(posMode(data))
 ```
 
 ```{r smoke-slice}
@@ -364,7 +364,7 @@ sampleData(posExp(data))
 # study samples per sample type, giving a fast but structurally complete run.
 # Both modes are assumed to have the same sample ordering.
 if (isTRUE(SMOKE)) {
-    sd <- sampleData(posExp(data))
+    sd <- sampleData(posMode(data))
     qc_idx   <- which(sd$sample_type == "QC")
     other_types <- unique(sd$sample_type[sd$sample_type != "QC"])
     other_idx <- unlist(lapply(other_types, function(t) {
@@ -372,8 +372,8 @@ if (isTRUE(SMOKE)) {
     }))
     keep_idx <- sort(unique(c(qc_idx, other_idx)))
     data <- filterFile(data, file = keep_idx)
-    message("SMOKE mode: subset to ", length(posExp(data)), " samples (",
-            paste(sampleData(posExp(data))$sample_name, collapse = ", "), ")")
+    message("SMOKE mode: subset to ", length(posMode(data)), " samples (",
+            paste(sampleData(posMode(data))$sample_name, collapse = ", "), ")")
 }
 ```
 
@@ -387,7 +387,7 @@ Create color palettes for visualization. By default, colors are based on
 
 # Create palette for sample_type (same sample types in both modes)
 palette_sample_type <- create_color_palette(
-  posExp(data),
+  posMode(data),
   column = "sample_type",
   custom_colors =
     c("QC" = "#999999",
@@ -411,8 +411,8 @@ print(palette_sample_type)
 #| fig-cap: "Base Peak Chromatogram (BPC) for positive (left) and negative (right) mode"
 
 par(mfrow = c(1, 2))
-plot_bpc(posExp(data), palette = palette_sample_type, main = "BPC - Positive Mode")
-plot_bpc(negExp(data), palette = palette_sample_type, main = "BPC - Negative Mode")
+plot_bpc(posMode(data), palette = palette_sample_type, main = "BPC - Positive Mode")
+plot_bpc(negMode(data), palette = palette_sample_type, main = "BPC - Negative Mode")
 ```
 
 ::: {.callout-important}
@@ -435,8 +435,8 @@ data <- filterRt(data, rt = perMode(pos = RT_FILTER_POS, neg = RT_FILTER_NEG))
 #| fig-cap: "BPC after retention time filtering (positive left, negative right)"
 
 par(mfrow = c(1, 2))
-plot_bpc(posExp(data), palette = palette_sample_type, main = "BPC - Positive (filtered)")
-plot_bpc(negExp(data), palette = palette_sample_type, main = "BPC - Negative (filtered)")
+plot_bpc(posMode(data), palette = palette_sample_type, main = "BPC - Positive (filtered)")
+plot_bpc(negMode(data), palette = palette_sample_type, main = "BPC - Negative (filtered)")
 ```
 
 ## Reference Lipid EICs
@@ -456,8 +456,8 @@ intern_standard_neg <- prepare_reference_lipids(
 )
 
 # Extract EICs for both modes
-eic_is_pos <- extract_is_eics(posExp(data), intern_standard_pos)
-eic_is_neg <- extract_is_eics(negExp(data), intern_standard_neg)
+eic_is_pos <- extract_is_eics(posMode(data), intern_standard_pos)
+eic_is_neg <- extract_is_eics(negMode(data), intern_standard_neg)
 fdata_pos  <- fData(eic_is_pos)
 fdata_neg  <- fData(eic_is_neg)
 
@@ -517,14 +517,14 @@ param_pd
 data <- findChromPeaks(data, param = param_pd, chunkSize = CORES_NB)
 
 # Update EICs with peak detection results for each mode
-eic_is_pos <- extract_is_eics(posExp(data), intern_standard_pos)
+eic_is_pos <- extract_is_eics(posMode(data), intern_standard_pos)
 fData(eic_is_pos) <- fdata_pos
-eic_is_neg <- extract_is_eics(negExp(data), intern_standard_neg)
+eic_is_neg <- extract_is_eics(negMode(data), intern_standard_neg)
 fData(eic_is_neg) <- fdata_neg
 
 # Inline checks and snapshots for both modes
 for (.pol in c("pos", "neg")) {
-    .mse <- if (.pol == "pos") posExp(data) else negExp(data)
+    .mse <- if (.pol == "pos") posMode(data) else negMode(data)
     n_peaks   <- nrow(chromPeaks(.mse))
     n_samples <- length(.mse)
     if (n_peaks == 0L)
@@ -544,7 +544,7 @@ rm(.pol, .mse, n_peaks, n_samples)
 #| tbl-cap: "Chromatographic peaks detected per sample (positive / negative)"
 
 for (.pol in c("pos", "neg")) {
-    .mse <- if (.pol == "pos") posExp(data) else negExp(data)
+    .mse <- if (.pol == "pos") posMode(data) else negMode(data)
     message(.pol, " mode:")
     data.frame(
         sample_name = sampleData(.mse)$sample_name,
@@ -580,7 +580,7 @@ Review the plots in **`r folders_pos$peak_detection`** (positive) and
 #| label: rt-alignment
 
 # Both modes share the same sample structure — use pos mode to derive groups
-QC_samples <- sampleData(posExp(data))$sample_type == "QC"
+QC_samples <- sampleData(posMode(data))$sample_type == "QC"
 
 param_c <- PeakDensityParam(
   sampleGroups = QC_samples,
@@ -609,7 +609,7 @@ data <- adjustRtime(data, param = param_align)
 
 par(mfrow = c(1, 2))
 for (.pol in c("pos", "neg")) {
-    .mse <- if (.pol == "pos") posExp(data) else negExp(data)
+    .mse <- if (.pol == "pos") posMode(data) else negMode(data)
     col_sample <- get_sample_colors(sampleData(.mse)$sample_type, palette_sample_type)
     plotAdjustedRtime(.mse, col = paste0(col_sample, "80"), peakGroupsPch = 1,
                       main = paste("RT alignment -", .pol))
@@ -624,16 +624,16 @@ rm(.pol, .mse, col_sample)
 #| label: apply-alignment
 
 # Snapshot BEFORE applying for both modes
-save_snapshot(adjustedRtime(posExp(data)), "step5_adjrt", "pos", SMOKE)
-save_snapshot(adjustedRtime(negExp(data)), "step5_adjrt", "neg", SMOKE)
+save_snapshot(adjustedRtime(posMode(data)), "step5_adjrt", "pos", SMOKE)
+save_snapshot(adjustedRtime(negMode(data)), "step5_adjrt", "neg", SMOKE)
 
 # Keep raw data for comparison, then apply alignment.
 # Note: applyAdjustedRtime() is not an S4 generic in xcms so it cannot be
 # dispatched on PosNegXcmsExp — call it explicitly on each mode slot.
 data_raw <- dropAdjustedRtime(data)
 data <- PosNegXcmsExp(
-    applyAdjustedRtime(posExp(data)),
-    applyAdjustedRtime(negExp(data))
+    applyAdjustedRtime(posMode(data)),
+    applyAdjustedRtime(negMode(data))
 )
 ```
 
@@ -643,7 +643,7 @@ data <- PosNegXcmsExp(
 #| label: correspondence
 
 # Define sample groups (QCs as NA)
-group_mse <- sampleData(posExp(data))$sample_type
+group_mse <- sampleData(posMode(data))$sample_type
 group_mse[group_mse == "QC"] <- NA
 group_mse <- as.factor(group_mse)
 
@@ -660,7 +660,7 @@ param_cor <- PeakDensityParam(
 data <- groupChromPeaks(data, param = param_cor)
 
 for (.pol in c("pos", "neg")) {
-    .mse <- if (.pol == "pos") posExp(data) else negExp(data)
+    .mse <- if (.pol == "pos") posMode(data) else negMode(data)
     message(.pol, " correspondence: ", nrow(featureDefinitions(.mse)), " features")
     save_snapshot(as.data.frame(featureDefinitions(.mse)),
                   "step6_features", .pol, SMOKE)
@@ -675,8 +675,8 @@ rm(.pol, .mse)
 
 # Capture pre-fill NA rates for both modes
 na_before <- list(
-    pos = sum(is.na(featureValues(posExp(data)))) / length(featureValues(posExp(data))) * 100,
-    neg = sum(is.na(featureValues(negExp(data)))) / length(featureValues(negExp(data))) * 100
+    pos = sum(is.na(featureValues(posMode(data)))) / length(featureValues(posMode(data))) * 100,
+    neg = sum(is.na(featureValues(negMode(data)))) / length(featureValues(negMode(data))) * 100
 )
 
 # Fill missing values in both modes simultaneously
@@ -684,7 +684,7 @@ data <- fillChromPeaks(data, param = ChromPeakAreaParam(), chunkSize = CORES_NB)
 
 # Capture post-fill NA rates, report, and snapshot
 for (.pol in c("pos", "neg")) {
-    .mse     <- if (.pol == "pos") posExp(data) else negExp(data)
+    .mse     <- if (.pol == "pos") posMode(data) else negMode(data)
     na_after <- sum(is.na(featureValues(.mse))) / length(featureValues(.mse)) * 100
     message(.pol, " gap filling: ", round(na_before[[.pol]], 1),
             "% -> ", round(na_after, 1), "% NA")
@@ -712,8 +712,8 @@ rm(.pol, .mse, na_after)
 #| label: extract-results
 
 # Extract per-mode SummarizedExperiment objects
-mse_pos <- posExp(data)
-mse_neg <- negExp(data)
+mse_pos <- posMode(data)
+mse_neg <- negMode(data)
 
 res_pos <- quantify(mse_pos, method = "sum", filled = FALSE)
 assays(res_pos)$raw_filled <- featureValues(mse_pos, method = "sum", filled = TRUE)

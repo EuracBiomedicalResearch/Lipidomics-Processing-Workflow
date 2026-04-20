@@ -1316,23 +1316,23 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
           stop("When 'mse' is a PosNegXcmsExp, 'mtched_data' must be a ",
                "PosNegAnnotation.")
       pos_result <- calculate_isotope_similarity(
-          posExp(mse), annotMatches(posAnnot(mtched_data)),
+          posMode(mse), annotMatches(posMode(mtched_data)),
           polarity             = "pos",
           isopeak_threshold    = isopeak_threshold,
           similarity_threshold = similarity_threshold
       )
       neg_result <- calculate_isotope_similarity(
-          negExp(mse), annotMatches(negAnnot(mtched_data)),
+          negMode(mse), annotMatches(negMode(mtched_data)),
           polarity             = "neg",
           isopeak_threshold    = isopeak_threshold,
           similarity_threshold = similarity_threshold
       )
-      .pos <- posAnnot(mtched_data)
+      .pos <- posMode(mtched_data)
       annotMatches(.pos) <- pos_result$mtched_data
-      posAnnot(mtched_data) <- .pos
-      .neg <- negAnnot(mtched_data)
+      posMode(mtched_data) <- .pos
+      .neg <- negMode(mtched_data)
       annotMatches(.neg) <- neg_result$mtched_data
-      negAnnot(mtched_data) <- .neg
+      negMode(mtched_data) <- .neg
       return(list(
           annotation  = mtched_data,
           iso_results = list(pos = pos_result, neg = neg_result)
@@ -1432,8 +1432,8 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
 #' @return Filtered \code{mtched_data}.
 resolve_annotation_ambiguities <- function(mtched_data) {
     if (inherits(mtched_data, "PosNegAnnotation")) {
-        posAnnot(mtched_data) <- resolve_annotation_ambiguities(posAnnot(mtched_data))
-        negAnnot(mtched_data) <- resolve_annotation_ambiguities(negAnnot(mtched_data))
+        posMode(mtched_data) <- resolve_annotation_ambiguities(posMode(mtched_data))
+        negMode(mtched_data) <- resolve_annotation_ambiguities(negMode(mtched_data))
         return(mtched_data)
     }
     if (inherits(mtched_data, "AnnotationResult")) {
@@ -1480,8 +1480,8 @@ resolve_annotation_ambiguities <- function(mtched_data) {
 #' @return Filtered mtched_data with resolved isomers
 resolve_sm_isomers <- function(mtched_data) {
   if (inherits(mtched_data, "PosNegAnnotation")) {
-      posAnnot(mtched_data) <- resolve_sm_isomers(posAnnot(mtched_data))
-      negAnnot(mtched_data) <- resolve_sm_isomers(negAnnot(mtched_data))
+      posMode(mtched_data) <- resolve_sm_isomers(posMode(mtched_data))
+      negMode(mtched_data) <- resolve_sm_isomers(negMode(mtched_data))
       return(mtched_data)
   }
   if (inherits(mtched_data, "AnnotationResult")) {
@@ -1570,15 +1570,15 @@ apply_volume_correction <- function(se, sample_pattern_factors,
                                     new_assay_name = "raw_corr") {
   if (inherits(se, "PosNegSumExp")) {
       if (missing(sample_pattern_factors)) {
-          posRes(se) <- apply_volume_correction(posRes(se),
+          posMode(se) <- apply_volume_correction(posMode(se),
               assay_name = assay_name, new_assay_name = new_assay_name)
-          negRes(se) <- apply_volume_correction(negRes(se),
+          negMode(se) <- apply_volume_correction(negMode(se),
               assay_name = assay_name, new_assay_name = new_assay_name)
       } else {
-          posRes(se) <- apply_volume_correction(posRes(se),
+          posMode(se) <- apply_volume_correction(posMode(se),
               sample_pattern_factors,
               assay_name = assay_name, new_assay_name = new_assay_name)
-          negRes(se) <- apply_volume_correction(negRes(se),
+          negMode(se) <- apply_volume_correction(negMode(se),
               sample_pattern_factors,
               assay_name = assay_name, new_assay_name = new_assay_name)
       }
@@ -1617,10 +1617,10 @@ normalize_by_is <- function(se, input_assay = "corr_filled",
                             is_col = "target_IS_norm",
                             lipid_col = "target_lipid.name") {
   if (inherits(se, "PosNegSumExp")) {
-      posRes(se) <- normalize_by_is(posRes(se),
+      posMode(se) <- normalize_by_is(posMode(se),
           input_assay = input_assay, output_assay = output_assay,
           is_col = is_col, lipid_col = lipid_col)
-      negRes(se) <- normalize_by_is(negRes(se),
+      negMode(se) <- normalize_by_is(negMode(se),
           input_assay = input_assay, output_assay = output_assay,
           is_col = is_col, lipid_col = lipid_col)
       return(se)
@@ -1671,9 +1671,9 @@ normalize_by_is <- function(se, input_assay = "corr_filled",
 filter_by_qc_rsd <- function(se, threshold = 0.3, qc_col = "sample_type",
                              qc_value = "QC") {
   if (inherits(se, "PosNegSumExp")) {
-      posRes(se) <- filter_by_qc_rsd(posRes(se),
+      posMode(se) <- filter_by_qc_rsd(posMode(se),
           threshold = threshold, qc_col = qc_col, qc_value = qc_value)
-      negRes(se) <- filter_by_qc_rsd(negRes(se),
+      negMode(se) <- filter_by_qc_rsd(negMode(se),
           threshold = threshold, qc_col = qc_col, qc_value = qc_value)
       return(se)
   }
@@ -1708,15 +1708,15 @@ annotate_features <- function(se, annotation,
 
     if (inherits(se, "PosNegSumExp")) {
         if (inherits(annotation, "PosNegAnnotation")) {
-            posRes(se) <- annotate_features(posRes(se), posAnnot(annotation),
+            posMode(se) <- annotate_features(posMode(se), posMode(annotation),
                                             annotation_cols)
-            negRes(se) <- annotate_features(negRes(se), negAnnot(annotation),
+            negMode(se) <- annotate_features(negMode(se), negMode(annotation),
                                             annotation_cols)
         } else if (is.list(annotation) &&
                    all(c("pos", "neg") %in% names(annotation))) {
-            posRes(se) <- annotate_features(posRes(se), annotation[["pos"]],
+            posMode(se) <- annotate_features(posMode(se), annotation[["pos"]],
                                             annotation_cols)
-            negRes(se) <- annotate_features(negRes(se), annotation[["neg"]],
+            negMode(se) <- annotate_features(negMode(se), annotation[["neg"]],
                                             annotation_cols)
         } else {
             stop("When 'se' is a PosNegSumExp, 'annotation' must be a ",
@@ -2057,10 +2057,10 @@ match_adducts <- function(mtched_data,
                           verbose = TRUE) {
 
   if (inherits(mtched_data, "PosNegAnnotation")) {
-      posAnnot(mtched_data) <- match_adducts(posAnnot(mtched_data),
+      posMode(mtched_data) <- match_adducts(posMode(mtched_data),
                                               ppm = ppm, rt_tol = rt_tol,
                                               verbose = verbose)
-      negAnnot(mtched_data) <- match_adducts(negAnnot(mtched_data),
+      negMode(mtched_data) <- match_adducts(negMode(mtched_data),
                                               ppm = ppm, rt_tol = rt_tol,
                                               verbose = verbose)
       return(mtched_data)
