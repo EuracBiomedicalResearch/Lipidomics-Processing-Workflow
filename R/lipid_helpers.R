@@ -1206,8 +1206,15 @@ prepare_reference_lipids <- function(file_path, rt_window_left = 30,
 #'
 #' @param mse MsExperiment object
 #' @param intern_standard Prepared internal standard data frame
+#' @param sample_subset Optional logical/integer/character vector to subset
+#'   samples before chromatogram extraction. Defaults to NULL (all samples).
+#'   Useful to speed up iteration when tuning rt_window_left / rt_window_right
+#'   on large datasets (e.g. plot only QCs).
 #' @return XChromatograms object with EIC data
-extract_is_eics <- function(mse, intern_standard) {
+extract_is_eics <- function(mse, intern_standard, sample_subset = NULL) {
+  if (!is.null(sample_subset)) {
+    mse <- mse[, sample_subset]
+  }
   eic_is <- chromatogram(
     mse,
     rt = as.matrix(intern_standard[, c("rtmin", "rtmax")]),

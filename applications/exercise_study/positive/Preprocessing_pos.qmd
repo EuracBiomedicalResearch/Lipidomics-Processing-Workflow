@@ -329,11 +329,28 @@ intern_standard <- prepare_reference_lipids(
   rt_window_right = ifelse(POLARITY == "pos", 20, 20)#it was 15 20
 )
 
-eic_is <- extract_is_eics(mse, intern_standard)
+eic_sample_subset <- sampleData(mse)$sample_type == "QC"
+
+eic_is <- extract_is_eics(mse, intern_standard,
+                          sample_subset = eic_sample_subset)
 fdata <- fData(eic_is)
 
 kable(intern_standard[, c("short_name", "mz", "RT")], format = "pipe")
 ```
+
+::: {.callout-note}
+## Subsetting EICs to speed up RT-window tuning
+
+`extract_is_eics()` accepts an optional `sample_subset` argument to restrict
+the chromatogram extraction to a subset of samples. This is useful when
+iterating on `rt_window_left` / `rt_window_right` on large datasets, as
+extracting EICs for all samples can be slow.
+
+Here we demonstrate the feature by plotting EICs **only for QC samples**
+(`eic_sample_subset <- sampleData(mse)$sample_type == "QC"`). Any vector
+accepted by `mse[, i]` subsetting works — logical, integer index, or names.
+Set `sample_subset = NULL` (or omit) to use all samples.
+:::
 
 ```{r plot-is-eics}
 #| label: plot-is-eics
@@ -376,7 +393,8 @@ param_pd
 
 mse <- findChromPeaks(mse, param = param_pd, chunkSize = CORES_NB)
 
-eic_is <- extract_is_eics(mse, intern_standard)
+eic_is <- extract_is_eics(mse, intern_standard,
+                          sample_subset = eic_sample_subset)
 fData(eic_is) <- fdata
 ```
 

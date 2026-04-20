@@ -337,6 +337,23 @@ fdata <- fData(eic_is)
 kable(intern_standard[, c("short_name", "mz", "RT")], format = "pipe")
 ```
 
+::: {.callout-note}
+## Subsetting EICs to speed up RT-window tuning
+
+`extract_is_eics()` accepts an optional `sample_subset` argument to restrict
+the chromatogram extraction to a subset of samples. This is useful when
+iterating on `rt_window_left` / `rt_window_right` on large datasets.
+
+Pass any vector accepted by `mse[, i]` subsetting — for example:
+
+```r
+qc_idx <- sampleData(mse)$sample_type == "QC"
+eic_is <- extract_is_eics(mse, intern_standard, sample_subset = qc_idx)
+```
+
+The pilot study is small enough that we use the default (all samples).
+:::
+
 ```{r plot-is-eics}
 #| label: plot-is-eics
 
