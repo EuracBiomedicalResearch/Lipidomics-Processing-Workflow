@@ -146,12 +146,7 @@ mse_save_path <- file.path(folders$objects,
 res_save_path <- file.path(folders$objects,
                            paste0(STUDY_ID, "_preprocessed_res_", POLARITY))
 
-# Load mse: .RData file (from SQLite workflow) or Alabaster directory
-if (file.exists(paste0(mse_save_path, ".RData"))) {
-  load(paste0(mse_save_path, ".RData"))
-} else {
-  mse <- readMsObject(XcmsExperiment(), AlabasterParam(path = mse_save_path))
-}
+mse <- readMsObject(XcmsExperiment(), AlabasterParam(path = mse_save_path))
 res <- readObject(res_save_path)
 
 # Reload reference lipids and EICs

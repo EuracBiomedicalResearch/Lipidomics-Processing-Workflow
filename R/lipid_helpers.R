@@ -1093,6 +1093,10 @@ plot_eic_batch <- function(eic_object,
          col = col_alpha)
     grid()
     abline(v = fdata$rt[i], col = "red", lty = 3)
+    if (!is.null(palette)) {
+      legend("topright", col = palette, legend = names(palette),
+             lty = 1, lwd = 2, cex = 0.6, bty = "n")
+    }
     dev.off()
   }
 
