@@ -1133,6 +1133,25 @@ plot_isotope_patterns <- function(mtched_data, iso_spectra, theoretical_spectra,
   invisible(NULL)
 }
 
+#' PCA plot of an abundance matrix colored by sample type
+#'
+#' Log2-transforms, scales, runs prcomp and returns a ggplot.
+#'
+#' @param mat Numeric matrix (features x samples) of abundances
+#' @param sample_type Character vector of sample types, length = ncol(mat)
+#' @param palette Named color palette for sample_type values
+#' @param title Plot title
+#' @return A ggplot object
+plot_pca <- function(mat, sample_type, palette, title) {
+  vals <- mat |> log2() |> t() |> scale(center = TRUE, scale = TRUE)
+  pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
+  vals_st <- cbind(vals, sample_type = sample_type)
+  ggplot2::autoplot(pca_res, data = vals_st, colour = "sample_type", scale = 0) +
+    ggplot2::scale_color_manual(values = palette) +
+    ggplot2::theme_minimal() +
+    ggplot2::ggtitle(title)
+}
+
 #' Plot lipid distribution donut chart
 #'
 #' @param category_counts Table of lipid category counts

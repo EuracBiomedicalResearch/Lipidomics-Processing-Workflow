@@ -563,19 +563,24 @@ annotated_res <- filter_by_qc_rsd(annotated_res, threshold = RSD_THRESHOLD)
 
 ```{r pca-plot}
 #| label: pca-plot
-#| fig-cap: "PCA of normalized data colored by sample type"
+#| fig-cap: "PCA before and after IS normalization, colored by sample type"
 
-# PCA analysis
-vals <- assay(annotated_res, "ISnorm_filled_imputed") |>
-  log2() |> t() |> scale(center = TRUE, scale = TRUE)
+p_before <- plot_pca(assay(annotated_res, "corr_filled_imputed"),
+                     sample_type = annotated_res$sample_type,
+                     palette = palette_sample_type,
+                     title = "PCA - Before Normalization")
+p_after  <- plot_pca(assay(annotated_res, "ISnorm_filled_imputed"),
+                     sample_type = annotated_res$sample_type,
+                     palette = palette_sample_type,
+                     title = "PCA - After Normalization")
 
-pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
+ggsave(file.path(folders$figures, paste0("PCA_before_normalization_", POLARITY, ".png")),
+       p_before, width = 7, height = 5, dpi = 300)
+ggsave(file.path(folders$figures, paste0("PCA_after_normalization_", POLARITY, ".png")),
+       p_after, width = 7, height = 5, dpi = 300)
 
-vals_st <- cbind(vals, sample_type = annotated_res$sample_type)
-autoplot(pca_res, data = vals_st, colour = 'sample_type', scale = 0) +
-  scale_color_manual(values = palette_sample_type) +
-  theme_minimal() +
-  ggtitle("PCA - Normalized Data")
+p_before
+p_after
 ```
 
 ```{r rla-plot}
