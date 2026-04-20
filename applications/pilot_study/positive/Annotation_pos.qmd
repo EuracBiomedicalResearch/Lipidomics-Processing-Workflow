@@ -81,12 +81,6 @@ ISOPEAK_SIM_THRESHOLD <- 0.78
 # QC filtering
 RSD_THRESHOLD <- 0.3
 
-# Volume correction factors (specific to pilot study)
-VOLUME_FACTORS <- list(
-  "W" = 2.5,    # W-DBS: smaller volume injected
-  "P" = 1.08    # Plasma: slight adjustment
-)
-
 # Expected sample types (for validation and CV summary)
 EXPECTED_SAMPLE_TYPES <- c("QC", "M-VAMS", "W-DBS", "C-qDBS", "Plasma")
 
@@ -481,10 +475,21 @@ plot_lipid_donut(counts, title = "Annotated Lipid Distribution")
 
 ## Volume Correction
 
+::: {.callout-warning}
+Volume correction is **specific to the pilot study** because sample
+matrices (W-DBS, Plasma, …) were injected at different volumes. This
+step should **not** be applied in a normal setup where every sample
+shares the same injection volume.
+:::
+
 ```{r volume-correction}
 #| label: volume-correction
 
-# Apply volume correction
+VOLUME_FACTORS <- list(
+  "W" = 2.5,    # W-DBS: smaller volume injected
+  "P" = 1.08    # Plasma: slight adjustment
+)
+
 res <- apply_volume_correction(res, VOLUME_FACTORS,
                                assay_name = "raw",
                                new_assay_name = "raw_corr")

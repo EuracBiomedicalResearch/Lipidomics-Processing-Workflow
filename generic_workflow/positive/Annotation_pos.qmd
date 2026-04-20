@@ -77,11 +77,6 @@ ISOPEAK_SIM_THRESHOLD <- 0.78  # minimum isotope pattern similarity
 # QC filtering
 RSD_THRESHOLD <- 0.3   # 30% RSD threshold for QC filtering
 
-# Volume correction factors (study-specific, set per sample type pattern)
-VOLUME_FACTORS <- list()
-# Example: list("W" = 2.5, "P" = 1.08)
-# Each entry: samples matching the pattern get multiplied by the factor
-
 # Expected sample types (for validation and CV summary)
 EXPECTED_SAMPLE_TYPES <- c("QC")  # e.g., c("QC", "Treatment", "Control")
 
@@ -469,20 +464,6 @@ plot_lipid_donut(counts, title = "Annotated Lipid Distribution")
 
 # Data Normalization
 
-## Volume Correction
-
-```{r volume-correction}
-#| label: volume-correction
-
-# Apply volume correction
-res <- apply_volume_correction(res, VOLUME_FACTORS,
-                               assay_name = "raw",
-                               new_assay_name = "raw_corr")
-res <- apply_volume_correction(res, VOLUME_FACTORS,
-                               assay_name = "raw_filled",
-                               new_assay_name = "corr_filled")
-```
-
 ## Create Annotated Result Object
 
 ```{r annotated-res}
@@ -511,12 +492,8 @@ We impute here only to perfrom PCA plotting.
 ```{r imputation}
 #| label: imputation
 
-# Impute missing values
 tmp <- apply(assay(annotated_res, "raw_filled"), MARGIN = 1, na_unidis)
 assays(annotated_res)$raw_filled_imputed <- t(tmp)
-
-tmp <- apply(assay(annotated_res, "corr_filled"), MARGIN = 1, na_unidis)
-assays(annotated_res)$corr_filled_imputed <- t(tmp)
 ```
 
 ## Internal Standard Normalization
@@ -527,7 +504,7 @@ assays(annotated_res)$corr_filled_imputed <- t(tmp)
 # Normalize by internal standards
 annotated_res <- normalize_by_is(
   annotated_res,
-  input_assay = "corr_filled",
+  input_assay = "raw_filled",
   output_assay = "ISnorm_filled",
   is_col = "target_IS_norm",
   lipid_col = "target_lipid.name"
@@ -560,7 +537,7 @@ annotated_res <- filter_by_qc_rsd(annotated_res, threshold = RSD_THRESHOLD)
 #| label: pca-plot
 #| fig-cap: "PCA before and after IS normalization, colored by sample type"
 
-p_before <- plot_pca(assay(annotated_res, "corr_filled_imputed"),
+p_before <- plot_pca(assay(annotated_res, "raw_filled_imputed"),
                      sample_type = annotated_res$sample_type,
                      palette = palette_sample_type,
                      title = "PCA - Before Normalization")
