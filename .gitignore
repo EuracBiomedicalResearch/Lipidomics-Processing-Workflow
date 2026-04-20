@@ -49,6 +49,7 @@ objects.backup/
 seq_neg.xlsx.backup
 tests/snapshots_dev/
 tests/snapshots_annotation_dev/
+tests/snapshots_merge_dev/
 tests/snapshots.backup/
 unifying_pos_and_neg.md
 

@@ -24,7 +24,7 @@ knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 6)
 ::: {.callout-tip}
 ## Study-specific instance
 This is a configured copy of `generic_workflow/POS_NEG_merge.qmd` for the
-**pilot study**. Run after completing `Annotation_pos.qmd` and `Annotation_neg.qmd`.
+**pilot study**. Run after completing `Annotation.qmd`.
 :::
 
 This document merges positive and negative mode annotation results into a
@@ -48,15 +48,26 @@ single `SummarizedExperiment`. It handles:
 # Study identifier: must match what was used in the annotation workflow
 STUDY_ID <- "pilot"
 
+# Object prefix: must match SAVE_PREFIX used in Annotation.qmd
+SAVE_PREFIX <- "posNegExp"
+
 # Paths to the final result objects (from Annotation.qmd)
-RES_POS_PATH <- file.path("positive", "objects", paste0(STUDY_ID, "_final_res_pos"))
-RES_NEG_PATH <- file.path("negative", "objects", paste0(STUDY_ID, "_final_res_neg"))
+RES_POS_PATH <- file.path("positive", "objects",
+                           paste0(SAVE_PREFIX, "_final_res_pos"))
+RES_NEG_PATH <- file.path("negative", "objects",
+                           paste0(SAVE_PREFIX, "_final_res_neg"))
 
 # Output path for combined result
 RES_COMBINED_PATH <- file.path("objects", paste0(STUDY_ID, "_res_combined"))
 
 # RT difference threshold for duplicate resolution (seconds)
 RT_DIFF_THRESHOLD <- 30
+
+# Regression snapshot directory (relative to project root).
+# "tests/snapshots_merge"     → golden baselines (committed, never overwrite)
+# "tests/snapshots_merge_dev" → written during active development / refactor
+PROJECT_ROOT <- "../.."
+SNAPSHOT_DIR <- file.path(PROJECT_ROOT, "tests/snapshots_merge_dev")
 ```
 
 # Setup
@@ -69,6 +80,8 @@ library(UpSetR)
 library(ggfortify)
 library(ggplot2)
 library(RColorBrewer)
+source(file.path(PROJECT_ROOT, "R/pos_neg_exp.R"))
+source(file.path(PROJECT_ROOT, "R/snapshot_helpers.R"))
 ```
 
 # Load Results
@@ -80,27 +93,35 @@ res_neg <- readObject(RES_NEG_PATH)
 
 cat("Positive mode:", nrow(res_pos), "features x", ncol(res_pos), "samples\n")
 cat("Negative mode:", nrow(res_neg), "features x", ncol(res_neg), "samples\n")
+
+res_both <- PosNegSumExp(res_pos, res_neg)
 ```
 
 # Add Ionization Mode
 
 ```{r}
 #| label: add-mode
-rowData(res_pos)$ionization_mode <- "positive"
-rowData(res_neg)$ionization_mode <- "negative"
+rowData(posMode(res_both))$ionization_mode <- "positive"
+rowData(negMode(res_both))$ionization_mode <- "negative"
 ```
 
 # Align Samples
 
 ```{r}
 #| label: align-samples
-pos_order <- sub("_pos\\.mzML$", "", colnames(res_pos))
-neg_order <- sub("_neg\\.mzML$", "", colnames(res_neg))
+pos_order <- sub("_pos\\.mzML$", "", colnames(posMode(res_both)))
+neg_order <- sub("_neg\\.mzML$", "", colnames(negMode(res_both)))
 
 neg_reorder_idx <- match(pos_order, neg_order)
-res_neg <- res_neg[, neg_reorder_idx]
+negMode(res_both) <- negMode(res_both)[, neg_reorder_idx]
 
-stopifnot(all(pos_order == sub("_neg\\.mzML$", "", colnames(res_neg))))
+stopifnot(all(pos_order == sub("_neg\\.mzML$", "", colnames(negMode(res_both)))))
+
+save_snapshot(
+    data.frame(pos = colnames(posMode(res_both)),
+               neg = colnames(negMode(res_both))),
+    "merge_aligned", "both"
+)
 ```
 
 # Resolve Duplicate Lipids
@@ -108,27 +129,27 @@ stopifnot(all(pos_order == sub("_neg\\.mzML$", "", colnames(res_neg))))
 ```{r}
 #| label: find-duplicates
 common_lipids <- intersect(
-    rowData(res_pos)$target_lipid_name_unique,
-    rowData(res_neg)$target_lipid_name_unique
+    rowData(posMode(res_both))$target_lipid_name_unique,
+    rowData(negMode(res_both))$target_lipid_name_unique
 )
 
 cat("Number of common lipids:", length(common_lipids), "\n")
 
 comparison_df <- data.frame(
     lipid_name_unique = common_lipids,
-    pos_idx = match(common_lipids, rowData(res_pos)$target_lipid_name_unique),
-    neg_idx = match(common_lipids, rowData(res_neg)$target_lipid_name_unique)
+    pos_idx = match(common_lipids, rowData(posMode(res_both))$target_lipid_name_unique),
+    neg_idx = match(common_lipids, rowData(negMode(res_both))$target_lipid_name_unique)
 )
 
 comparison_df$pos_mean_abundance <- sapply(comparison_df$pos_idx, function(i) {
-    mean(assay(res_pos, "ISnorm_filled_imputed")[i, ], na.rm = TRUE)
+    mean(assay(posMode(res_both), "ISnorm_filled_imputed")[i, ], na.rm = TRUE)
 })
 comparison_df$neg_mean_abundance <- sapply(comparison_df$neg_idx, function(i) {
-    mean(assay(res_neg, "ISnorm_filled_imputed")[i, ], na.rm = TRUE)
+    mean(assay(negMode(res_both), "ISnorm_filled_imputed")[i, ], na.rm = TRUE)
 })
 
-comparison_df$pos_rt <- rowData(res_pos)$rtmed[comparison_df$pos_idx]
-comparison_df$neg_rt <- rowData(res_neg)$rtmed[comparison_df$neg_idx]
+comparison_df$pos_rt <- rowData(posMode(res_both))$rtmed[comparison_df$pos_idx]
+comparison_df$neg_rt <- rowData(negMode(res_both))$rtmed[comparison_df$neg_idx]
 comparison_df$rt_diff <- abs(comparison_df$pos_rt - comparison_df$neg_rt)
 comparison_df$rt_similar <- comparison_df$rt_diff < RT_DIFF_THRESHOLD
 
@@ -143,6 +164,8 @@ summary(comparison_df$rt_diff)
 cat("\nLipids with dissimilar RT (kept in both modes):\n")
 comparison_df[!comparison_df$rt_similar,
               c("lipid_name_unique", "pos_rt", "neg_rt", "rt_diff")]
+
+save_snapshot(comparison_df, "merge_duplicates", "both")
 ```
 
 ```{r}
@@ -157,14 +180,17 @@ neg_remove_idx <- comparison_df$neg_idx[
 cat("Removing", length(pos_remove_idx), "duplicates from positive mode\n")
 cat("Removing", length(neg_remove_idx), "duplicates from negative mode\n")
 
-res_pos_filtered <- res_pos[-pos_remove_idx, ]
-res_neg_filtered <- res_neg[-neg_remove_idx, ]
+posMode(res_both) <- posMode(res_both)[-pos_remove_idx, ]
+negMode(res_both) <- negMode(res_both)[-neg_remove_idx, ]
 ```
 
 # Combine
 
 ```{r}
 #| label: combine-results
+res_pos_filtered <- posMode(res_both)
+res_neg_filtered <- negMode(res_both)
+
 colnames(res_pos_filtered) <- sub("_pos\\.mzML$", "", colnames(res_pos_filtered))
 colnames(res_neg_filtered) <- sub("_neg\\.mzML$", "", colnames(res_neg_filtered))
 
@@ -186,6 +212,13 @@ res_combined <- rbind(res_pos_filtered, res_neg_filtered)
 cat("Combined dataset:", nrow(res_combined), "features x", ncol(res_combined), "samples\n")
 cat("Features from positive mode:", sum(rowData(res_combined)$ionization_mode == "positive"), "\n")
 cat("Features from negative mode:", sum(rowData(res_combined)$ionization_mode == "negative"), "\n")
+
+save_snapshot(
+    as.data.frame(rowData(res_combined)[,
+        c("ionization_mode", "target_lipid_name_unique",
+          "target_LIPID.CATEGORY..ABBREV.")]),
+    "merge_combined", "both"
+)
 ```
 
 # Save
