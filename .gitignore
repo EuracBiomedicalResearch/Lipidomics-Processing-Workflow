@@ -1,5 +1,7 @@
 .Rproj.user
+.Rhistory
 *.RData
+~$*
 *.png
 *.html
 *.pdf

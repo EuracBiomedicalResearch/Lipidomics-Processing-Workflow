@@ -1093,6 +1093,10 @@ plot_eic_batch <- function(eic_object,
          col = col_alpha)
     grid()
     abline(v = fdata$rt[i], col = "red", lty = 3)
+    if (!is.null(palette)) {
+      legend("topright", col = palette, legend = names(palette),
+             lty = 1, lwd = 2, cex = 0.6, bty = "n")
+    }
     dev.off()
   }
 
@@ -1127,6 +1131,25 @@ plot_isotope_patterns <- function(mtched_data, iso_spectra, theoretical_spectra,
 
   message("✓ Saved ", nrow(mtched_data), " isotope pattern plots to: ", output_dir)
   invisible(NULL)
+}
+
+#' PCA plot of an abundance matrix colored by sample type
+#'
+#' Log2-transforms, scales, runs prcomp and returns a ggplot.
+#'
+#' @param mat Numeric matrix (features x samples) of abundances
+#' @param sample_type Character vector of sample types, length = ncol(mat)
+#' @param palette Named color palette for sample_type values
+#' @param title Plot title
+#' @return A ggplot object
+plot_pca <- function(mat, sample_type, palette, title) {
+  vals <- mat |> log2() |> t() |> scale(center = TRUE, scale = TRUE)
+  pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
+  vals_st <- cbind(vals, sample_type = sample_type)
+  ggplot2::autoplot(pca_res, data = vals_st, colour = "sample_type", scale = 0) +
+    ggplot2::scale_color_manual(values = palette) +
+    ggplot2::theme_minimal() +
+    ggplot2::ggtitle(title)
 }
 
 #' Plot lipid distribution donut chart
@@ -1183,8 +1206,15 @@ prepare_reference_lipids <- function(file_path, rt_window_left = 30,
 #'
 #' @param mse MsExperiment object
 #' @param intern_standard Prepared internal standard data frame
+#' @param sample_subset Optional logical/integer/character vector to subset
+#'   samples before chromatogram extraction. Defaults to NULL (all samples).
+#'   Useful to speed up iteration when tuning rt_window_left / rt_window_right
+#'   on large datasets (e.g. plot only QCs).
 #' @return XChromatograms object with EIC data
-extract_is_eics <- function(mse, intern_standard) {
+extract_is_eics <- function(mse, intern_standard, sample_subset = NULL) {
+  if (!is.null(sample_subset)) {
+    mse <- mse[, sample_subset]
+  }
   eic_is <- chromatogram(
     mse,
     rt = as.matrix(intern_standard[, c("rtmin", "rtmax")]),
