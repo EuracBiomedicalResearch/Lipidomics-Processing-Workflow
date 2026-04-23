@@ -74,6 +74,7 @@ library(UpSetR)
 library(ggfortify)
 library(ggplot2)
 library(RColorBrewer)
+library(writexl)
 ```
 
 # Load Results
@@ -326,6 +327,40 @@ ggplot(feature_df, aes(x = PC1, y = PC2, color = ionization_mode)) +
     scale_color_manual(values = c("positive" = "#e41a1c", "negative" = "#377eb8")) +
     labs(title = "PCA of features colored by ionization mode") +
     theme_bw()
+```
+
+# Export Annotated Compounds
+
+```{r}
+#| label: export-annotated-xlsx
+
+annot_cols <- intersect(
+    c("target_lipid.name", "target_lipid_name_unique",
+      "target_LIPID.CATEGORY..ABBREV.", "target_LIPID.SUBCLASS..ABBREV.",
+      "target_Adduct", "target_IS_norm", "ionization_mode",
+      "mzmed", "rtmed"),
+    colnames(rowData(res_combined))
+)
+
+annotation_df <- data.frame(
+    feature_id = rownames(res_combined),
+    as.data.frame(rowData(res_combined)[, annot_cols, drop = FALSE]),
+    check.names = FALSE,
+    stringsAsFactors = FALSE
+)
+
+abundance_df <- as.data.frame(
+    assay(res_combined, "ISnorm_filled_imputed"),
+    check.names = FALSE
+)
+
+export_df <- cbind(annotation_df, abundance_df)
+
+xlsx_path <- file.path("objects",
+                       paste0(STUDY_ID, "_annotated_compounds_abundances.xlsx"))
+dir.create(dirname(xlsx_path), recursive = TRUE, showWarnings = FALSE)
+writexl::write_xlsx(export_df, path = xlsx_path)
+cat("Saved annotated compound abundances to:", xlsx_path, "\n")
 ```
 
 ---
