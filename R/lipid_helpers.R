@@ -1202,6 +1202,61 @@ prepare_reference_lipids <- function(file_path, rt_window_left = 30,
   return(intern_standard)
 }
 
+#' Validate LRS subclass coverage against the lipid database
+#'
+#' Checks that every lipid subclass present in the lipid database has at
+#' least one entry in the Lipid Reference Set (LRS). Emits a warning listing
+#' any subclasses that are not represented in the LRS.
+#'
+#' Note: this is a straight set-difference on the raw subclass strings. If
+#' the LRS and database use different vocabularies for the same subclass
+#' (e.g. "LysoPC" vs "LPC"), harmonise them before calling this function or
+#' pass the appropriate column names.
+#'
+#' @param intern_standard Data frame returned by `prepare_reference_lipids()`.
+#' @param lipid_database Data frame returned by `prepare_lipid_database()`.
+#' @param lrs_subclass_col Column in `intern_standard` holding the subclass
+#'   (default: "type").
+#' @param db_subclass_col Column in `lipid_database` holding the subclass
+#'   (default: "LIPID.SUBCLASS..ABBREV.").
+#' @return Character vector of uncovered subclasses (invisibly); empty if
+#'   every database subclass is represented in the LRS.
+validate_lrs_coverage <- function(intern_standard,
+                                  lipid_database,
+                                  lrs_subclass_col = "type",
+                                  db_subclass_col = "LIPID.SUBCLASS..ABBREV.") {
+  if (!lrs_subclass_col %in% colnames(intern_standard)) {
+    stop("LRS subclass column '", lrs_subclass_col,
+         "' not found in intern_standard. Available: ",
+         paste(colnames(intern_standard), collapse = ", "))
+  }
+  if (!db_subclass_col %in% colnames(lipid_database)) {
+    stop("Database subclass column '", db_subclass_col,
+         "' not found in lipid_database. Available: ",
+         paste(colnames(lipid_database), collapse = ", "))
+  }
+
+  db_subclasses <- unique(lipid_database[[db_subclass_col]])
+  db_subclasses <- db_subclasses[!is.na(db_subclasses) & db_subclasses != ""]
+  lrs_subclasses <- unique(intern_standard[[lrs_subclass_col]])
+  lrs_subclasses <- lrs_subclasses[!is.na(lrs_subclasses) & lrs_subclasses != ""]
+
+  missing <- setdiff(db_subclasses, lrs_subclasses)
+
+  if (length(missing) > 0) {
+    warning("LRS is missing at least one lipid for ", length(missing),
+            " subclass(es) present in the lipid database: ",
+            paste(missing, collapse = ", "),
+            "\n  Add an internal standard covering each uncovered subclass ",
+            "to the LRS Excel, or harmonise the subclass vocabularies.")
+  } else {
+    message("✓ LRS covers all ", length(db_subclasses),
+            " subclasses in the lipid database")
+  }
+
+  invisible(missing)
+}
+
 #' Extract EICs for internal standards
 #'
 #' @param mse MsExperiment object
