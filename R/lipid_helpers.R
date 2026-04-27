@@ -1213,7 +1213,7 @@ prepare_reference_lipids <- function(file_path, rt_window_left = 30,
 #' @return XChromatograms object with EIC data
 extract_is_eics <- function(mse, intern_standard, sample_subset = NULL) {
   if (!is.null(sample_subset)) {
-    mse <- mse[, sample_subset]
+    mse <- mse[sample_subset]
   }
   eic_is <- chromatogram(
     mse,
