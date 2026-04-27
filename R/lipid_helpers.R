@@ -1202,6 +1202,61 @@ prepare_reference_lipids <- function(file_path, rt_window_left = 30,
   return(intern_standard)
 }
 
+#' Validate LRS subclass coverage against the lipid database
+#'
+#' Checks that every lipid subclass present in the lipid database has at
+#' least one entry in the Lipid Reference Set (LRS). Emits a warning listing
+#' any subclasses that are not represented in the LRS.
+#'
+#' Note: this is a straight set-difference on the raw subclass strings. If
+#' the LRS and database use different vocabularies for the same subclass
+#' (e.g. "LysoPC" vs "LPC"), harmonise them before calling this function or
+#' pass the appropriate column names.
+#'
+#' @param intern_standard Data frame returned by `prepare_reference_lipids()`.
+#' @param lipid_database Data frame returned by `prepare_lipid_database()`.
+#' @param lrs_subclass_col Column in `intern_standard` holding the subclass
+#'   (default: "type").
+#' @param db_subclass_col Column in `lipid_database` holding the subclass
+#'   (default: "LIPID.SUBCLASS..ABBREV.").
+#' @return Character vector of uncovered subclasses (invisibly); empty if
+#'   every database subclass is represented in the LRS.
+validate_lrs_coverage <- function(intern_standard,
+                                  lipid_database,
+                                  lrs_subclass_col = "type",
+                                  db_subclass_col = "LIPID.SUBCLASS..ABBREV.") {
+  if (!lrs_subclass_col %in% colnames(intern_standard)) {
+    stop("LRS subclass column '", lrs_subclass_col,
+         "' not found in intern_standard. Available: ",
+         paste(colnames(intern_standard), collapse = ", "))
+  }
+  if (!db_subclass_col %in% colnames(lipid_database)) {
+    stop("Database subclass column '", db_subclass_col,
+         "' not found in lipid_database. Available: ",
+         paste(colnames(lipid_database), collapse = ", "))
+  }
+
+  db_subclasses <- unique(lipid_database[[db_subclass_col]])
+  db_subclasses <- db_subclasses[!is.na(db_subclasses) & db_subclasses != ""]
+  lrs_subclasses <- unique(intern_standard[[lrs_subclass_col]])
+  lrs_subclasses <- lrs_subclasses[!is.na(lrs_subclasses) & lrs_subclasses != ""]
+
+  missing <- setdiff(db_subclasses, lrs_subclasses)
+
+  if (length(missing) > 0) {
+    warning("LRS is missing at least one lipid for ", length(missing),
+            " subclass(es) present in the lipid database: ",
+            paste(missing, collapse = ", "),
+            "\n  Add an internal standard covering each uncovered subclass ",
+            "to the LRS Excel, or harmonise the subclass vocabularies.")
+  } else {
+    message("✓ LRS covers all ", length(db_subclasses),
+            " subclasses in the lipid database")
+  }
+
+  invisible(missing)
+}
+
 #' Extract EICs for internal standards
 #'
 #' @param mse MsExperiment object
@@ -1354,29 +1409,11 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
   # Set charge based on polarity
   charge <- ifelse(polarity == "neg", -1, 1)
 
-  # Extract experimental spectra — memory-aware approach
-  # Estimate if we can fit all spectra in memory (~8 bytes per intensity value)
-  n_spectra <- length(spectra(mse))
-  estimated_mem_gb <- n_spectra * 5000 * 8 / 1e9  # rough: 5000 peaks avg
-  available_mem_gb <- as.numeric(gc(reset = TRUE)[2, 6]) / 1024  # free memory
-
-  if (estimated_mem_gb < available_mem_gb * 0.5) {
-    message("Loading all spectra to memory (estimated ", round(estimated_mem_gb, 1),
-            " GB, available ", round(available_mem_gb, 1), " GB)...")
-    spectra(mse) <- setBackend(spectra(mse), MsBackendMemory())
-    sp <- featureSpectra(mse, msLevel = 1L, skipFilled = TRUE,
-                         features = unique(mtched_data$feature_id),
-                         method = "closest_rt")
-  } else {
-    message("Dataset too large for full in-memory conversion (",
-            round(estimated_mem_gb, 1), " GB estimated). ",
-            "Extracting feature spectra on-disk...")
-    sp <- featureSpectra(mse, msLevel = 1L, skipFilled = TRUE,
-                         features = unique(mtched_data$feature_id),
-                         method = "closest_rt")
-    # Convert subset to in-memory backend (needed for combineSpectra)
-    sp <- setBackend(sp, MsBackendMemory())
-  }
+  sp <- featureSpectra(mse, msLevel = 1L, skipFilled = TRUE,
+                       features = unique(mtched_data$feature_id),
+                       method = "closest_rt")
+  # Convert subset to in-memory backend (needed for combineSpectra)
+  sp <- setBackend(sp, MsBackendMemory())
 
   # Combine spectra per feature
   csp <- combineSpectra(sp, f = sp$feature_id, p = sp$feature_id,

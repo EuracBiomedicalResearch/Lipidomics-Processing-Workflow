@@ -224,6 +224,16 @@ lipid_database <- prepare_lipid_database(
 )
 ```
 
+```{r validate-lrs-coverage}
+#| label: validate-lrs-coverage
+
+# Check that the LRS contains at least one internal standard per subclass
+# present in the lipid database. Uncovered subclasses are reported as a
+# warning — add matching ISs to the LRS Excel (or harmonise the subclass
+# vocabulary between LRS and database) before trusting the IS normalization.
+validate_lrs_coverage(intern_standard, lipid_database)
+```
+
 ```{r plot-rt-correction}
 #| label: plot-rt-correction
 #| fig-cap: "Database RT vs. adjusted RT with reference lipids overlay"
