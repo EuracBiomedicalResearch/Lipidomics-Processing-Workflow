@@ -1409,29 +1409,11 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
   # Set charge based on polarity
   charge <- ifelse(polarity == "neg", -1, 1)
 
-  # Extract experimental spectra — memory-aware approach
-  # Estimate if we can fit all spectra in memory (~8 bytes per intensity value)
-  n_spectra <- length(spectra(mse))
-  estimated_mem_gb <- n_spectra * 5000 * 8 / 1e9  # rough: 5000 peaks avg
-  available_mem_gb <- as.numeric(gc(reset = TRUE)[2, 6]) / 1024  # free memory
-
-  if (estimated_mem_gb < available_mem_gb * 0.5) {
-    message("Loading all spectra to memory (estimated ", round(estimated_mem_gb, 1),
-            " GB, available ", round(available_mem_gb, 1), " GB)...")
-    spectra(mse) <- setBackend(spectra(mse), MsBackendMemory())
-    sp <- featureSpectra(mse, msLevel = 1L, skipFilled = TRUE,
-                         features = unique(mtched_data$feature_id),
-                         method = "closest_rt")
-  } else {
-    message("Dataset too large for full in-memory conversion (",
-            round(estimated_mem_gb, 1), " GB estimated). ",
-            "Extracting feature spectra on-disk...")
-    sp <- featureSpectra(mse, msLevel = 1L, skipFilled = TRUE,
-                         features = unique(mtched_data$feature_id),
-                         method = "closest_rt")
-    # Convert subset to in-memory backend (needed for combineSpectra)
-    sp <- setBackend(sp, MsBackendMemory())
-  }
+  sp <- featureSpectra(mse, msLevel = 1L, skipFilled = TRUE,
+                       features = unique(mtched_data$feature_id),
+                       method = "closest_rt")
+  # Convert subset to in-memory backend (needed for combineSpectra)
+  sp <- setBackend(sp, MsBackendMemory())
 
   # Combine spectra per feature
   csp <- combineSpectra(sp, f = sp$feature_id, p = sp$feature_id,
