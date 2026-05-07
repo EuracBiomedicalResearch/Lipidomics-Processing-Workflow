@@ -100,13 +100,18 @@ rowData(res_neg)$ionization_mode <- "negative"
 
 ```{r}
 #| label: align-samples
-pos_order <- sub("_pos\\.mzML$", "", colnames(res_pos))
-neg_order <- sub("_neg\\.mzML$", "", colnames(res_neg))
+pos_samples <- colData(res_pos)$sample_name
+neg_samples <- colData(res_neg)$sample_name
 
-neg_reorder_idx <- match(pos_order, neg_order)
-res_neg <- res_neg[, neg_reorder_idx]
+stopifnot(
+    !anyDuplicated(pos_samples),
+    !anyDuplicated(neg_samples),
+    setequal(pos_samples, neg_samples)
+)
 
-stopifnot(all(pos_order == sub("_neg\\.mzML$", "", colnames(res_neg))))
+res_neg <- res_neg[, match(pos_samples, neg_samples)]
+
+stopifnot(all(colData(res_pos)$sample_name == colData(res_neg)$sample_name))
 ```
 
 # Resolve Duplicate Lipids
@@ -171,12 +176,11 @@ res_neg_filtered <- res_neg[-neg_remove_idx, ]
 
 ```{r}
 #| label: combine-results
-colnames(res_pos_filtered) <- sub("_pos\\.mzML$", "", colnames(res_pos_filtered))
-colnames(res_neg_filtered) <- sub("_neg\\.mzML$", "", colnames(res_neg_filtered))
+colnames(res_pos_filtered) <- colData(res_pos_filtered)$sample_name
+colnames(res_neg_filtered) <- colData(res_neg_filtered)$sample_name
 
-colData(res_pos_filtered)$file_name <- sub("_pos\\.mzML$", "", colData(res_pos_filtered)$file_name)
-colData(res_neg_filtered)$file_name <- sub("_neg\\.mzML$", "", colData(res_neg_filtered)$file_name)
-
+colData(res_pos_filtered)$file_name <- NULL
+colData(res_neg_filtered)$file_name <- NULL
 colData(res_pos_filtered)$spectraOrigin <- NULL
 colData(res_neg_filtered)$spectraOrigin <- NULL
 colData(res_pos_filtered)$polarity <- NULL
