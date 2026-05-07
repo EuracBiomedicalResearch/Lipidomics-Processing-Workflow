@@ -19,6 +19,11 @@ execute:
 knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 6)
 ```
 
+```{r}
+library("tictoc")
+tic("Quarto compilation")
+```
+
 # Overview
 
 ::: {.callout-tip}
@@ -77,15 +82,13 @@ ISOPEAK_SIM_THRESHOLD <- 0.78
 RSD_THRESHOLD <- 0.3
 
 # Expected sample types (for validation and CV summary)
-EXPECTED_SAMPLE_TYPES <- c("QC", "M-VAMS", "W-DBS", "C-qDBS", "Plasma")
+EXPECTED_SAMPLE_TYPES <- c("QC", "Exercise", "Resting")
 
 # Color palette for sample types
 SAMPLE_TYPE_COLORS <- c(
   "QC" = "#999999",
-  "M-VAMS" = "#377EB8",
-  "W-DBS" = "#E41A1C",
-  "C-qDBS" = "#4DAF4A",
-  "Plasma" = "#984EA3"
+  "Exercise" = "#377EB8",
+  "Resting" = "#E41A1C"
 )
 ```
 
@@ -141,8 +144,8 @@ res <- readObject(res_save_path)
 # Reload reference lipids and EICs
 intern_standard <- prepare_reference_lipids(
   IS_FILE,
-  rt_window_left = 30,
-  rt_window_right = ifelse(POLARITY == "pos", 15, 20)
+  rt_window_left = 50,
+  rt_window_right = ifelse(POLARITY == "pos", 20, 25)
 )
 eic_is <- extract_is_eics(mse, intern_standard)
 fdata <- fData(eic_is)
@@ -645,7 +648,9 @@ saveObject(res_final, file.path(folders$objects, paste0(STUDY_ID, "_final_res_",
 
 sessionInfo()
 ```
-
+```{r}
+toc()
+```
 ---
 
 # Reference
