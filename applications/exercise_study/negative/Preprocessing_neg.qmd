@@ -133,7 +133,7 @@ MTBLS_EXCLUDE_TYPES <- c("Blank")
 
 # Retention time filter range (seconds) - adjust based on your BPC
 RT_FILTER_MIN <- 10
-RT_FILTER_MAX <- 950
+RT_FILTER_MAX <- 800
 
 # Chromatographic peak detection parameters
 PEAK_WIDTH <- c(4, 8)
@@ -326,7 +326,7 @@ plot_bpc(mse, palette = palette_sample_type,
 intern_standard <- prepare_reference_lipids(
   IS_FILE,
   rt_window_left = 50,#it was on 30
-  rt_window_right = ifelse(POLARITY == "pos", 50, 55)#it was 15 and 20
+  rt_window_right = ifelse(POLARITY == "pos", 20, 25)#it was 15 and 20
 )
 
 eic_sample_subset <- sampleData(mse)$sample_type == "QC"

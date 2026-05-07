@@ -19,6 +19,11 @@ execute:
 knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 6)
 ```
 
+```{r}
+library("tictoc")
+tic("Quarto compilation")
+```
+
 # Overview
 
 ::: {.callout-tip}
@@ -369,4 +374,8 @@ cat("Saved annotated compound abundances to:", xlsx_path, "\n")
 ```{r}
 #| label: session-info
 sessionInfo()
+```
+
+```{r}
+toc()
 ```
