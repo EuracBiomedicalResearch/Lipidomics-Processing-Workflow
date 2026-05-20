@@ -1,0 +1,405 @@
+---
+title: "Benchmark of Database Retention Time Correction"
+author: "CEMBIO-EURAC Team"
+date: today
+format:
+  docx:
+    toc: false
+    number-sections: false
+    fig-width: 9
+    fig-height: 4
+execute:
+  warning: false
+  message: false
+  echo: false
+editor_options:
+  chunk_output_type: console
+knitr:
+  opts_chunk:
+    fig.path: paper_figures/
+    dpi: 200
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(patchwork)
+library(flextable)
+library(knitr)
+library(officer)
+
+rds <- list(
+    pos = readRDS("objects/stage3_pos.rds"),
+    neg = readRDS("objects/stage3_neg.rds")
+)
+```
+
+```{r helpers}
+# ---------- Method naming -------------------------------------------------
+
+pretty_method <- function(m) {
+    m <- as.character(m)
+    out <- m
+    is_poly <- grepl("^poly_d", m)
+    out[is_poly]             <- paste0("Poly d", sub("poly_d", "", m[is_poly]))
+    out[m == "gam"]          <- "GAM"
+    out[m == "scam"]         <- "SCAM"
+    out[m == "predret_mono"] <- "PredRet mono"
+    out
+}
+
+method_family <- function(m) {
+    m   <- as.character(m)
+    out <- m
+    out[grepl("^poly_d", m)] <- "Polynomial"
+    out[m == "gam"]          <- "GAM"
+    out[m == "scam"]         <- "Monotone GAM"
+    out[m == "predret_mono"] <- "PredRet"
+    out
+}
+
+NON_POLY_ORDER <- c("gam", "scam", "predret_mono")
+BASELINE       <- "poly_d6"
+
+FAMILY_COLS <- c(
+    Polynomial     = "#377EB8",
+    GAM            = "#4DAF4A",
+    "Monotone GAM" = "#FF7F00",
+    PredRet        = "#984EA3"
+)
+
+# ---------- Uncertainty helpers -------------------------------------------
+
+boot_rmse_ci <- function(resid_vec, n_boot = 500, conf = 0.95) {
+    boot_rmse <- replicate(n_boot, {
+        s <- sample(resid_vec, replace = TRUE)
+        sqrt(mean(s^2))
+    })
+    q <- c((1 - conf) / 2, (1 + conf) / 2)
+    setNames(quantile(boot_rmse, q), c("lo", "hi"))
+}
+
+wilson_ci <- function(x, n, conf = 0.95) {
+    z      <- qnorm((1 + conf) / 2)
+    p      <- x / n
+    denom  <- 1 + z^2 / n
+    center <- (p + z^2 / (2 * n)) / denom
+    margin <- z * sqrt(p * (1 - p) / n + z^2 / (4 * n^2)) / denom
+    c(lo = center - margin, hi = center + margin)
+}
+
+# ---------- Method filtering ----------------------------------------------
+
+present_methods <- function(r) {
+    m_in_data <- unique(r$resid_df$method)
+    poly      <- m_in_data[grepl("^poly_d", m_in_data)]
+    poly      <- poly[order(as.integer(sub("poly_d", "", poly)))]
+    c(poly, NON_POLY_ORDER[NON_POLY_ORDER %in% m_in_data])
+}
+
+joint_methods <- function(rds) {
+    # Methods present in BOTH polarities, in canonical ordering.
+    intersect(present_methods(rds$pos), present_methods(rds$neg))
+}
+
+# ---------- Per-polarity ggplots ------------------------------------------
+
+plot_loocv_dotplot <- function(r, title) {
+    m <- r$metrics_df
+    m <- m[m$cv_type == "loocv" & m$zone == "ALL", ]
+    m <- m[m$method %in% present_methods(r), ]
+
+    rd      <- r$resid_df[r$resid_df$cv_type == "loocv", ]
+    ci_list <- lapply(present_methods(r), function(met) {
+        ci <- boot_rmse_ci(rd$resid[rd$method == met])
+        data.frame(method = met, rmse_lo = ci[["lo"]], rmse_hi = ci[["hi"]])
+    })
+    m <- merge(m, do.call(rbind, ci_list), by = "method")
+
+    m$label       <- factor(pretty_method(m$method),
+                            levels = rev(pretty_method(present_methods(r))))
+    m$family      <- method_family(m$method)
+    m$is_baseline <- m$method == BASELINE
+
+    baseline_rmse <- m$rmse[m$method == BASELINE]
+    p <- ggplot(m, aes(x = rmse, y = label, colour = family))
+    if (length(baseline_rmse) == 1) {
+        p <- p + geom_vline(xintercept = baseline_rmse,
+                            linetype = "dashed", colour = "grey60")
+    }
+    p +
+        geom_errorbarh(aes(xmin = rmse_lo, xmax = rmse_hi),
+                       height = 0.35, linewidth = 0.6) +
+        geom_point(aes(size = is_baseline), shape = 19) +
+        scale_size_manual(values = c("FALSE" = 2.5, "TRUE" = 4),
+                          guide = "none") +
+        scale_colour_manual(values = FAMILY_COLS, drop = FALSE) +
+        labs(title = title,
+             x = "LOOCV RMSE (s)  [95% bootstrap CI]",
+             y = NULL, colour = "Family") +
+        theme_minimal(base_size = 10) +
+        theme(legend.position = "bottom",
+              panel.grid.major.y = element_line(colour = "grey90"))
+}
+
+plot_coverage <- function(r, title) {
+    m <- r$metrics_df
+    m <- m[m$cv_type == "loocv" & m$zone == "ALL", ]
+    m <- m[m$method %in% present_methods(r), ]
+    m$label  <- factor(pretty_method(m$method),
+                       levels = pretty_method(present_methods(r)))
+    m$family <- method_family(m$method)
+
+    ci       <- t(mapply(
+        function(cov, n) wilson_ci(round(cov * n), n),
+        m$coverage, m$n
+    ))
+    m$cov_lo <- ci[, "lo"]
+    m$cov_hi <- pmin(ci[, "hi"], 1)
+
+    ggplot(m, aes(x = label, y = coverage, fill = family)) +
+        geom_col(width = 0.7) +
+        geom_errorbar(aes(ymin = cov_lo, ymax = cov_hi),
+                      width = 0.25, colour = "grey30", linewidth = 0.6) +
+        geom_hline(yintercept = 0.95, linetype = "dashed",
+                   colour = "black", linewidth = 0.7) +
+        scale_fill_manual(values = FAMILY_COLS, drop = FALSE) +
+        scale_y_continuous(
+            labels = function(x) paste0(round(x * 100), "%"),
+            limits = c(0, 1.08), expand = c(0, 0)
+        ) +
+        labs(title = title, x = NULL,
+             y = "95% PI coverage (LOOCV)", fill = "Family") +
+        theme_minimal(base_size = 10) +
+        theme(axis.text.x  = element_text(angle = 40, hjust = 1),
+              legend.position = "bottom")
+}
+
+plot_degradation <- function(r, title) {
+    m <- r$metrics_df
+    m <- m[m$zone == "ALL" & m$method %in% present_methods(r) &
+           grepl("^rko_", m$cv_type), ]
+    m$frac_pct <- as.integer(sub("rko_(\\d+)pct", "\\1", m$cv_type))
+    m$label    <- pretty_method(m$method)
+    m$family   <- factor(method_family(m$method), levels = names(FAMILY_COLS))
+
+    rd          <- r$resid_df[grepl("^rko_", r$resid_df$cv_type), ]
+    rd$frac_pct <- as.integer(sub("rko_(\\d+)pct", "\\1", rd$cv_type))
+    ci_list <- lapply(seq_len(nrow(m)), function(i) {
+        res <- rd$resid[rd$method == m$method[i] & rd$frac_pct == m$frac_pct[i]]
+        if (length(res) < 3)
+            return(data.frame(rmse_lo = NA_real_, rmse_hi = NA_real_))
+        ci <- boot_rmse_ci(res)
+        data.frame(rmse_lo = ci[["lo"]], rmse_hi = ci[["hi"]])
+    })
+    ci_df     <- do.call(rbind, ci_list)
+    m$rmse_lo <- ci_df$rmse_lo
+    m$rmse_hi <- ci_df$rmse_hi
+
+    fracs <- sort(unique(m$frac_pct))
+    ggplot(m, aes(x = frac_pct, y = rmse, colour = label, group = label)) +
+        geom_errorbar(aes(ymin = rmse_lo, ymax = rmse_hi),
+                      width = 1.2, linewidth = 0.4, alpha = 0.6) +
+        geom_line(linewidth = 0.7) +
+        geom_point(size = 2) +
+        scale_x_continuous(breaks = fracs, labels = paste0(fracs, "%")) +
+        facet_wrap(~family, ncol = 3) +
+        labs(title = title,
+             x = "Fraction held out (RKO)",
+             y = "RMSE (s)", colour = "Method") +
+        theme_minimal(base_size = 10) +
+        theme(legend.position = "bottom",
+              strip.text = element_text(face = "bold"))
+}
+
+# ---------- Joint flextables ---------------------------------------------
+
+# Header shading and a thin grey border to mimic the manuscript style.
+HEADER_BG  <- "#E7EEF5"
+THIN_GREY  <- fp_border(color = "#808080", width = 0.5)
+
+flex_style <- function(ft, n_cols) {
+    # Common cosmetic styling shared by both joint tables.
+    n <- n_cols
+    ft <- align(ft, j = 1, align = "left",   part = "body")
+    ft <- align(ft, j = 2:n, align = "center", part = "body")
+    ft <- align(ft, align = "center", part = "header")
+    ft <- bold(ft, part = "header")
+    ft <- bg(ft, bg = HEADER_BG, part = "header")
+    ft <- border_remove(ft)
+    ft <- hline(ft, border = THIN_GREY, part = "all")
+    ft <- vline(ft, border = THIN_GREY, part = "all")
+    ft <- fontsize(ft, size = 10, part = "all")
+    ft <- font(ft, fontname = "Arial", part = "all")
+    ft <- padding(ft, padding = 4, part = "all")
+    ft <- set_table_properties(ft, layout = "autofit", width = 1)
+    ft
+}
+
+flex_loocv_table <- function(rds, methods) {
+    rows  <- vector("list", length(methods))
+    n_pos <- NA_integer_; n_neg <- NA_integer_
+    for (i in seq_along(methods)) {
+        mn <- methods[i]
+        p  <- rds$pos$metrics_df
+        p  <- p[p$cv_type == "loocv" & p$zone == "ALL" & p$method == mn, ]
+        nn <- rds$neg$metrics_df
+        nn <- nn[nn$cv_type == "loocv" & nn$zone == "ALL" & nn$method == mn, ]
+        if (is.na(n_pos)) n_pos <- p$n
+        if (is.na(n_neg)) n_neg <- nn$n
+        rows[[i]] <- data.frame(
+            Method = pretty_method(mn),
+            p_rmse = sprintf("%.1f", p$rmse),
+            p_mae  = sprintf("%.1f", p$mae),
+            p_max  = sprintf("%.1f", p$max_ae),
+            p_cov  = sprintf("%d%%", round(p$coverage * 100)),
+            n_rmse = sprintf("%.1f", nn$rmse),
+            n_mae  = sprintf("%.1f", nn$mae),
+            n_max  = sprintf("%.1f", nn$max_ae),
+            n_cov  = sprintf("%d%%", round(nn$coverage * 100)),
+            stringsAsFactors = FALSE
+        )
+    }
+    df <- do.call(rbind, rows)
+    rownames(df) <- NULL
+
+    ft <- flextable(df)
+    ft <- set_header_labels(ft,
+        Method = "Method",
+        p_rmse = "RMSE (s)", p_mae = "MAE (s)",
+        p_max  = "max |e| (s)", p_cov = "PI cov.",
+        n_rmse = "RMSE (s)", n_mae = "MAE (s)",
+        n_max  = "max |e| (s)", n_cov = "PI cov."
+    )
+    ft <- add_header_row(ft, top = TRUE,
+        values = c("",
+                   paste0("Positive mode (n = ", n_pos, ")"),
+                   paste0("Negative mode (n = ", n_neg, ")")),
+        colwidths = c(1, 4, 4)
+    )
+    flex_style(ft, n_cols = 9)
+}
+
+flex_crosscv_table <- function(rds, methods) {
+    rows <- vector("list", length(methods))
+    for (i in seq_along(methods)) {
+        mn <- methods[i]
+        p     <- rds$pos$metrics_df
+        p_lo  <- p$rmse[p$cv_type == "loocv"     & p$zone == "ALL" & p$method == mn]
+        p_rko <- p$rmse[p$cv_type == "rko_30pct" & p$zone == "ALL" & p$method == mn]
+
+        nn    <- rds$neg$metrics_df
+        n_lo  <- nn$rmse[nn$cv_type == "loocv"     & nn$zone == "ALL" & nn$method == mn]
+        n_rko <- nn$rmse[nn$cv_type == "rko_30pct" & nn$zone == "ALL" & nn$method == mn]
+
+        rows[[i]] <- data.frame(
+            Method = pretty_method(mn),
+            p_loo  = sprintf("%.1f", p_lo),
+            p_rko  = sprintf("%.1f", p_rko),
+            p_d    = sprintf("%.1f\u00D7", p_rko / p_lo),
+            n_loo  = sprintf("%.1f", n_lo),
+            n_rko  = sprintf("%.1f", n_rko),
+            n_d    = sprintf("%.1f\u00D7", n_rko / n_lo),
+            stringsAsFactors = FALSE
+        )
+    }
+    df <- do.call(rbind, rows)
+    rownames(df) <- NULL
+
+    ft <- flextable(df)
+    ft <- set_header_labels(ft,
+        Method = "Method",
+        p_loo = "LOOCV", p_rko = "RKO 30%", p_d = "\u0394",
+        n_loo = "LOOCV", n_rko = "RKO 30%", n_d = "\u0394"
+    )
+    ft <- add_header_row(ft, top = TRUE,
+        values = c("",
+                   "Positive mode (RMSE, s)",
+                   "Negative mode (RMSE, s)"),
+        colwidths = c(1, 3, 3)
+    )
+    flex_style(ft, n_cols = 7)
+}
+
+methods_use <- joint_methods(rds)
+```
+
+# Materials and Methods
+
+The retention-time correction step of the annotation pipeline relies on a regression model that maps the database reference RT of each compound onto the corresponding experimental RT, using the SPLASH LIPIDOMIX internal standards detected in the pilot dataset as anchor pairs. Six regression methods were compared to select the best choice for this anchor configuration. Anchor tables were built from the same internal-standard peaks used by the main preprocessing pipeline, yielding 20 anchor pairs in positive ionization mode and 21 in negative. 
+
+Four ordinary-least-squares polynomial models of degree 3 to 6 were fitted using a raw polynomial basis. Two semi-parametric alternatives were also evaluated: an unconstrained generalised additive model (GAM) with a thin-plate regression spline and smoothing parameter selected by REML, and a shape-constrained monotone-increasing P-spline (Pya and Wood 2015, https://doi.org/10.1007/s11222-013-9448-7), in which the monotonicity constraint enforces the physical requirement that compounds eluting later than a reference standard in the database must also do so after RT correction.
+
+Prediction intervals were obtained by method-appropriate procedures. For the polynomial fits, exact parametric intervals were computed from the residual variance and the design matrix. For the GAM and monotone GAM, posterior-predictive intervals were obtained by two-stage simulation (n = 2000 draws): coefficient vectors were sampled from the Bayesian posterior covariance of the fitted model, propagated through the linear predictor, and combined with Gaussian observation noise sampled from the estimated residual variance (Wood 2017). 
+
+Each method was evaluated under two cross-validation schemes. Leave-one-out cross-validation (LOOCV) provides the standard dense-data estimate of out-of-sample error. Random k-out cross-validation (RKO), repeated 100 times at each of four holdout fractions (5%, 10%, 20% and 30%), additionally stresses each method under progressively sparser anchor coverage; the 30% setting simulates a worst case scenario in which several internal standards are lost in a given experiment. For each fold the model was refit on the training anchors and used to predict experimental RT at the held-out reference RTs. Performance was summarised by the root-mean-square error (RMSE), the mean absolute error (MAE), the maximum absolute error (max |e|) and the empirical coverage of the nominal 95% prediction intervals; uncertainty on RMSE was estimated by 1000 non-parametric bootstrap resamples of the fold-level residuals, and uncertainty on coverage by the Wilson 95% confidence interval. The evaluation was run identically on the positive and negative ionisation datasets.
+
+# Results
+
+*Dense-anchor performance (LOOCV).* Under LOOCV, the six methods produced retention-time predictions of comparable central tendency in both polarities (Table 1, Figure 1). In positive mode LOOCV RMSE ranged from 4.1 s (Poly d5) to 5.5 s (Poly d6); in negative mode from 7.3 s (Poly d3) to 12.5 s (Poly d6). The 95% bootstrap confidence intervals on RMSE overlapped substantially across all methods and MAE differences were below 1 s, so no method achieved a clear advantage on the dense-data benchmark. Prediction-interval coverage was at or near the nominal 95% target for every method in negative mode and for the polynomial fits in both polarities (Figure 2). The GAM and monotone GAM showed reduced coverage in positive mode (85% and 90% respectively), but with only 20 anchors these correspond to one and two miscovered held-out points and the Wilson confidence intervals span approximately 65–95% and 70–98%, so the apparent miscalibration is not strong evidence of a systematic problem.
+
+*Robustness under sparse anchor coverage (RKO).* The methods diverged sharply when between 5% and 30% of anchors were withheld at random (Figure 3). The high-order polynomials performed poorly at the 30% holdout: Poly d6 reached an RMSE of 39.6 s in positive mode and 166 s in negative mode, corresponding to a 7-fold and 13-fold degradation relative to its LOOCV value (Table 2). Poly d5 followed a similar pattern, with degradation factors of 3.2 and 2.3 respectively. By contrast, Poly d3, Poly d4, GAM and the monotone GAM (SCAM) retained near-LOOCV accuracy across all holdout fractions: their 30%-RKO RMSE values ranged from 5.7 to 8.0 s in positive mode and from 8.5 to 9.6 s in negative mode, corresponding to degradation factors of at most 1.7. The GAM and monotone GAM were the most stable methods overall, with degradation factors no greater than 1.2 in either polarity.
+
+Based on these results, we selected the monotone GAM as the default RT-correction method in this study. It matches the best LOOCV accuracy, is essentially insensitive to anchor sparsity across the range tested, and additionally enforces the physically required monotonicity of the RT mapping, which precludes the order-reversal artefacts that unconstrained smoothers can produce in poorly-anchored regions. 
+
+# Tables and figures
+
+```{r tbl-loocv}
+flex_loocv_table(rds, methods_use) |>
+    set_caption(
+        as_paragraph(
+            as_chunk("Table 1. ", props = fp_text(bold = TRUE)),
+            as_chunk(paste0(
+                "Leave-one-out cross-validation (LOOCV) performance of the ",
+                "retention-time correction methods, in positive and negative ",
+                "ionisation modes. RMSE = root-mean-square error; ",
+                "MAE = mean absolute error; max |e| = maximum absolute error ",
+                "of any held-out anchor; PI cov. = empirical coverage of the ",
+                "nominal 95% prediction interval. n = number of ",
+                "internal-standard anchors used as input to the ",
+                "cross-validation."
+            ))
+        ),
+        align_with_table = FALSE
+    )
+```
+
+```{r tbl-crosscv}
+flex_crosscv_table(rds, methods_use) |>
+    set_caption(
+        as_paragraph(
+            as_chunk("Table 2. ", props = fp_text(bold = TRUE)),
+            as_chunk(paste0(
+                "RMSE (s) under LOOCV versus random k-out cross-validation ",
+                "at 30% holdout (RKO 30%), in positive and negative ",
+                "ionisation modes. RKO 30% values are means over 100 random ",
+                "repetitions. The \u0394 column is the ratio RKO 30% / LOOCV ",
+                "and quantifies how much each method degrades when 30% of ",
+                "the anchors are unavailable; values close to 1\u00D7 ",
+                "indicate insensitivity to anchor sparsity, while large ",
+                "values indicate catastrophic failure modes."
+            ))
+        ),
+        align_with_table = FALSE
+    )
+```
+
+```{r fig-loocv-rmse, fig.width=9, fig.height=4, fig.cap="Figure 1. LOOCV RMSE by method in (a) positive and (b) negative ionisation modes. Coloured points show the LOOCV RMSE; horizontal bars are 95% bootstrap confidence intervals on RMSE (500 resamples of the fold-level residuals). The dashed vertical line and enlarged point mark the current production baseline (Poly d6)."}
+(plot_loocv_dotplot(rds$pos, "(a) Positive mode") +
+ plot_loocv_dotplot(rds$neg, "(b) Negative mode")) +
+    plot_layout(guides = "collect") &
+    theme(legend.position = "bottom")
+```
+
+```{r fig-coverage, fig.width=9, fig.height=4.5, fig.cap="Figure 2. Empirical coverage of the nominal 95% prediction interval under LOOCV, in (a) positive and (b) negative ionisation modes. Vertical error bars are Wilson 95% confidence intervals on the coverage proportion; the dashed horizontal line marks the 95% nominal target."}
+(plot_coverage(rds$pos, "(a) Positive mode") +
+ plot_coverage(rds$neg, "(b) Negative mode")) +
+    plot_layout(guides = "collect") &
+    theme(legend.position = "bottom")
+```
+
+```{r fig-rko, fig.width=9, fig.height=7, fig.cap="Figure 3. RMSE as a function of the fraction of anchors withheld under random k-out (RKO) cross-validation, in (a) positive and (b) negative ionisation modes, faceted by method family. Each holdout fraction is the mean over 100 random repetitions; error bars are 95% bootstrap confidence intervals on the residuals."}
+(plot_degradation(rds$pos, "(a) Positive mode") /
+ plot_degradation(rds$neg, "(b) Negative mode")) +
+    plot_layout(guides = "collect") &
+    theme(legend.position = "bottom")
+```
