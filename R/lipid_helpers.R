@@ -562,7 +562,7 @@ validate_rt_correction <- function(rt_fit,
   }
 
   fit <- rt_fit$fit
-  r2 <- summary(fit)$r.squared
+  r2 <- if (inherits(fit, "scam")) summary(fit)$r.sq else summary(fit)$r.squared
 
   if (r2 < min_r_squared) {
     warning("RT correction R\u00b2 = ", round(r2, 4),
@@ -611,7 +611,7 @@ load_lipid_packages <- function(verbose = TRUE) {
     # SQL backend (for SQLite data loading)
     "MsBackendSql", "RSQLite",
     # Statistics
-    "limma", "matrixStats",
+    "limma", "matrixStats", "scam",
     # Visualization
     "pander", "RColorBrewer", "pheatmap", "vioplot",
     "ggplot2", "ggfortify", "gridExtra",
@@ -1647,11 +1647,15 @@ filter_by_qc_rsd <- function(se, threshold = 0.3, qc_col = "sample_type",
 #' @param eic_is EIC object for internal standards
 #' @param intern_standard Reference lipid data frame
 #' @param param_group PeakDensityParam for grouping
-#' @param poly_degree Polynomial degree for fitting
+#' @param method Fitting method: "scam" (monotone increasing P-spline, default)
+#'   or "poly" (polynomial lm, legacy)
+#' @param poly_degree Polynomial degree; only used when method = "poly"
 #' @param output_dir Directory to save diagnostic plots
 #' @return List with fit model and experimental RT values
 fit_rt_correction <- function(eic_is, intern_standard, param_group,
+                              method = c("scam", "poly"),
                               poly_degree = 6, output_dir = NULL) {
+  method <- match.arg(method)
 
   eic_is_corr <- groupChromPeaks(eic_is, param = param_group)
 
@@ -1702,11 +1706,18 @@ fit_rt_correction <- function(eic_is, intern_standard, param_group,
 
   ref_rt <- intern_standard$RT
 
-  # Fit polynomial model
-  fit <- lm(exp_rt ~ poly(ref_rt, poly_degree, raw = TRUE))
+  if (method == "scam") {
+    # scam has no na.omit, so we filter before
+    df_fit <- data.frame(ref_rt = ref_rt, exp_rt = exp_rt)
+    df_fit <- df_fit[!is.na(df_fit$ref_rt) & !is.na(df_fit$exp_rt), ]
+    fit <- scam::scam(exp_rt ~ s(ref_rt, bs = "mpi"), data = df_fit)
+    r2 <- summary(fit)$r.sq
+  } else {
+    fit <- lm(exp_rt ~ poly(ref_rt, poly_degree, raw = TRUE))
+    r2 <- summary(fit)$r.squared
+  }
 
-  message("✓ RT correction model fitted (R² = ",
-          round(summary(fit)$r.squared, 4), ")")
+  message("✓ RT correction model fitted (R² = ", round(r2, 4), ")")
 
   return(list(fit = fit, exp_rt = exp_rt, ref_rt = ref_rt))
 }
