@@ -1706,16 +1706,22 @@ fit_rt_correction <- function(eic_is, intern_standard, param_group,
 
   ref_rt <- intern_standard$RT
 
+  df_fit <- data.frame(ref_rt = ref_rt, exp_rt = exp_rt)
+  df_fit <- df_fit[!is.na(df_fit$ref_rt) & !is.na(df_fit$exp_rt), ]
+
   if (method == "scam") {
-    # scam has no na.omit, so we filter before
-    df_fit <- data.frame(ref_rt = ref_rt, exp_rt = exp_rt)
-    df_fit <- df_fit[!is.na(df_fit$ref_rt) & !is.na(df_fit$exp_rt), ]
     fit <- scam::scam(exp_rt ~ s(ref_rt, bs = "mpi"), data = df_fit)
     r2 <- summary(fit)$r.sq
   } else {
-    fit <- lm(exp_rt ~ poly(ref_rt, poly_degree, raw = TRUE))
+    fit <- lm(exp_rt ~ poly(ref_rt, poly_degree, raw = TRUE),
+              data = df_fit)
     r2 <- summary(fit)$r.squared
   }
+
+  # Calibration range = span of training ref_rt (input axis). Stored as
+  # an attribute so apply_rt_correction() can use the correct axis for
+  # the in/out-of-range decision instead of fit$fitted.values (output).
+  attr(fit, "ref_rt_range") <- range(df_fit$ref_rt)
 
   message("✓ RT correction model fitted (R² = ", round(r2, 4), ")")
 
@@ -1724,42 +1730,104 @@ fit_rt_correction <- function(eic_is, intern_standard, param_group,
 
 #' Apply RT correction to lipid database
 #'
+#' Applies an RT correction model (fitted by `fit_rt_correction()`) to a
+#' lipid database. Database entries whose reference RT falls within the
+#' calibration range are corrected by direct model prediction. Entries
+#' outside the calibration range (below the earliest or above the latest
+#' reference standard) are handled according to `extrapolate`.
+#'
 #' @param lipid_database Data frame with lipid database
-#' @param fit Linear model from fit_rt_correction
+#' @param fit Fitted model from `fit_rt_correction()` (either an `lm`
+#'   polynomial fit or a `scam` monotone-spline fit)
 #' @param rt_col Column name containing RT in seconds
-#' @return Data frame with rt_adjusted column added
-apply_rt_correction <- function(lipid_database, fit, rt_col = "rt_sd") {
+#' @param extrapolate How to correct entries whose reference RT lies
+#'   outside the calibration range spanned by the reference standards.
+#'   One of:
+#'   \describe{
+#'     \item{`"auto"` (default)}{Model-aware behaviour: use natural model
+#'       prediction (`predict()`) for `scam` fits, whose monotonicity
+#'       constraint keeps extrapolation physically sensible, and the
+#'       constant-offset fallback for polynomial (`lm`) fits, which can
+#'       diverge wildly outside the fitted range.}
+#'     \item{`TRUE`}{Always use natural model prediction (`predict()`)
+#'       outside the calibration range, regardless of model type. Use with
+#'       care for high-degree polynomial fits.}
+#'     \item{`FALSE`}{Always use the constant-offset fallback: apply a
+#'       zero-order ("hold last value") shift equal to the correction at
+#'       the nearest calibration boundary.}
+#'   }
+#' @return Data frame with `rt_adjusted` column added
+apply_rt_correction <- function(lipid_database, fit, rt_col = "rt_sd",
+                                extrapolate = "auto") {
+
+  if (!(identical(extrapolate, "auto") ||
+        identical(extrapolate, TRUE) ||
+        identical(extrapolate, FALSE))) {
+    stop('`extrapolate` must be "auto", TRUE, or FALSE')
+  }
+  use_predict <- if (identical(extrapolate, "auto")) {
+    inherits(fit, "scam")
+  } else {
+    isTRUE(extrapolate)
+  }
 
   rt_sd <- lipid_database[[rt_col]]
 
-  # Find values in fitted range
-  in_range_idx <- which(rt_sd >= min(fit$fitted.values) &
-                          rt_sd <= max(fit$fitted.values))
+  # Calibration range = training ref_rt span (input axis), attached by
+  # fit_rt_correction(). Must be present.
+  rng <- attr(fit, "ref_rt_range")
+  if (is.null(rng))
+    stop("fit is missing 'ref_rt_range' attribute; refit with fit_rt_correction()")
+  rt_min <- rng[1]
+  rt_max <- rng[2]
 
-  # Apply correction
-  corrected_rt <- rep(NA, length = nrow(lipid_database))
-  corrected_rt[in_range_idx] <- predict(
-    fit, newdata = data.frame(ref_rt = rt_sd[in_range_idx])
-  )
+  in_range_idx <- which(rt_sd >= rt_min & rt_sd <= rt_max)
 
-  # Extrapolate outside range
-  idx <- which(rt_sd < min(fit$fitted.values))
-  lidx <- length(idx)
-  if (lidx) {
-    corrected_rt[idx] <- rt_sd[idx] -
-      (rt_sd[lidx + 1L] - corrected_rt[lidx + 1L])
+  corrected_rt <- rep(NA_real_, nrow(lipid_database))
+  if (length(in_range_idx))
+    corrected_rt[in_range_idx] <- predict(
+      fit, newdata = data.frame(ref_rt = rt_sd[in_range_idx])
+    )
+
+  # Constant-offset uses predict() at the boundary itself, so the
+  # result does not depend on input order. (Previously the offset was
+  # `rt_sd[lidx + 1L] - corrected_rt[lidx + 1L]`, which assumed rt_sd
+  # was sorted ascending; with unsorted input that lookup could land
+  # on an arbitrary in-range entry whose residual ≈ 0, mapping out-of-
+  # range entries onto the identity line.)
+  below <- which(rt_sd < rt_min)
+  if (length(below)) {
+    if (use_predict) {
+      corrected_rt[below] <- predict(
+        fit, newdata = data.frame(ref_rt = rt_sd[below])
+      )
+    } else {
+      offset <- rt_min - predict(
+        fit, newdata = data.frame(ref_rt = rt_min)
+      )
+      corrected_rt[below] <- rt_sd[below] - offset
+    }
   }
 
-  idx <- which(rt_sd > max(fit$fitted.values))
-  if (length(idx)) {
-    corrected_rt[idx] <- rt_sd[idx] -
-      (rt_sd[idx[1L] - 1L] - corrected_rt[idx[1L] - 1L])
+  above <- which(rt_sd > rt_max)
+  if (length(above)) {
+    if (use_predict) {
+      corrected_rt[above] <- predict(
+        fit, newdata = data.frame(ref_rt = rt_sd[above])
+      )
+    } else {
+      offset <- rt_max - predict(
+        fit, newdata = data.frame(ref_rt = rt_max)
+      )
+      corrected_rt[above] <- rt_sd[above] - offset
+    }
   }
 
   lipid_database$rt_adjusted <- corrected_rt
 
   message("✓ RT correction applied. Extrapolated ",
-          nrow(lipid_database) - length(in_range_idx), " compounds outside fitted range")
+          nrow(lipid_database) - length(in_range_idx),
+          " compounds outside fitted range")
 
   return(lipid_database)
 }
@@ -1788,6 +1856,10 @@ apply_rt_correction <- function(lipid_database, fit, rt_col = "rt_sd") {
 #' @param polarity "pos" or "neg"
 #' @param rt_col Column name for retention time
 #' @param rt_fit Fitted RT correction model (from fit_rt_correction)
+#' @param extrapolate Extrapolation policy for database entries outside
+#'   the calibration range; forwarded to `apply_rt_correction()`. One of
+#'   `"auto"` (default; model-aware), `TRUE`, or `FALSE`. See
+#'   `?apply_rt_correction` for details.
 #' @param verbose Print progress messages
 #'
 #' @return Prepared lipid database data frame with columns:
@@ -1811,6 +1883,7 @@ prepare_lipid_database <- function(db_path,
                                     polarity,
                                     rt_col,
                                     rt_fit,
+                                    extrapolate = "auto",
                                     verbose = TRUE) {
 
   if (verbose) message("Loading lipid database from sheet ", sheet, "...")
@@ -1871,7 +1944,8 @@ prepare_lipid_database <- function(db_path,
 
   # Step 8: Apply RT correction from reference lipids
   if (verbose) message("  - Applying RT correction...")
-  lipid_database <- apply_rt_correction(lipid_database, rt_fit$fit, "rt_sd")
+  lipid_database <- apply_rt_correction(lipid_database, rt_fit$fit, "rt_sd",
+                                        extrapolate = extrapolate)
   lipid_database$mz <- as.numeric(lipid_database$mz)
 
   if (verbose) message("✓ Database prepared: ", nrow(lipid_database),
