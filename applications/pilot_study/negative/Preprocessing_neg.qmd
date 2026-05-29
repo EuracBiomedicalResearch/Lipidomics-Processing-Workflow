@@ -95,7 +95,7 @@ STUDY_ID <- "pilot"
 POLARITY <- "neg"
 
 # Data source: "local", "sqlite", or "metaboLights"
-DATA_SOURCE <- "sqlite"
+DATA_SOURCE <- "local"
 
 # MetaboLights study ID (only used if DATA_SOURCE = "metaboLights")
 MTBLS_ID <- "MTBLS10722"

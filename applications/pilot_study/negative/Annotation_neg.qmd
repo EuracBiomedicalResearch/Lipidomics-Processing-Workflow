@@ -188,7 +188,6 @@ param_group <- PeakDensityParam(
 # Fit RT correction model
 rt_fit <- fit_rt_correction(
   eic_is, intern_standard, param_group,
-  poly_degree = 6,
   output_dir = folders$ref_lipid
 )
 
@@ -240,7 +239,7 @@ lipid_database <- prepare_lipid_database(
 # present in the lipid database. Uncovered subclasses are reported as a
 # warning — add matching ISs to the LRS Excel (or harmonise the subclass
 # vocabulary between LRS and database) before trusting the IS normalization.
-validate_lrs_coverage(intern_standard, lipid_database)
+validate_lrs_coverage(intern_standard, lipid_database, db_subclass_col = "LIPID SUBCLASS [ABBREV]")
 ```
 
 ```{r plot-rt-correction}
