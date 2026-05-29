@@ -1789,12 +1789,6 @@ apply_rt_correction <- function(lipid_database, fit, rt_col = "rt_sd",
       fit, newdata = data.frame(ref_rt = rt_sd[in_range_idx])
     )
 
-  # Constant-offset uses predict() at the boundary itself, so the
-  # result does not depend on input order. (Previously the offset was
-  # `rt_sd[lidx + 1L] - corrected_rt[lidx + 1L]`, which assumed rt_sd
-  # was sorted ascending; with unsorted input that lookup could land
-  # on an arbitrary in-range entry whose residual ≈ 0, mapping out-of-
-  # range entries onto the identity line.)
   below <- which(rt_sd < rt_min)
   if (length(below)) {
     if (use_predict) {
