@@ -25,6 +25,7 @@ suppressPackageStartupMessages({
   library(MetaboCoreUtils)
   library(MetaboAnnotation)
   library(enviPat)
+  library(ProtGenerics)
 })
 
 MATCH_PPM <- 20
@@ -315,6 +316,110 @@ safe_sheet_name <- function(phase) {
   substr(out, 1, 31)
 }
 
+phase_rt_fit_method <- function(phase) {
+  ifelse(
+    phase %in% c("mz_rt_corrected_all_ranks",
+                 "rank1_mz_rt_corrected",
+                 "rank1_isotope_filter",
+                 "rank1_isotope_adduct_scored",
+                 "rank1_isotope_with_adduct_support",
+                 "automatic_ambiguity_resolution",
+                 "manual_curation",
+                 "qc_rsd_filtered"),
+    "scam_monotone_pspline",
+    "not_used"
+  )
+}
+
+rt_fit_r_squared <- function(fit) {
+  if (inherits(fit, "scam")) {
+    summary(fit)$r.sq
+  } else {
+    summary(fit)$r.squared
+  }
+}
+
+rt_fit_diagnostics <- function(rt_fit, lipid_database, polarity) {
+  detected <- !is.na(rt_fit$ref_rt) & !is.na(rt_fit$exp_rt)
+  pred <- rep(NA_real_, length(rt_fit$ref_rt))
+  if (any(detected)) {
+    pred[detected] <- as.numeric(predict(
+      rt_fit$fit,
+      newdata = data.frame(ref_rt = rt_fit$ref_rt[detected])
+    ))
+  }
+  residual <- rt_fit$exp_rt - pred
+  abs_residual <- abs(residual[detected])
+  rng <- attr(rt_fit$fit, "ref_rt_range")
+  extrapolated <- lipid_database$rt_sd < rng[1] | lipid_database$rt_sd > rng[2]
+
+  data.frame(
+    polarity = if (polarity == "pos") "positive" else "negative",
+    rt_fit_method = if (inherits(rt_fit$fit, "scam")) {
+      "scam_monotone_pspline"
+    } else {
+      "poly_lm"
+    },
+    reference_lipids_total = length(rt_fit$ref_rt),
+    reference_lipids_detected = sum(detected),
+    reference_lipids_missing = sum(!detected),
+    r_squared = rt_fit_r_squared(rt_fit$fit),
+    mean_abs_residual_sec = if (length(abs_residual)) {
+      mean(abs_residual)
+    } else {
+      NA_real_
+    },
+    median_abs_residual_sec = if (length(abs_residual)) {
+      median(abs_residual)
+    } else {
+      NA_real_
+    },
+    max_abs_residual_sec = if (length(abs_residual)) {
+      max(abs_residual)
+    } else {
+      NA_real_
+    },
+    calibration_min_rt_sec = rng[1],
+    calibration_max_rt_sec = rng[2],
+    database_entries = nrow(lipid_database),
+    database_entries_extrapolated = sum(extrapolated, na.rm = TRUE),
+    database_entries_extrapolated_pct =
+      sum(extrapolated, na.rm = TRUE) / nrow(lipid_database),
+    stringsAsFactors = FALSE
+  )
+}
+
+rt_reference_details <- function(rt_fit, intern_standard, polarity) {
+  label_col <- first_present(
+    intern_standard,
+    c("short_name", "lipid.name", "lipid_name", "Lipid", "Name")
+  )
+  labels <- if (!is.na(label_col)) {
+    as.character(intern_standard[[label_col]])
+  } else {
+    paste0("reference_", seq_along(rt_fit$ref_rt))
+  }
+  pred <- rep(NA_real_, length(rt_fit$ref_rt))
+  detected <- !is.na(rt_fit$ref_rt) & !is.na(rt_fit$exp_rt)
+  if (any(detected)) {
+    pred[detected] <- as.numeric(predict(
+      rt_fit$fit,
+      newdata = data.frame(ref_rt = rt_fit$ref_rt[detected])
+    ))
+  }
+
+  data.frame(
+    polarity = if (polarity == "pos") "positive" else "negative",
+    reference_lipid = labels,
+    database_rt_sec = rt_fit$ref_rt,
+    observed_rt_sec = rt_fit$exp_rt,
+    fitted_rt_sec = pred,
+    residual_sec = rt_fit$exp_rt - pred,
+    detected = detected,
+    stringsAsFactors = FALSE
+  )
+}
+
 evaluate_polarity <- function(polarity) {
   mode_label <- if (polarity == "pos") "positive" else "negative"
   polarity_dir <- file.path(study_dir, mode_label)
@@ -524,6 +629,7 @@ evaluate_polarity <- function(polarity) {
     )
   )
   rownames(metrics) <- NULL
+  metrics$rt_fit_method <- phase_rt_fit_method(metrics$phase)
   write.csv(metrics, metrics_path, row.names = FALSE, na = "")
   export_annotation_truth(truth_annotations, truth_path, polarity = mode_label)
 
@@ -541,24 +647,59 @@ evaluate_polarity <- function(polarity) {
   )
 
   qc_metrics <- NULL
-  final_path <- file.path(
-    folders$objects,
-    paste0(study_id, "_final_res_", polarity)
-  )
-  if (dir.exists(final_path)) {
-    final_res <- readObject(final_path)
-    final_annotations <- data.frame(
-      feature_id = rownames(final_res),
-      as.data.frame(rowData(final_res)),
+  if (nrow(truth_annotations) > 0) {
+    volume_factors <- list("W" = 2.5, "P" = 1.08)
+    res_qc <- apply_volume_correction(
+      res,
+      volume_factors,
+      assay_name = "raw",
+      new_assay_name = "raw_corr"
+    )
+    res_qc <- apply_volume_correction(
+      res_qc,
+      volume_factors,
+      assay_name = "raw_filled",
+      new_assay_name = "corr_filled"
+    )
+
+    annotated_res <- res_qc[rownames(res_qc) %in% truth_annotations$feature_id, ]
+    annotation_cols <- intersect(
+      c("target_lipid.name", "target_lipid_name_unique",
+        "target_LIPID.CATEGORY..ABBREV.",
+        "target_LIPID.SUBCLASS..ABBREV.", "target_Adduct",
+        "target_IS_norm"),
+      colnames(truth_annotations)
+    )
+    rowData(annotated_res) <- cbind(
+      rowData(annotated_res),
+      truth_annotations[
+        match(rownames(annotated_res), truth_annotations$feature_id),
+        annotation_cols,
+        drop = FALSE
+      ]
+    )
+    annotated_res <- normalize_by_is(
+      annotated_res,
+      input_assay = "corr_filled",
+      output_assay = "ISnorm_filled",
+      is_col = "target_IS_norm",
+      lipid_col = "target_lipid.name"
+    )
+    annotated_res <- filter_by_qc_rsd(annotated_res, threshold = 0.3)
+
+    qc_filtered_annotations <- data.frame(
+      feature_id = rownames(annotated_res),
+      as.data.frame(rowData(annotated_res)),
       stringsAsFactors = FALSE
     )
     qc_metrics <- evaluate_publication_phase(
-      final_annotations,
+      qc_filtered_annotations,
       truth_annotations,
       phase = "qc_rsd_filtered"
     )
+    qc_metrics$rt_fit_method <- phase_rt_fit_method(qc_metrics$phase)
     phase_details$qc_rsd_filtered <- make_phase_detail(
-      final_annotations,
+      qc_filtered_annotations,
       truth_annotations,
       "qc_rsd_filtered",
       mode_label
@@ -574,8 +715,13 @@ evaluate_polarity <- function(polarity) {
 
   message("Saved metrics: ", metrics_path)
   message("Saved manual truth: ", truth_path)
-  invisible(list(metrics = metrics, qc_metrics = qc_metrics,
-                 details = phase_details))
+  invisible(list(
+    metrics = metrics,
+    qc_metrics = qc_metrics,
+    details = phase_details,
+    rt_diagnostics = rt_fit_diagnostics(rt_fit, lipid_database, polarity),
+    rt_references = rt_reference_details(rt_fit, intern_standard, polarity)
+  ))
 }
 
 result_pos <- evaluate_polarity("pos")
@@ -590,6 +736,15 @@ combined_metrics <- combined_metrics[
   c("polarity", setdiff(colnames(combined_metrics), "polarity"))
 ]
 
+rt_diagnostics <- bind_rows_aligned(list(
+  result_pos$rt_diagnostics,
+  result_neg$rt_diagnostics
+))
+rt_references <- bind_rows_aligned(list(
+  result_pos$rt_references,
+  result_neg$rt_references
+))
+
 qc_summary <- rbind(
   cbind(polarity = "positive", result_pos$qc_metrics),
   cbind(polarity = "negative", result_neg$qc_metrics)
@@ -602,7 +757,7 @@ summary_all$phase <- vapply(
 )
 
 summary_cols <- c(
-  "polarity", "phase",
+  "polarity", "phase", "rt_fit_method",
   "candidate_annotations_all_features", "candidate_features_all",
   "curated_truth_annotations", "curated_truth_features",
   "true_annotations", "false_annotations_on_curated_features",
@@ -614,7 +769,7 @@ summary_cols <- summary_cols[summary_cols %in% colnames(summary_all)]
 summary_all <- summary_all[, summary_cols, drop = FALSE]
 
 db_only_cols <- c(
-  "polarity", "phase",
+  "polarity", "phase", "rt_fit_method",
   "candidate_annotations_curated_features", "candidate_features_curated",
   "curated_truth_annotations", "curated_truth_features",
   "true_annotations", "false_annotations_on_curated_features",
@@ -641,6 +796,14 @@ dir.create(dirname(combined_metrics_path), recursive = TRUE, showWarnings = FALS
 write.csv(combined_metrics, combined_metrics_path, row.names = FALSE, na = "")
 message("Saved combined POS/NEG metrics: ", combined_metrics_path)
 
+rt_diagnostics_path <- file.path(
+  study_dir,
+  "objects",
+  paste0(study_id, "_rt_fit_diagnostics_pos_neg.csv")
+)
+write.csv(rt_diagnostics, rt_diagnostics_path, row.names = FALSE, na = "")
+message("Saved RT fit diagnostics: ", rt_diagnostics_path)
+
 detail_names <- unique(c(names(result_pos$details), names(result_neg$details)))
 detail_sheets <- lapply(detail_names, function(phase) {
   rows <- list(result_pos$details[[phase]], result_neg$details[[phase]])
@@ -655,6 +818,7 @@ readme <- data.frame(
             "annotation_status_missed",
             "Summary",
             "DB_only_metrics",
+            "RT_fit_diagnostics",
             "all_feature_curated_match_rate",
             "why_unknown_is_not_wrong", "adduct_required_note",
             "polarity_scope"),
@@ -666,6 +830,7 @@ readme <- data.frame(
     "The manually curated annotation was not recovered in this phase.",
     "All-candidate overview. Positive and negative ionization modes are kept separate, and unknown candidates outside the curated set are retained.",
     "Precision, recall and F1 after excluding candidates on features outside the curated truth set.",
+    "Diagnostics for the merged main RT correction method: monotone scam P-spline fitting, including reference-lipid residuals and database extrapolation counts.",
     "Curated matches divided by all candidate annotations, including uncurated features. This is a candidate-burden indicator, not precision.",
     "The absence of a curated annotation for a feature does not prove the candidate is wrong; it may simply not have been manually resolved.",
     "The adduct_required sheet is a strict comparison phase requiring adduct_ratio > 0; default workflow uses adduct_ratio as support/ambiguity evidence, not as a hard filter.",
@@ -681,7 +846,9 @@ workbook_path <- file.path(
 )
 write_xlsx(
   c(list(README = readme, Summary = summary_all,
-         DB_only_metrics = db_only_metrics), detail_sheets),
+         DB_only_metrics = db_only_metrics,
+         RT_fit_diagnostics = rt_diagnostics,
+         RT_reference_residuals = rt_references), detail_sheets),
   path = workbook_path
 )
 message("Saved publication workbook: ", workbook_path)
