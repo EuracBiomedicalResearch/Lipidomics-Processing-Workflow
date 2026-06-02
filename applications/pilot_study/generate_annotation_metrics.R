@@ -371,7 +371,6 @@ evaluate_polarity <- function(polarity) {
     eic_is,
     intern_standard,
     param_group,
-    poly_degree = 6,
     output_dir = folders$ref_lipid
   )
 
