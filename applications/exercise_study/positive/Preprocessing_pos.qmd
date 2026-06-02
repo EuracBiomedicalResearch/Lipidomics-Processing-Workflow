@@ -104,7 +104,7 @@ MTBLS_ID <- NULL
 SQLITE_DB <- NULL
 
 # Number of CPU cores for parallel processing (use 1-2 below your max)
-CORES_NB <- 4
+CORES_NB <- 1
 
 # Expected sample types in your sequence file (for validation)
 EXPECTED_SAMPLE_TYPES <- c("QC", "Exercise", "Resting")

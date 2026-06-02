@@ -170,6 +170,23 @@ cat("Removing", length(neg_remove_idx), "duplicates from negative mode\n")
 
 res_pos_filtered <- res_pos[-pos_remove_idx, ]
 res_neg_filtered <- res_neg[-neg_remove_idx, ]
+
+duplicate_metrics <- data.frame(
+    common_lipids = length(common_lipids),
+    rt_similar_duplicates = sum(comparison_df$rt_similar),
+    kept_positive_removed_negative = length(neg_remove_idx),
+    kept_negative_removed_positive = length(pos_remove_idx),
+    kept_both_different_rt = sum(!comparison_df$rt_similar)
+)
+
+dir.create("objects", recursive = TRUE, showWarnings = FALSE)
+duplicate_metrics_path <- file.path(
+    "objects",
+    paste0(STUDY_ID, "_pos_neg_duplicate_resolution_metrics.csv")
+)
+write.csv(duplicate_metrics, duplicate_metrics_path,
+          row.names = FALSE, na = "")
+cat("Saved duplicate resolution metrics to:", duplicate_metrics_path, "\n")
 ```
 
 # Combine
@@ -365,6 +382,21 @@ xlsx_path <- file.path("objects",
 dir.create(dirname(xlsx_path), recursive = TRUE, showWarnings = FALSE)
 writexl::write_xlsx(export_df, path = xlsx_path)
 cat("Saved annotated compound abundances to:", xlsx_path, "\n")
+
+truth_cols <- intersect(
+    c("feature_id", "ionization_mode", "target_lipid.name",
+      "target_lipid_name_unique", "target_LIPID.CATEGORY..ABBREV.",
+      "target_LIPID.SUBCLASS..ABBREV.", "target_Adduct",
+      "target_IS_norm", "mzmed", "rtmed", "qc_cv"),
+    colnames(annotation_df)
+)
+combined_truth_path <- file.path(
+    "objects",
+    paste0(STUDY_ID, "_truth_annotations_combined.csv")
+)
+write.csv(annotation_df[, truth_cols, drop = FALSE],
+          combined_truth_path, row.names = FALSE, na = "")
+cat("Saved combined truth annotations to:", combined_truth_path, "\n")
 ```
 
 ---

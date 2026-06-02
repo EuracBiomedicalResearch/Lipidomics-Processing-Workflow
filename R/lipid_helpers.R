@@ -1231,9 +1231,20 @@ validate_lrs_coverage <- function(intern_standard,
          paste(colnames(intern_standard), collapse = ", "))
   }
   if (!db_subclass_col %in% colnames(lipid_database)) {
-    stop("Database subclass column '", db_subclass_col,
-         "' not found in lipid_database. Available: ",
-         paste(colnames(lipid_database), collapse = ", "))
+    db_subclass_aliases <- c(
+      "LIPID.SUBCLASS..ABBREV.",
+      "LIPID SUBCLASS [ABBREV]",
+      "target_LIPID.SUBCLASS..ABBREV.",
+      "target_LIPID SUBCLASS [ABBREV]"
+    )
+    db_subclass_match <- intersect(db_subclass_aliases, colnames(lipid_database))
+    if (length(db_subclass_match) > 0) {
+      db_subclass_col <- db_subclass_match[[1]]
+    } else {
+      stop("Database subclass column '", db_subclass_col,
+           "' not found in lipid_database. Available: ",
+           paste(colnames(lipid_database), collapse = ", "))
+    }
   }
 
   db_subclasses <- unique(lipid_database[[db_subclass_col]])
@@ -1465,6 +1476,93 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
   return(list(mtched_data = mtched_data,
               iso_spectra = iso_spectra_filtered,
               theoretical_spectra = theoretical_spectra_filtered))
+}
+
+#' Calculate isotope pattern similarity in feature chunks
+#'
+#' This wrapper runs `calculate_isotope_similarity()` on complete feature groups
+#' to reduce peak memory use. Rows are restored to the original input order after
+#' all chunks have been processed.
+#'
+#' @param chunk_size Number of unique features to process per chunk.
+#' @inheritParams calculate_isotope_similarity
+#' @return Same list structure as `calculate_isotope_similarity()`.
+calculate_isotope_similarity_chunked <- function(mse,
+                                                 mtched_data,
+                                                 polarity = "pos",
+                                                 isopeak_threshold = 2,
+                                                 similarity_threshold = 0.78,
+                                                 chunk_size = 50) {
+  if (chunk_size < 1) stop("chunk_size must be >= 1.")
+  if (is.null(mtched_data) || !nrow(mtched_data)) {
+    empty <- mtched_data
+    empty$isopeak_count <- numeric()
+    empty$isopeak_sim <- numeric()
+    return(list(
+      mtched_data = empty,
+      iso_spectra = Spectra(),
+      theoretical_spectra = Spectra()
+    ))
+  }
+  if (!"feature_id" %in% colnames(mtched_data)) {
+    stop("mtched_data must contain column 'feature_id'.")
+  }
+
+  mtched_data$.isotope_input_row <- seq_len(nrow(mtched_data))
+  features <- unique(mtched_data$feature_id)
+  chunks <- split(features, ceiling(seq_along(features) / chunk_size))
+
+  message("Calculating isotope similarity in ", length(chunks),
+          " chunk(s) of up to ", chunk_size, " feature(s)")
+
+  results <- vector("list", length(chunks))
+  for (i in seq_along(chunks)) {
+    message("  isotope chunk ", i, "/", length(chunks), " (",
+            length(chunks[[i]]), " feature(s))")
+    chunk_rows <- mtched_data$feature_id %in% chunks[[i]]
+    results[[i]] <- calculate_isotope_similarity(
+      mse = mse,
+      mtched_data = mtched_data[chunk_rows, , drop = FALSE],
+      polarity = polarity,
+      isopeak_threshold = isopeak_threshold,
+      similarity_threshold = similarity_threshold
+    )
+    gc(verbose = FALSE)
+  }
+
+  kept_rows <- do.call(rbind, lapply(results, `[[`, "mtched_data"))
+  if (is.null(kept_rows) || !nrow(kept_rows)) {
+    out <- mtched_data[FALSE, setdiff(colnames(mtched_data),
+                                      ".isotope_input_row"), drop = FALSE]
+    out$isopeak_count <- numeric()
+    out$isopeak_sim <- numeric()
+    return(list(
+      mtched_data = out,
+      iso_spectra = Spectra(),
+      theoretical_spectra = Spectra()
+    ))
+  }
+
+  iso_spectra_list <- lapply(lapply(results, `[[`, "iso_spectra"),
+                             applyProcessing)
+  theoretical_spectra_list <- lapply(
+    lapply(results, `[[`, "theoretical_spectra"),
+    applyProcessing
+  )
+  iso_spectra <- do.call(c, iso_spectra_list)
+  theoretical_spectra <- do.call(c, theoretical_spectra_list)
+
+  order_idx <- order(kept_rows$.isotope_input_row)
+  kept_rows <- kept_rows[order_idx, , drop = FALSE]
+  iso_spectra <- iso_spectra[order_idx]
+  theoretical_spectra <- theoretical_spectra[order_idx]
+  kept_rows$.isotope_input_row <- NULL
+
+  list(
+    mtched_data = kept_rows,
+    iso_spectra = iso_spectra,
+    theoretical_spectra = theoretical_spectra
+  )
 }
 
 #' Resolve SM1/SM2 isomer ambiguity
@@ -2094,3 +2192,370 @@ export_ambiguity_tables <- function(mtched_data,
 }
 
 
+# =============================================================================
+# ANNOTATION EVALUATION
+# =============================================================================
+
+#' Match lipid candidates for annotation benchmark phases
+#'
+#' This lightweight matcher is used for evaluation-only candidate searches
+#' such as m/z-only and m/z + uncorrected RT. It returns the same key columns
+#' used by the main annotation workflow, but does not replace the production
+#' `match_features_to_database()` path.
+#'
+#' @param res SummarizedExperiment with feature data in rowData
+#' @param lipid_database Prepared lipid database
+#' @param ppm PPM tolerance for m/z matching
+#' @param mz_tolerance Absolute m/z tolerance added to the ppm window
+#' @param rt_tol RT tolerance in seconds. Ignored when `use_rt = FALSE`
+#' @param rt_col Database RT column to compare against `rtmed`
+#' @param rank_filter Optional rank values to keep, e.g. `1`
+#' @param use_rt Logical, require RT agreement in addition to m/z
+#' @param phase_name Optional label stored in the output
+#' @param stage_name Backward-compatible alias for `phase_name`
+#' @param verbose Print progress messages
+#' @return Data frame of candidate feature-lipid matches
+match_lipid_candidates <- function(res,
+                                   lipid_database,
+                                   ppm = 20,
+                                   mz_tolerance = 0.001,
+                                   rt_tol = NULL,
+                                   rt_col = "rt_adjusted",
+                                   rank_filter = NULL,
+                                   use_rt = TRUE,
+                                   phase_name = NULL,
+                                   stage_name = NULL,
+                                   verbose = TRUE) {
+  if (is.null(phase_name)) phase_name <- stage_name
+
+  query <- as.data.frame(SummarizedExperiment::rowData(res),
+                         stringsAsFactors = FALSE)
+  query$feature_id <- rownames(res)
+
+  required_query_cols <- c("feature_id", "mzmed")
+  missing_query <- setdiff(required_query_cols, colnames(query))
+  if (length(missing_query) > 0) {
+    stop("Missing required query column(s): ",
+         paste(missing_query, collapse = ", "))
+  }
+  if (use_rt && !"rtmed" %in% colnames(query)) {
+    stop("use_rt = TRUE requires query column 'rtmed'.")
+  }
+
+  target <- as.data.frame(lipid_database, stringsAsFactors = FALSE)
+  if (!is.null(rank_filter)) {
+    if (!"rank" %in% colnames(target)) {
+      stop("rank_filter was provided but lipid_database has no 'rank' column.")
+    }
+    target <- target[target$rank %in% rank_filter, , drop = FALSE]
+  }
+  if (!"mz" %in% colnames(target)) {
+    stop("lipid_database must contain an 'mz' column.")
+  }
+  if (use_rt && !rt_col %in% colnames(target)) {
+    stop("use_rt = TRUE requires lipid_database column '", rt_col, "'.")
+  }
+
+  query$mzmed <- as.numeric(query$mzmed)
+  if ("rtmed" %in% colnames(query)) query$rtmed <- as.numeric(query$rtmed)
+  target$mz <- as.numeric(target$mz)
+  if (use_rt) target[[rt_col]] <- as.numeric(target[[rt_col]])
+
+  target <- target[!is.na(target$mz), , drop = FALSE]
+  if (use_rt) {
+    target <- target[!is.na(target[[rt_col]]), , drop = FALSE]
+  }
+  target <- target[order(target$mz), , drop = FALSE]
+  target_mz <- target$mz
+
+  query_cols <- intersect(c("feature_id", "mzmed", "rtmed"), colnames(query))
+  target_names <- paste0("target_", make.names(colnames(target)))
+
+  out <- vector("list", nrow(query))
+  for (i in seq_len(nrow(query))) {
+    mz <- query$mzmed[i]
+    if (is.na(mz)) next
+
+    mz_window <- mz_tolerance + abs(mz) * ppm / 1e6
+    idx <- which(target_mz >= (mz - mz_window) &
+                   target_mz <= (mz + mz_window))
+    if (!length(idx)) next
+
+    if (use_rt) {
+      rt <- query$rtmed[i]
+      if (is.na(rt)) next
+      idx <- idx[abs(rt - target[[rt_col]][idx]) <= rt_tol]
+      if (!length(idx)) next
+    }
+
+    qhit <- query[i, query_cols, drop = FALSE]
+    qhit <- qhit[rep(1L, length(idx)), , drop = FALSE]
+    thit <- target[idx, , drop = FALSE]
+    colnames(thit) <- target_names
+
+    hit <- cbind(qhit, thit)
+    hit$ppm_error <- (hit$mzmed - hit$target_mz) / hit$target_mz * 1e6
+
+    target_rt_col <- paste0("target_", make.names(rt_col))
+    if (use_rt && target_rt_col %in% colnames(hit)) {
+      hit$score_rt <- hit$rtmed - hit[[target_rt_col]]
+    }
+    if (!is.null(phase_name)) hit$search_phase <- phase_name
+
+    out[[i]] <- hit
+  }
+
+  out <- Filter(Negate(is.null), out)
+  out <- do.call(rbind, out)
+  if (is.null(out)) {
+    out <- data.frame(feature_id = character(),
+                      target_lipid_name_unique = character(),
+                      stringsAsFactors = FALSE)
+  } else {
+    rownames(out) <- NULL
+  }
+
+  if (verbose) {
+    label <- if (is.null(phase_name)) "candidate search" else phase_name
+    message(label, ": ", nrow(out), " candidate matches across ",
+            length(unique(out$feature_id)), " features")
+  }
+
+  out
+}
+
+
+#' Convert annotations to unique feature-lipid pairs
+#'
+#' @param x Annotation data frame
+#' @param feature_col Feature ID column
+#' @param lipid_col Lipid annotation column. If NULL, the first known lipid
+#'   column present in `x` is used.
+#' @param split_merged Split semicolon-merged annotations into separate pairs
+#' @return Data frame with feature_id, lipid_name and pair_key columns
+annotation_pairs <- function(x,
+                             feature_col = "feature_id",
+                             lipid_col = NULL,
+                             split_merged = TRUE) {
+  if (is.null(x) || !nrow(x)) {
+    return(data.frame(feature_id = character(), lipid_name = character(),
+                      pair_key = character(), stringsAsFactors = FALSE))
+  }
+
+  if (!feature_col %in% colnames(x)) {
+    stop("Annotation data is missing feature column '", feature_col, "'.")
+  }
+
+  if (is.null(lipid_col)) {
+    lipid_candidates <- c("target_lipid_name_unique", "lipid_name_unique",
+                          "target_lipid.name", "lipid.name",
+                          "target_lipid_name", "lipid_name")
+    lipid_col <- lipid_candidates[lipid_candidates %in% colnames(x)][1]
+  }
+  if (is.na(lipid_col) || !lipid_col %in% colnames(x)) {
+    stop("Annotation data has no supported lipid annotation column.")
+  }
+
+  features <- as.character(x[[feature_col]])
+  lipids <- as.character(x[[lipid_col]])
+  keep <- !is.na(features) & nzchar(features) & !is.na(lipids) & nzchar(lipids)
+  features <- features[keep]
+  lipids <- lipids[keep]
+
+  if (split_merged) {
+    split_lipids <- strsplit(lipids, "\\s*;\\s*")
+    features <- rep(features, lengths(split_lipids))
+    lipids <- unlist(split_lipids, use.names = FALSE)
+  }
+
+  out <- data.frame(feature_id = features, lipid_name = lipids,
+                    stringsAsFactors = FALSE)
+  out <- out[nzchar(out$lipid_name), , drop = FALSE]
+  out$pair_key <- paste(out$feature_id, out$lipid_name, sep = "||")
+  unique(out)
+}
+
+
+#' Evaluate one annotation phase against curated truth
+#'
+#' Metrics are computed on unique feature-lipid pairs. Precision, recall and F1
+#' are restricted to features represented in the manually curated truth set, so
+#' candidates on uncurated features are reported separately as unknown scope
+#' rather than as wrong annotations.
+#'
+#' @param candidate_annotations Annotation candidates from one workflow phase
+#' @param truth Curated annotation data frame used as truth
+#' @param phase Phase label
+#' @return One-row data frame with curated-scope and all-feature metrics
+evaluate_annotation_phase <- function(candidate_annotations, truth, phase) {
+  candidate_pairs <- annotation_pairs(candidate_annotations)
+  truth_pairs <- annotation_pairs(truth)
+
+  candidate_keys <- unique(candidate_pairs$pair_key)
+  truth_keys <- unique(truth_pairs$pair_key)
+  truth_features <- unique(truth_pairs$feature_id)
+
+  curated_candidates <- candidate_pairs[
+    candidate_pairs$feature_id %in% truth_features,
+    ,
+    drop = FALSE
+  ]
+  uncurated_candidates <- candidate_pairs[
+    !candidate_pairs$feature_id %in% truth_features,
+    ,
+    drop = FALSE
+  ]
+  curated_candidate_keys <- unique(curated_candidates$pair_key)
+
+  curated_matches <- intersect(candidate_keys, truth_keys)
+  alternative_curated <- setdiff(curated_candidate_keys, truth_keys)
+  missed_curated <- setdiff(truth_keys, candidate_keys)
+
+  precision <- if (length(curated_candidate_keys) > 0) {
+    length(curated_matches) / length(curated_candidate_keys)
+  } else {
+    NA_real_
+  }
+  recall <- if (length(truth_keys) > 0) {
+    length(curated_matches) / length(truth_keys)
+  } else {
+    NA_real_
+  }
+  f1 <- if (is.na(precision) || is.na(recall) || (precision + recall) == 0) {
+    NA_real_
+  } else {
+    2 * precision * recall / (precision + recall)
+  }
+  all_feature_curated_match_rate <- if (length(candidate_keys) > 0) {
+    length(curated_matches) / length(candidate_keys)
+  } else {
+    NA_real_
+  }
+
+  candidates_by_feature <- table(candidate_pairs$feature_id)
+  curated_candidates_by_feature <- table(curated_candidates$feature_id)
+
+  data.frame(
+    phase = phase,
+    candidate_annotations_all_features = length(candidate_keys),
+    candidate_features_all = length(unique(candidate_pairs$feature_id)),
+    candidate_lipids_all_features = length(unique(candidate_pairs$lipid_name)),
+    curated_truth_annotations = length(truth_keys),
+    curated_truth_features = length(truth_features),
+    curated_matches = length(curated_matches),
+    alternative_candidates_on_curated_features = length(alternative_curated),
+    candidates_on_uncurated_features =
+      length(unique(uncurated_candidates$pair_key)),
+    uncurated_features_with_candidates =
+      length(unique(uncurated_candidates$feature_id)),
+    missed_curated_annotations = length(missed_curated),
+    curated_feature_precision = precision,
+    curated_feature_recall = recall,
+    curated_feature_f1 = f1,
+    all_feature_curated_match_rate = all_feature_curated_match_rate,
+    ambiguous_candidate_features_all = sum(candidates_by_feature > 1),
+    ambiguous_candidate_features_curated =
+      sum(curated_candidates_by_feature > 1),
+    mean_candidates_per_feature_all = if (length(candidates_by_feature)) {
+      mean(as.numeric(candidates_by_feature))
+    } else {
+      0
+    },
+    max_candidates_per_feature_all = if (length(candidates_by_feature)) {
+      max(as.numeric(candidates_by_feature))
+    } else {
+      0
+    },
+    stringsAsFactors = FALSE
+  )
+}
+
+
+#' Evaluate multiple annotation phases against curated truth
+#'
+#' @param candidate_annotations_by_phase Named list of annotation data frames
+#' @param truth Curated annotation data frame used as truth
+#' @param output_path Optional CSV path
+#' @param baseline_phase Phase used for delta columns
+#' @return Data frame with one row per phase
+evaluate_annotation_phases <- function(candidate_annotations_by_phase,
+                                       truth,
+                                       output_path = NULL,
+                                       baseline_phase = "mz_only_all_ranks") {
+  if (is.null(names(candidate_annotations_by_phase)) ||
+      any(!nzchar(names(candidate_annotations_by_phase)))) {
+    stop("candidate_annotations_by_phase must be a named list.")
+  }
+
+  metrics <- do.call(rbind, Map(
+    f = function(candidate_annotations, nm) {
+      evaluate_annotation_phase(candidate_annotations, truth, nm)
+    },
+    candidate_annotations_by_phase,
+    names(candidate_annotations_by_phase)
+  ))
+  rownames(metrics) <- NULL
+
+  baseline_idx <- match(baseline_phase, metrics$phase)
+  if (!is.na(baseline_idx)) {
+    metrics$curated_feature_precision_change_vs_baseline <-
+      metrics$curated_feature_precision -
+      metrics$curated_feature_precision[baseline_idx]
+    metrics$curated_feature_recall_change_vs_baseline <-
+      metrics$curated_feature_recall -
+      metrics$curated_feature_recall[baseline_idx]
+    metrics$curated_feature_f1_change_vs_baseline <-
+      metrics$curated_feature_f1 -
+      metrics$curated_feature_f1[baseline_idx]
+  }
+
+  if (!is.null(output_path)) {
+    dir.create(dirname(output_path), recursive = TRUE, showWarnings = FALSE)
+    utils::write.csv(metrics, output_path, row.names = FALSE, na = "")
+  }
+
+  metrics
+}
+
+
+# Backward-compatible wrappers for older notebooks.
+evaluate_annotation_stage <- function(candidate_annotations, truth, stage) {
+  evaluate_annotation_phase(candidate_annotations, truth, phase = stage)
+}
+
+evaluate_annotation_stages <- function(candidate_annotations_by_phase,
+                                       truth,
+                                       output_path = NULL,
+                                       baseline_stage = "mz_only_all_ranks") {
+  evaluate_annotation_phases(
+    candidate_annotations_by_phase,
+    truth,
+    output_path = output_path,
+    baseline_phase = baseline_stage
+  )
+}
+
+
+#' Export curated annotation truth table
+#'
+#' @param truth Curated annotation data frame
+#' @param output_path CSV path
+#' @param polarity Optional ionization polarity label
+#' @return Exported data frame, invisibly
+export_annotation_truth <- function(truth, output_path, polarity = NULL) {
+  cols <- c("feature_id", "target_lipid.name", "target_lipid_name_unique",
+            "target_LIPID.CATEGORY..ABBREV.",
+            "target_LIPID.SUBCLASS..ABBREV.", "target_Adduct",
+            "target_adduct", "target_IS_norm", "mzmed", "rtmed",
+            "ppm_error", "score_rt", "isopeak_count", "isopeak_sim",
+            "adduct_count", "adduct_ratio", "nb_annotations")
+  cols <- intersect(cols, colnames(truth))
+  out <- truth[, cols, drop = FALSE]
+  if (!is.null(polarity) && !"ionization_mode" %in% colnames(out)) {
+    out$ionization_mode <- polarity
+  }
+
+  dir.create(dirname(output_path), recursive = TRUE, showWarnings = FALSE)
+  utils::write.csv(out, output_path, row.names = FALSE, na = "")
+  invisible(out)
+}

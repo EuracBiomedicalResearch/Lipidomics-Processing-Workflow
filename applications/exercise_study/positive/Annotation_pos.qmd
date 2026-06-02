@@ -68,7 +68,7 @@ STUDY_ID <- "exercise"
 POLARITY <- "pos"
 
 # Number of CPU cores for parallel processing
-CORES_NB <- 4
+CORES_NB <- 1
 
 # m/z tolerance used during preprocessing
 PPM <- 10
@@ -140,6 +140,30 @@ res_save_path <- file.path(folders$objects,
 
 mse <- readMsObject(XcmsExperiment(), AlabasterParam(path = mse_save_path))
 res <- readObject(res_save_path)
+
+# Rehydrate spectra from SQLite. The preprocessed XcmsExperiment saved through
+# Alabaster keeps xcms feature metadata, but the cached SQL-backed spectra do
+# not expose peaksData() after reload, which is needed for EIC extraction and
+# isotope validation.
+sqlite_db <- file.path(folders$data, paste0(STUDY_ID, "_", POLARITY, ".sqlite"))
+if (file.exists(sqlite_db) && inherits(spectra(mse)@backend, "MsBackendCached")) {
+  seq_data <- read_xlsx(SEQ_FILE, col_names = TRUE) |> as.data.frame()
+  seq_data$polarity <- POLARITY
+  mse_sqlite <- load_from_sqlite(sqlite_db, seq_data)
+  rt_filter <- if (POLARITY == "pos") c(10, 950) else c(10, 800)
+  mse_sqlite <- filterRt(mse_sqlite, rt_filter)
+
+  if (length(spectra(mse_sqlite)) != length(spectra(mse))) {
+    stop("SQLite spectra count after RT filtering (", length(spectra(mse_sqlite)),
+         ") does not match the saved preprocessed object (",
+         length(spectra(mse)), ").")
+  }
+  if (!identical(spectra(mse_sqlite)$base_file, spectra(mse)$base_file)) {
+    stop("SQLite spectra order does not match the saved preprocessed object.")
+  }
+
+  spectra(mse) <- spectra(mse_sqlite)
+}
 
 # Reload reference lipids and EICs
 intern_standard <- prepare_reference_lipids(
@@ -282,6 +306,40 @@ lipid_db_r1 <- match_result$lipid_db_r1
 
 # Validate matching results
 validate_matches(mtched_data, min_matches = 10, max_ppm_error = 15)
+
+# Candidate searches retained for method-comparison metrics.
+candidate_annotations_by_phase <- list(
+  mz_only_all_ranks = match_lipid_candidates(
+    res, lipid_database,
+    ppm = MATCH_PPM,
+    use_rt = FALSE,
+    phase_name = "mz_only_all_ranks"
+  ),
+  mz_rt_uncorrected_all_ranks = match_lipid_candidates(
+    res, lipid_database,
+    ppm = MATCH_PPM,
+    rt_tol = MATCH_RT_TOL,
+    rt_col = "rt_sd",
+    use_rt = TRUE,
+    phase_name = "mz_rt_uncorrected_all_ranks"
+  ),
+  mz_rt_corrected_all_ranks = match_lipid_candidates(
+    res, lipid_database,
+    ppm = MATCH_PPM,
+    rt_tol = MATCH_RT_TOL,
+    rt_col = "rt_adjusted",
+    use_rt = TRUE,
+    phase_name = "mz_rt_corrected_all_ranks"
+  ),
+  rank1_mz_only = match_lipid_candidates(
+    res, lipid_database,
+    ppm = MATCH_PPM,
+    rank_filter = 1,
+    use_rt = FALSE,
+    phase_name = "rank1_mz_only"
+  ),
+  rank1_mz_rt_corrected = mtched_data
+)
 ```
 
 ## Isotope Pattern Validation
@@ -290,15 +348,18 @@ validate_matches(mtched_data, min_matches = 10, max_ppm_error = 15)
 #| label: isotope-validation
 
 # Calculate isotope pattern similarity
-iso_result <- calculate_isotope_similarity(
+iso_result <- calculate_isotope_similarity_chunked(
   mse, mtched_data, polarity = POLARITY,
   isopeak_threshold = 2,
-  similarity_threshold = ISOPEAK_SIM_THRESHOLD
+  similarity_threshold = ISOPEAK_SIM_THRESHOLD,
+  chunk_size = 25
 )
 
 mtched_data <- iso_result$mtched_data
 
 message("Matches after isotope filter: ", nrow(mtched_data))
+
+candidate_annotations_by_phase$rank1_isotope_filter <- mtched_data
 ```
 
 ```{r plot-isotope-patterns}
@@ -338,6 +399,10 @@ mtched_data <- match_adducts(
   ppm = MATCH_PPM,
   rt_tol = 5
 )
+
+candidate_annotations_by_phase$rank1_isotope_adduct_scored <- mtched_data
+candidate_annotations_by_phase$rank1_isotope_with_adduct_support <-
+  mtched_data[mtched_data$adduct_ratio > 0, ]
 ```
 
 ## Resolve Ambiguities
@@ -392,6 +457,8 @@ message("After RT score filter: ", nrow(mtched_data), " matches")
 #| label: sm-resolution
 
 mtched_data <- resolve_sm_isomers(mtched_data)
+
+candidate_annotations_by_phase$automatic_ambiguity_resolution <- mtched_data
 ```
 
 ## Export Ambiguity Tables for Manual Curation
@@ -457,6 +524,38 @@ for (i in unique(fids_ambiguous)) {
 }
 
 message("Final matched lipids: ", nrow(mtched_data))
+
+truth_annotations <- mtched_data
+candidate_annotations_by_phase$manual_curation <- truth_annotations
+```
+
+## Method Comparison Metrics
+
+```{r annotation-method-metrics}
+#| label: annotation-method-metrics
+#| tbl-cap: "Annotation method comparison against manually curated truth"
+
+metrics_path <- file.path(
+  folders$objects,
+  paste0(STUDY_ID, "_annotation_metrics_", POLARITY, ".csv")
+)
+truth_path <- file.path(
+  folders$objects,
+  paste0(STUDY_ID, "_truth_annotations_manual_", POLARITY, ".csv")
+)
+
+annotation_metrics <- evaluate_annotation_phases(
+  candidate_annotations_by_phase,
+  truth_annotations,
+  output_path = metrics_path,
+  baseline_phase = "mz_only_all_ranks"
+)
+export_annotation_truth(truth_annotations, truth_path, polarity = "positive")
+
+message("Saved annotation metrics to: ", metrics_path)
+message("Saved manual truth annotations to: ", truth_path)
+
+kable(annotation_metrics, format = "pipe", digits = 3)
 ```
 
 ## Annotation Summary

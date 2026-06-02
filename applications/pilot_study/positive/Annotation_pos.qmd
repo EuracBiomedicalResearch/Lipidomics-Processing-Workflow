@@ -284,6 +284,40 @@ lipid_db_r1 <- match_result$lipid_db_r1
 
 # Validate matching results
 validate_matches(mtched_data, min_matches = 10, max_ppm_error = 15)
+
+# Candidate searches retained for method-comparison metrics.
+candidate_annotations_by_phase <- list(
+  mz_only_all_ranks = match_lipid_candidates(
+    res, lipid_database,
+    ppm = MATCH_PPM,
+    use_rt = FALSE,
+    phase_name = "mz_only_all_ranks"
+  ),
+  mz_rt_uncorrected_all_ranks = match_lipid_candidates(
+    res, lipid_database,
+    ppm = MATCH_PPM,
+    rt_tol = MATCH_RT_TOL,
+    rt_col = "rt_sd",
+    use_rt = TRUE,
+    phase_name = "mz_rt_uncorrected_all_ranks"
+  ),
+  mz_rt_corrected_all_ranks = match_lipid_candidates(
+    res, lipid_database,
+    ppm = MATCH_PPM,
+    rt_tol = MATCH_RT_TOL,
+    rt_col = "rt_adjusted",
+    use_rt = TRUE,
+    phase_name = "mz_rt_corrected_all_ranks"
+  ),
+  rank1_mz_only = match_lipid_candidates(
+    res, lipid_database,
+    ppm = MATCH_PPM,
+    rank_filter = 1,
+    use_rt = FALSE,
+    phase_name = "rank1_mz_only"
+  ),
+  rank1_mz_rt_corrected = mtched_data
+)
 ```
 
 ## Isotope Pattern Validation
@@ -301,6 +335,8 @@ iso_result <- calculate_isotope_similarity(
 mtched_data <- iso_result$mtched_data
 
 message("Matches after isotope filter: ", nrow(mtched_data))
+
+candidate_annotations_by_phase$rank1_isotope_filter <- mtched_data
 ```
 
 ```{r plot-isotope-patterns}
@@ -322,7 +358,7 @@ Review the mirror plots in **`r folders$iso_pattern`**.
 - Experimental (top) should match theoretical (bottom) patterns
 - Check compounds with similarity scores near the threshold; adjust
  `ISOPEAK_SIM_THRESHOLD` if needed
-- Note any false positive matches where patterns clearly don't align
+- Note any candidate matches where patterns clearly don't align
 :::
 
 ## Adduct Matching (Rank > 1)
@@ -340,6 +376,10 @@ mtched_data <- match_adducts(
   ppm = MATCH_PPM,
   rt_tol = 5
 )
+
+candidate_annotations_by_phase$rank1_isotope_adduct_scored <- mtched_data
+candidate_annotations_by_phase$rank1_isotope_with_adduct_support <-
+  mtched_data[mtched_data$adduct_ratio > 0, ]
 ```
 
 ## Resolve Ambiguities
@@ -394,6 +434,8 @@ message("After RT score filter: ", nrow(mtched_data), " matches")
 #| label: sm-resolution
 
 mtched_data <- resolve_sm_isomers(mtched_data)
+
+candidate_annotations_by_phase$automatic_ambiguity_resolution <- mtched_data
 ```
 
 ## Export Ambiguity Tables for Manual Curation
@@ -459,6 +501,38 @@ for (i in unique(fids_ambiguous)) {
 }
 
 message("Final matched lipids: ", nrow(mtched_data))
+
+truth_annotations <- mtched_data
+candidate_annotations_by_phase$manual_curation <- truth_annotations
+```
+
+## Method Comparison Metrics
+
+```{r annotation-method-metrics}
+#| label: annotation-method-metrics
+#| tbl-cap: "Annotation method comparison against manually curated truth"
+
+metrics_path <- file.path(
+  folders$objects,
+  paste0(STUDY_ID, "_annotation_metrics_", POLARITY, ".csv")
+)
+truth_path <- file.path(
+  folders$objects,
+  paste0(STUDY_ID, "_truth_annotations_manual_", POLARITY, ".csv")
+)
+
+annotation_metrics <- evaluate_annotation_phases(
+  candidate_annotations_by_phase,
+  truth_annotations,
+  output_path = metrics_path,
+  baseline_phase = "mz_only_all_ranks"
+)
+export_annotation_truth(truth_annotations, truth_path, polarity = "positive")
+
+message("Saved annotation metrics to: ", metrics_path)
+message("Saved manual truth annotations to: ", truth_path)
+
+kable(annotation_metrics, format = "pipe", digits = 3)
 ```
 
 ## Annotation Summary
@@ -579,6 +653,32 @@ res_unfilt <- annotated_res
 annotated_res <- filter_by_qc_rsd(annotated_res, threshold = RSD_THRESHOLD)
 ```
 
+```{r qc-retention-metrics}
+#| label: qc-retention-metrics
+#| tbl-cap: "Curated annotation retention after QC RSD filtering"
+
+qc_filtered_annotations <- data.frame(
+  feature_id = rownames(annotated_res),
+  as.data.frame(rowData(annotated_res)),
+  stringsAsFactors = FALSE
+)
+
+qc_retention_metrics <- evaluate_annotation_phase(
+  qc_filtered_annotations,
+  truth_annotations,
+  phase = "qc_rsd_filtered"
+)
+
+qc_metrics_path <- file.path(
+  folders$objects,
+  paste0(STUDY_ID, "_qc_retention_metrics_", POLARITY, ".csv")
+)
+write.csv(qc_retention_metrics, qc_metrics_path, row.names = FALSE, na = "")
+
+message("Saved QC retention metrics to: ", qc_metrics_path)
+kable(qc_retention_metrics, format = "pipe", digits = 3)
+```
+
 ## Quality Assessment Plots
 
 ```{r pca-plot}
@@ -670,6 +770,18 @@ rowData(res_final)$qc_cv <- assay(res_qc, "ISnorm_filled") |> rowRsd()
 
 # save objects
 saveObject(res_final, file.path(folders$objects, paste0(STUDY_ID, "_final_res_", POLARITY)))
+
+final_truth <- data.frame(
+  feature_id = rownames(res_final),
+  as.data.frame(rowData(res_final)),
+  stringsAsFactors = FALSE
+)
+export_annotation_truth(
+  final_truth,
+  file.path(folders$objects,
+            paste0(STUDY_ID, "_truth_annotations_qc_filtered_", POLARITY, ".csv")),
+  polarity = "positive"
+)
 ```
 
 ## Session Info
