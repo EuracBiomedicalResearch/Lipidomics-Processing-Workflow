@@ -179,7 +179,6 @@ param_group <- PeakDensityParam(
 # Fit RT correction model
 rt_fit <- fit_rt_correction(
   eic_is, intern_standard, param_group,
-  poly_degree = 6,
   output_dir = folders$ref_lipid
 )
 

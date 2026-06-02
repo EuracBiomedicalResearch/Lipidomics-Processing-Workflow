@@ -219,6 +219,7 @@ cat("Features from negative mode:", sum(rowData(res_combined)$ionization_mode ==
 
 ```{r}
 #| label: save-combined
+dir.create(dirname(RES_COMBINED_PATH), recursive = TRUE, showWarnings = FALSE)
 saveObject(res_combined, RES_COMBINED_PATH)
 ```
 
