@@ -2615,6 +2615,125 @@ evaluate_annotation_stages <- function(candidate_annotations_by_phase,
 }
 
 
+#' Identify internal-standard annotation rows
+#'
+#' Metrics should evaluate endogenous/database annotation performance, not
+#' recovery of injected internal standards. Prefer the database `ORIGIN` field
+#' when it is available and use lipid-name patterns only as a fallback for older
+#' exported annotation tables that did not preserve origin metadata.
+#'
+#' @param x Annotation data frame
+#' @return Logical vector with one value per row in `x`
+is_internal_standard_annotation <- function(x) {
+  if (is.null(x) || !nrow(x)) {
+    return(logical(0))
+  }
+
+  is_istd <- rep(FALSE, nrow(x))
+
+  origin_cols <- intersect(
+    c("target_ORIGIN", "target_origin", "ORIGIN", "origin",
+      "target_type", "type"),
+    colnames(x)
+  )
+  for (col in origin_cols) {
+    value <- trimws(as.character(x[[col]]))
+    is_istd <- is_istd | (!is.na(value) & toupper(value) == "ISTD")
+  }
+
+  if (!any(is_istd)) {
+    lipid_cols <- intersect(
+      c("target_lipid.name", "target_lipid_name_unique",
+        "lipid.name", "lipid_name_unique", "lipid_name"),
+      colnames(x)
+    )
+    for (col in lipid_cols) {
+      value <- as.character(x[[col]])
+      is_istd <- is_istd |
+        grepl("\\(d[0-9]+\\)|C17 Sphinganine|FA\\(16:0\\(d31\\)\\)",
+              value, ignore.case = TRUE)
+    }
+  }
+
+  is_istd[is.na(is_istd)] <- FALSE
+  is_istd
+}
+
+
+#' Remove internal standards from metric inputs
+#'
+#' The final curated truth defines which detected features are injected
+#' standards. Those feature IDs are removed from every phase so they do not
+#' contribute true, false, missed or unknown annotations. Any remaining candidate
+#' rows targeting an ISTD database compound are also removed.
+#'
+#' @param candidate_annotations_by_phase Named list of candidate annotation data
+#'   frames
+#' @param truth Final curated annotation data frame
+#' @param verbose Print exclusion summary
+#' @return List with filtered `candidates`, filtered `truth`, excluded feature
+#'   IDs and summary counts
+filter_internal_standards_for_metrics <- function(candidate_annotations_by_phase,
+                                                  truth,
+                                                  verbose = TRUE) {
+  if (is.null(names(candidate_annotations_by_phase)) ||
+      any(!nzchar(names(candidate_annotations_by_phase)))) {
+    stop("candidate_annotations_by_phase must be a named list.")
+  }
+
+  truth_istd <- is_internal_standard_annotation(truth)
+  istd_features <- if ("feature_id" %in% colnames(truth)) {
+    unique(as.character(truth$feature_id[truth_istd]))
+  } else {
+    character()
+  }
+  istd_features <- istd_features[!is.na(istd_features) & nzchar(istd_features)]
+
+  filter_one_phase <- function(x) {
+    if (is.null(x) || !nrow(x)) {
+      return(x)
+    }
+
+    keep <- rep(TRUE, nrow(x))
+    if ("feature_id" %in% colnames(x) && length(istd_features)) {
+      keep <- keep & !as.character(x$feature_id) %in% istd_features
+    }
+    keep <- keep & !is_internal_standard_annotation(x)
+    x[keep, , drop = FALSE]
+  }
+
+  filtered_candidates <- lapply(candidate_annotations_by_phase, filter_one_phase)
+  filtered_truth <- filter_one_phase(truth)
+
+  candidate_rows_before <- sum(vapply(candidate_annotations_by_phase, nrow,
+                                      integer(1)))
+  candidate_rows_after <- sum(vapply(filtered_candidates, nrow, integer(1)))
+  summary <- data.frame(
+    curated_istd_annotations_excluded = sum(truth_istd),
+    curated_istd_features_excluded = length(istd_features),
+    candidate_rows_excluded = candidate_rows_before - candidate_rows_after,
+    stringsAsFactors = FALSE
+  )
+
+  if (verbose) {
+    message("ISTD metric filter: excluded ",
+            summary$curated_istd_annotations_excluded,
+            " curated ISTD annotation(s) across ",
+            summary$curated_istd_features_excluded,
+            " feature(s), plus ",
+            summary$candidate_rows_excluded,
+            " candidate row(s) across phases.")
+  }
+
+  list(
+    candidates = filtered_candidates,
+    truth = filtered_truth,
+    excluded_features = istd_features,
+    summary = summary
+  )
+}
+
+
 #' Export curated annotation truth table
 #'
 #' @param truth Curated annotation data frame
@@ -2625,7 +2744,7 @@ export_annotation_truth <- function(truth, output_path, polarity = NULL) {
   cols <- c("feature_id", "target_lipid.name", "target_lipid_name_unique",
             "target_LIPID.CATEGORY..ABBREV.",
             "target_LIPID.SUBCLASS..ABBREV.", "target_Adduct",
-            "target_adduct", "target_IS_norm", "mzmed", "rtmed",
+            "target_adduct", "target_ORIGIN", "target_IS_norm", "mzmed", "rtmed",
             "ppm_error", "score_rt", "isopeak_count", "isopeak_sim",
             "adduct_count", "adduct_ratio", "nb_annotations")
   cols <- intersect(cols, colnames(truth))

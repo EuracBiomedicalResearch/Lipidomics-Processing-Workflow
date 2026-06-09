@@ -548,6 +548,12 @@ evaluate_polarity <- function(polarity) {
 
   truth_annotations <- mtched_data
   candidate_annotations_by_phase$manual_curation <- truth_annotations
+  istd_filter <- filter_internal_standards_for_metrics(
+    candidate_annotations_by_phase,
+    truth_annotations
+  )
+  candidate_annotations_by_phase <- istd_filter$candidates
+  truth_annotations <- istd_filter$truth
 
   metrics <- evaluate_annotation_phases(
     candidate_annotations_by_phase,
@@ -590,7 +596,12 @@ evaluate_polarity <- function(polarity) {
     metrics = metrics,
     details = phase_details,
     rt_diagnostics = rt_fit_diagnostics(rt_fit, lipid_database, polarity),
-    rt_references = rt_reference_details(rt_fit, intern_standard, polarity)
+    rt_references = rt_reference_details(rt_fit, intern_standard, polarity),
+    istd_filter_summary = data.frame(
+      polarity = mode_label,
+      istd_filter$summary,
+      stringsAsFactors = FALSE
+    )
   ))
 }
 
@@ -613,6 +624,10 @@ rt_diagnostics <- bind_rows_aligned(list(
 rt_references <- bind_rows_aligned(list(
   result_pos$rt_references,
   result_neg$rt_references
+))
+istd_filter_summary <- bind_rows_aligned(list(
+  result_pos$istd_filter_summary,
+  result_neg$istd_filter_summary
 ))
 
 summary_cols <- c(
@@ -671,6 +686,7 @@ readme <- data.frame(
             "annotation_status_false", "annotation_status_unknown",
             "annotation_status_missed", "Summary", "DB_only_metrics",
             "RT_fit_diagnostics",
+            "ISTD_filter",
             "all_feature_curated_match_rate", "why_unknown_is_not_wrong",
             "adduct_support_note", "polarity_scope"),
   description = c(
@@ -682,6 +698,7 @@ readme <- data.frame(
     "All-candidate overview. Positive and negative ionization modes are kept as separate rows.",
     "Precision, recall and F1 after excluding candidates on features outside the curated truth set.",
     "Diagnostics for the merged main RT correction method: monotone scam P-spline fitting, including reference-lipid residuals and database extrapolation counts.",
+    "Counts of injected-standard annotations/features removed before computing annotation metrics.",
     "Curated matches divided by all candidate annotations, including unknown candidates outside the curated set. This is a candidate-burden indicator, not precision.",
     "A feature absent from the curated set is unresolved rather than a confirmed false annotation.",
     "The adduct_support sheet is a strict comparison phase requiring adduct_ratio > 0; the workflow otherwise uses adduct_ratio as supporting evidence.",
@@ -698,6 +715,7 @@ write_xlsx(
   c(list(README = readme, Summary = summary_all,
          DB_only_metrics = db_only_metrics,
          RT_fit_diagnostics = rt_diagnostics,
+         ISTD_filter = istd_filter_summary,
          RT_reference_residuals = rt_references,
          Phase_metrics_full = combined_metrics), detail_sheets),
   path = workbook_path
