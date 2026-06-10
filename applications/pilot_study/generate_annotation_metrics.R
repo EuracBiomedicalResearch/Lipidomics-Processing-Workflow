@@ -273,21 +273,25 @@ evaluate_publication_phase <- function(candidate_annotations, truth, phase) {
     phase = phase,
     candidate_annotations_all_features = length(cand_keys),
     candidate_features_all = length(unique(cand$feature_id)),
-    candidate_annotations_curated_features = length(curated_candidate_keys),
-    candidate_features_curated = length(unique(curated_candidates$feature_id)),
+    candidate_lipids_all_features = length(unique(cand$lipid_name)),
     curated_truth_annotations = length(truth_keys),
     curated_truth_features = length(truth_features),
-    true_annotations = length(curated_matches),
-    false_annotations_on_curated_features = length(alternative_curated),
+    curated_matches = length(curated_matches),
+    alternative_candidates_on_curated_features = length(alternative_curated),
     candidates_on_uncurated_features = length(unique(uncurated_candidates$pair_key)),
     uncurated_features_with_candidates = length(unique(uncurated_candidates$feature_id)),
-    missed_annotations = length(missed_curated),
-    precision_curated_features = curated_precision,
-    recall_curated_features = curated_recall,
-    f1_curated_features = curated_f1,
+    missed_curated_annotations = length(missed_curated),
+    curated_feature_precision = curated_precision,
+    curated_feature_recall = curated_recall,
+    curated_feature_f1 = curated_f1,
     all_feature_curated_match_rate = all_feature_curated_match_rate,
     ambiguous_candidate_features_all = sum(by_feature > 1),
     ambiguous_candidate_features_curated = sum(curated_by_feature > 1),
+    mean_candidates_per_feature_all = if (length(by_feature)) {
+      mean(as.numeric(by_feature))
+    } else {
+      0
+    },
     max_candidates_per_feature_all = if (length(by_feature)) {
       max(as.numeric(by_feature))
     } else {
@@ -774,22 +778,23 @@ summary_all$phase <- vapply(
 summary_cols <- c(
   "polarity", "phase", "rt_fit_method",
   "candidate_annotations_all_features", "candidate_features_all",
-  "curated_truth_annotations", "curated_truth_features",
-  "true_annotations", "false_annotations_on_curated_features",
+  "candidate_lipids_all_features", "curated_truth_annotations",
+  "curated_truth_features", "curated_matches",
+  "alternative_candidates_on_curated_features",
   "candidates_on_uncurated_features", "uncurated_features_with_candidates",
-  "missed_annotations", "all_feature_curated_match_rate",
-  "ambiguous_candidate_features_all", "max_candidates_per_feature_all"
+  "missed_curated_annotations", "all_feature_curated_match_rate",
+  "ambiguous_candidate_features_all", "mean_candidates_per_feature_all",
+  "max_candidates_per_feature_all"
 )
 summary_cols <- summary_cols[summary_cols %in% colnames(summary_all)]
 summary_all <- summary_all[, summary_cols, drop = FALSE]
 
 db_only_cols <- c(
   "polarity", "phase", "rt_fit_method",
-  "candidate_annotations_curated_features", "candidate_features_curated",
   "curated_truth_annotations", "curated_truth_features",
-  "true_annotations", "false_annotations_on_curated_features",
-  "missed_annotations", "precision_curated_features",
-  "recall_curated_features", "f1_curated_features",
+  "curated_matches", "alternative_candidates_on_curated_features",
+  "missed_curated_annotations", "curated_feature_precision",
+  "curated_feature_recall", "curated_feature_f1",
   "ambiguous_candidate_features_curated"
 )
 db_only_cols <- db_only_cols[db_only_cols %in% colnames(summary_all) |

@@ -1,3 +1,3 @@
 "polarity","rt_fit_method","reference_lipids_total","reference_lipids_detected","reference_lipids_missing","r_squared","mean_abs_residual_sec","median_abs_residual_sec","max_abs_residual_sec","calibration_min_rt_sec","calibration_max_rt_sec","database_entries","database_entries_extrapolated","database_entries_extrapolated_pct"
-"positive","scam_monotone_pspline",22,20,2,0.999,6.86708178401668,5.72319786389446,17.9687298615208,48,963,1536,35,0.0227864583333333
-"negative","scam_monotone_pspline",24,23,1,0.997,8.52941904090432,9.6652389340083,17.1864678099899,98.4,761.4,801,23,0.0287141073657928
+"positive","scam_monotone_pspline",16,16,0,0.9992,6.81186393320138,5.92437237024194,12.7286018997523,48,963,1536,35,0.0227864583333333
+"negative","scam_monotone_pspline",19,19,0,0.9985,5.46318627091043,4.6462966088171,15.4446027957095,98.4,761.4,801,23,0.0287141073657928
