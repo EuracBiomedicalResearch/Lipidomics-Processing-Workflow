@@ -45,6 +45,8 @@ single `SummarizedExperiment`. It handles:
 # USER CONFIGURATION - MODIFY THIS SECTION
 # ============================================================================
 
+PROJECT_ROOT <- ".."
+
 # Study identifier: must match what was used in the annotation workflow
 STUDY_ID <- "my_study"
 
@@ -57,6 +59,11 @@ RES_COMBINED_PATH <- file.path("objects", paste0(STUDY_ID, "_res_combined"))
 
 # RT difference threshold for duplicate resolution (seconds)
 RT_DIFF_THRESHOLD <- 30
+
+# Whether ISTDs participate in downstream plots, metrics, and PCA.
+# When FALSE, ISTDs are dropped from res_combined *after* the Save section,
+# so the saved binary still has them (with an origin column) for reuse.
+INCLUDE_ISTDS <- FALSE
 ```
 
 # Setup
@@ -70,6 +77,7 @@ library(ggfortify)
 library(ggplot2)
 library(RColorBrewer)
 library(writexl)
+source(file.path(PROJECT_ROOT, "R/lipid_helpers.R"))
 ```
 
 # Load Results
@@ -200,12 +208,45 @@ cat("Features from positive mode:", sum(rowData(res_combined)$ionization_mode ==
 cat("Features from negative mode:", sum(rowData(res_combined)$ionization_mode == "negative"), "\n")
 ```
 
+```{r}
+#| label: mark-origin
+
+# Use IS_norm to differentiate between Internal Standards and Endogenous lipids
+is_istd <- !is.na(rowData(res_combined)$target_IS_norm) &
+    rowData(res_combined)$target_lipid.name ==
+        rowData(res_combined)$target_IS_norm
+rowData(res_combined)$origin <- ifelse(is_istd, "ISTD", "endogenous")
+
+cat("Origin marked:",
+    sum(rowData(res_combined)$origin == "ISTD"), "ISTD,",
+    sum(rowData(res_combined)$origin == "endogenous"), "endogenous\n")
+```
+
 # Save
 
 ```{r}
 #| label: save-combined
 dir.create(dirname(RES_COMBINED_PATH), recursive = TRUE, showWarnings = FALSE)
 saveObject(res_combined, RES_COMBINED_PATH)
+```
+
+```{r}
+#| label: filter-istds-for-analysis
+
+# Keep an unfiltered snapshot for the xlsx export at the end of this file
+res_combined_all <- res_combined
+if (!INCLUDE_ISTDS) {
+    n_before <- nrow(res_combined)
+    res_combined <- res_combined[rowData(res_combined)$origin == "endogenous", ]
+    cat("INCLUDE_ISTDS = FALSE: dropped",
+        n_before - nrow(res_combined),
+        "ISTDs from downstream analysis (",
+        nrow(res_combined), "features remain).\n")
+} else {
+    cat("INCLUDE_ISTDS = TRUE: keeping",
+        sum(rowData(res_combined)$origin == "ISTD"),
+        "ISTDs in downstream analysis.\n")
+}
 ```
 
 # Lipid Coverage
@@ -243,6 +284,27 @@ pie(counts_sub, col = sub_colors, labels = counts_sub,
 symbols(0, 0, circles = 0.5, inches = FALSE, add = TRUE, bg = "white")
 legend("topright", legend = names(counts_sub), fill = sub_colors,
        border = NA, bty = "n", title = "Lipid Subclass", cex = 0.5)
+```
+
+```{r}
+#| label: lipid-coverage-subclass-by-category
+#| fig-cap: "Annotated lipid subclass distribution, grouped and colored by category"
+
+counts_df <- prepare_subclass_counts(res_combined)
+cat_palette <- c(FA = "#66c2a5", GL = "#fc8d62", GP = "#8da0cb",
+                 SP = "#e78ac3", ST = "#a6d854")
+
+ggplot(counts_df, aes(x = subclass, y = Freq, fill = category)) +
+    geom_col() +
+    facet_grid(~ category, scales = "free_x", space = "free_x", switch = "x") +
+    scale_fill_manual(values = cat_palette) +
+    labs(title = "Annotated Lipid Subclass Distribution",
+         x = NULL, y = "Count", fill = "Category") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          strip.placement = "outside",
+          strip.background = element_rect(fill = "grey95"),
+          panel.spacing = unit(0.2, "lines"))
 ```
 
 ```{r}
@@ -344,20 +406,20 @@ ggplot(feature_df, aes(x = PC1, y = PC2, color = ionization_mode)) +
 annot_cols <- intersect(
     c("target_lipid.name", "target_lipid_name_unique",
       "target_LIPID.CATEGORY..ABBREV.", "target_LIPID.SUBCLASS..ABBREV.",
-      "target_Adduct", "target_IS_norm", "ionization_mode",
+      "target_Adduct", "target_IS_norm", "origin", "ionization_mode",
       "mzmed", "rtmed"),
-    colnames(rowData(res_combined))
+    colnames(rowData(res_combined_all))
 )
 
 annotation_df <- data.frame(
-    feature_id = rownames(res_combined),
-    as.data.frame(rowData(res_combined)[, annot_cols, drop = FALSE]),
+    feature_id = rownames(res_combined_all),
+    as.data.frame(rowData(res_combined_all)[, annot_cols, drop = FALSE]),
     check.names = FALSE,
     stringsAsFactors = FALSE
 )
 
 abundance_df <- as.data.frame(
-    assay(res_combined, "ISnorm_filled_imputed"),
+    assay(res_combined_all, "ISnorm_filled_imputed"),
     check.names = FALSE
 )
 
