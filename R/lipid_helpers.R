@@ -1177,6 +1177,53 @@ plot_lipid_donut <- function(category_counts, category_names = NULL,
   invisible(NULL)
 }
 
+#' Prepare subclass count data frame for plotting
+#'
+#' Extracts bracketed abbreviations from the category/subclass rowData columns,
+#' validates that each subclass maps to exactly one category, and returns a
+#' count data frame ordered for faceted bar plots.
+#'
+#' @param se SummarizedExperiment with annotated rowData
+#' @param cat_col rowData column for lipid category
+#' @param sub_col rowData column for lipid subclass
+#' @param cat_levels Display order for lipid categories. Categories absent from
+#'   this vector are appended at the end. Defaults to the five classes present
+#'   in the current study database; adjust if your database covers additional
+#'   LIPID MAPS top-level classes (e.g. PK, PR, SL).
+#' @return data.frame with columns category (factor), subclass (factor), Freq
+prepare_subclass_counts <- function(
+        se,
+        cat_col = "target_LIPID.CATEGORY..ABBREV.",
+        sub_col = "target_LIPID.SUBCLASS..ABBREV.",
+        cat_levels = c("FA", "GL", "GP", "SP", "ST")) {
+
+    rd <- as.data.frame(SummarizedExperiment::rowData(se))
+    df <- data.frame(
+        category = sub(".*\\[(.*)\\]$", "\\1", rd[[cat_col]]),
+        subclass  = sub(".*\\[(.*)\\]$", "\\1", rd[[sub_col]]),
+        stringsAsFactors = FALSE
+    )
+
+    mismatch <- unique(df[, c("subclass", "category")]) |>
+        dplyr::group_by(subclass) |>
+        dplyr::filter(dplyr::n() > 1) |>
+        as.data.frame()
+    if (nrow(mismatch) > 0) {
+        stop("Subclass abbreviation maps to multiple categories:\n",
+             paste(capture.output(print(mismatch)), collapse = "\n"))
+    }
+
+    cat_levels <- c(cat_levels, setdiff(unique(df$category), cat_levels))
+    counts_df <- as.data.frame(table(category = df$category,
+                                     subclass  = df$subclass))
+    counts_df <- counts_df[counts_df$Freq > 0, ]
+    counts_df$category <- factor(counts_df$category, levels = cat_levels)
+    counts_df <- counts_df[order(counts_df$category, -counts_df$Freq), ]
+    counts_df$subclass <- factor(counts_df$subclass,
+                                 levels = unique(counts_df$subclass))
+    counts_df
+}
+
 # =============================================================================
 # DATA PREPROCESSING HELPERS
 # =============================================================================
