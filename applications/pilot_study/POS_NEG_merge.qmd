@@ -1,0 +1,444 @@
+---
+title: "Pilot Study — POS & NEG Mode Merge"
+subtitle: "Combine positive and negative ionization mode results"
+author: "CEMBIO-EURAC Team"
+date: today
+params:
+  study_id: "pilot"
+format:
+  html:
+    output-file: "pilot_POS_NEG_merge.html"
+    toc: true
+    toc-depth: 3
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 6)
+```
+
+```{r}
+library("tictoc")
+tic("Quarto compilation")
+```
+
+# Overview
+
+::: {.callout-tip}
+## Study-specific instance
+This is a configured copy of `generic_workflow/POS_NEG_merge.qmd` for the
+**pilot study**. Run after completing `Annotation_pos.qmd` and `Annotation_neg.qmd`.
+:::
+
+This document merges positive and negative mode annotation results into a
+single `SummarizedExperiment`. It handles:
+
+1. Adding ionization mode metadata
+2. Aligning samples between modes
+3. Resolving duplicate lipids (keeps higher abundance when RT is similar)
+4. Lipid coverage visualization
+5. PCA analysis of the combined dataset
+
+# Configuration
+
+```{r config}
+#| label: configuration
+
+# ============================================================================
+# PILOT STUDY CONFIGURATION
+# ============================================================================
+
+PROJECT_ROOT <- "../.."
+
+# Study identifier: must match what was used in the annotation workflow
+STUDY_ID <- "pilot"
+
+# Paths to the final result objects (from Annotation.qmd)
+RES_POS_PATH <- file.path("positive", "objects", paste0(STUDY_ID, "_final_res_pos"))
+RES_NEG_PATH <- file.path("negative", "objects", paste0(STUDY_ID, "_final_res_neg"))
+
+# Output path for combined result
+RES_COMBINED_PATH <- file.path("objects", paste0(STUDY_ID, "_res_combined"))
+
+# RT difference threshold for duplicate resolution (seconds)
+RT_DIFF_THRESHOLD <- 30
+
+# Whether ISTDs participate in downstream plots, metrics, and PCA.
+# When FALSE, ISTDs are dropped from res_combined *after* the Save section,
+# so the saved binary still has them (with an origin column) for reuse.
+INCLUDE_ISTDS <- FALSE
+```
+
+# Setup
+
+```{r}
+#| label: load-packages
+library(alabaster.se)
+library(SummarizedExperiment)
+library(UpSetR)
+library(ggfortify)
+library(ggplot2)
+library(RColorBrewer)
+library(writexl)
+source(file.path(PROJECT_ROOT, "R/lipid_helpers.R"))
+```
+
+# Load Results
+
+```{r}
+#| label: load-data
+res_pos <- readObject(RES_POS_PATH)
+res_neg <- readObject(RES_NEG_PATH)
+
+cat("Positive mode:", nrow(res_pos), "features x", ncol(res_pos), "samples\n")
+cat("Negative mode:", nrow(res_neg), "features x", ncol(res_neg), "samples\n")
+```
+
+# Add Ionization Mode
+
+```{r}
+#| label: add-mode
+rowData(res_pos)$ionization_mode <- "positive"
+rowData(res_neg)$ionization_mode <- "negative"
+```
+
+# Align Samples
+
+```{r}
+#| label: align-samples
+pos_samples <- colData(res_pos)$sample_name
+neg_samples <- colData(res_neg)$sample_name
+
+stopifnot(
+    !anyDuplicated(pos_samples),
+    !anyDuplicated(neg_samples),
+    setequal(pos_samples, neg_samples)
+)
+
+res_neg <- res_neg[, match(pos_samples, neg_samples)]
+
+stopifnot(all(colData(res_pos)$sample_name == colData(res_neg)$sample_name))
+```
+
+# Resolve Duplicate Lipids
+
+```{r}
+#| label: find-duplicates
+common_lipids <- intersect(
+    rowData(res_pos)$target_lipid_name_unique,
+    rowData(res_neg)$target_lipid_name_unique
+)
+
+cat("Number of common lipids:", length(common_lipids), "\n")
+
+comparison_df <- data.frame(
+    lipid_name_unique = common_lipids,
+    pos_idx = match(common_lipids, rowData(res_pos)$target_lipid_name_unique),
+    neg_idx = match(common_lipids, rowData(res_neg)$target_lipid_name_unique)
+)
+
+comparison_df$pos_mean_abundance <- sapply(comparison_df$pos_idx, function(i) {
+    mean(assay(res_pos, "ISnorm_filled_imputed")[i, ], na.rm = TRUE)
+})
+comparison_df$neg_mean_abundance <- sapply(comparison_df$neg_idx, function(i) {
+    mean(assay(res_neg, "ISnorm_filled_imputed")[i, ], na.rm = TRUE)
+})
+
+comparison_df$pos_rt <- rowData(res_pos)$rtmed[comparison_df$pos_idx]
+comparison_df$neg_rt <- rowData(res_neg)$rtmed[comparison_df$neg_idx]
+comparison_df$rt_diff <- abs(comparison_df$pos_rt - comparison_df$neg_rt)
+comparison_df$rt_similar <- comparison_df$rt_diff < RT_DIFF_THRESHOLD
+
+comparison_df$keep_mode <- ifelse(
+    comparison_df$pos_mean_abundance >= comparison_df$neg_mean_abundance,
+    "positive", "negative"
+)
+
+cat("\nRetention time differences summary:\n")
+summary(comparison_df$rt_diff)
+
+cat("\nLipids with dissimilar RT (kept in both modes):\n")
+comparison_df[!comparison_df$rt_similar,
+              c("lipid_name_unique", "pos_rt", "neg_rt", "rt_diff")]
+```
+
+```{r}
+#| label: remove-duplicates
+pos_remove_idx <- comparison_df$pos_idx[
+    comparison_df$keep_mode == "negative" & comparison_df$rt_similar
+]
+neg_remove_idx <- comparison_df$neg_idx[
+    comparison_df$keep_mode == "positive" & comparison_df$rt_similar
+]
+
+cat("Removing", length(pos_remove_idx), "duplicates from positive mode\n")
+cat("Removing", length(neg_remove_idx), "duplicates from negative mode\n")
+
+res_pos_filtered <- res_pos[-pos_remove_idx, ]
+res_neg_filtered <- res_neg[-neg_remove_idx, ]
+```
+
+# Combine
+
+```{r}
+#| label: combine-results
+colnames(res_pos_filtered) <- colData(res_pos_filtered)$sample_name
+colnames(res_neg_filtered) <- colData(res_neg_filtered)$sample_name
+
+colData(res_pos_filtered)$file_name <- NULL
+colData(res_neg_filtered)$file_name <- NULL
+colData(res_pos_filtered)$spectraOrigin <- NULL
+colData(res_neg_filtered)$spectraOrigin <- NULL
+colData(res_pos_filtered)$polarity <- NULL
+colData(res_neg_filtered)$polarity <- NULL
+
+if (!"ionization_mode" %in% colnames(rowData(res_pos_filtered)))
+    rowData(res_pos_filtered)$ionization_mode <- "positive"
+if (!"ionization_mode" %in% colnames(rowData(res_neg_filtered)))
+    rowData(res_neg_filtered)$ionization_mode <- "negative"
+
+res_combined <- rbind(res_pos_filtered, res_neg_filtered)
+
+cat("Combined dataset:", nrow(res_combined), "features x", ncol(res_combined), "samples\n")
+cat("Features from positive mode:", sum(rowData(res_combined)$ionization_mode == "positive"), "\n")
+cat("Features from negative mode:", sum(rowData(res_combined)$ionization_mode == "negative"), "\n")
+```
+
+```{r}
+#| label: mark-origin
+
+# Use IS_norm to differentiate between Internal Standards and Endogenous lipids
+is_istd <- !is.na(rowData(res_combined)$target_IS_norm) &
+    rowData(res_combined)$target_lipid.name ==
+        rowData(res_combined)$target_IS_norm
+rowData(res_combined)$origin <- ifelse(is_istd, "ISTD", "endogenous")
+
+cat("Origin marked:",
+    sum(rowData(res_combined)$origin == "ISTD"), "ISTD,",
+    sum(rowData(res_combined)$origin == "endogenous"), "endogenous\n")
+```
+
+# Save
+
+```{r}
+#| label: save-combined
+dir.create(dirname(RES_COMBINED_PATH), recursive = TRUE, showWarnings = FALSE)
+saveObject(res_combined, RES_COMBINED_PATH)
+```
+
+```{r}
+#| label: filter-istds-for-analysis
+
+# Keep an unfiltered snapshot for the xlsx export at the end of this file
+res_combined_all <- res_combined
+if (!INCLUDE_ISTDS) {
+    n_before <- nrow(res_combined)
+    res_combined <- res_combined[rowData(res_combined)$origin == "endogenous", ]
+    cat("INCLUDE_ISTDS = FALSE: dropped",
+        n_before - nrow(res_combined),
+        "ISTDs from downstream analysis (",
+        nrow(res_combined), "features remain).\n")
+} else {
+    cat("INCLUDE_ISTDS = TRUE: keeping",
+        sum(rowData(res_combined)$origin == "ISTD"),
+        "ISTDs in downstream analysis.\n")
+}
+```
+
+# Lipid Coverage
+
+```{r}
+#| label: lipid-coverage
+#| fig-cap: "Lipid class distribution in the combined POS+NEG dataset"
+
+counts_cat <- table(rowData(res_combined)$`target_LIPID.CATEGORY..ABBREV.`)
+bar_colors_cat <- rep(c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854"),
+                      length.out = length(counts_cat))
+
+par(mar = c(1, 1, 2, 1))
+pie(counts_cat, col = bar_colors_cat, labels = counts_cat,
+    border = "white",
+    main = paste0("Combined Lipid Distribution (n = ", sum(counts_cat), ")"),
+    cex = 0.9)
+symbols(0, 0, circles = 0.5, inches = FALSE, add = TRUE, bg = "white")
+legend("topright", legend = names(counts_cat), fill = bar_colors_cat,
+       border = NA, bty = "n", title = "Lipid Category", cex = 0.8)
+```
+
+```{r}
+#| label: lipid-coverage-subclass
+#| fig-cap: "Lipid subclass distribution in the combined dataset"
+
+counts_sub <- table(rowData(res_combined)$`target_LIPID.SUBCLASS..ABBREV.`)
+sub_colors <- rep(brewer.pal(9, "Set1"), length.out = length(counts_sub))
+
+par(mar = c(1, 1, 2, 1))
+pie(counts_sub, col = sub_colors, labels = counts_sub,
+    border = "white",
+    main = paste0("Subclass Distribution (n = ", sum(counts_sub), ")"),
+    cex = 0.9)
+symbols(0, 0, circles = 0.5, inches = FALSE, add = TRUE, bg = "white")
+legend("topright", legend = names(counts_sub), fill = sub_colors,
+       border = NA, bty = "n", title = "Lipid Subclass", cex = 0.5)
+```
+
+```{r}
+#| label: lipid-coverage-subclass-by-category
+#| fig-cap: "Annotated lipid subclass distribution, grouped and colored by category"
+
+counts_df <- prepare_subclass_counts(res_combined)
+cat_palette <- c(FA = "#66c2a5", GL = "#fc8d62", GP = "#8da0cb",
+                 SP = "#e78ac3", ST = "#a6d854")
+
+ggplot(counts_df, aes(x = subclass, y = Freq, fill = category)) +
+    geom_col() +
+    facet_grid(~ category, scales = "free_x", space = "free_x", switch = "x") +
+    scale_fill_manual(values = cat_palette) +
+    labs(title = "Annotated Lipid Subclass Distribution",
+         x = NULL, y = "Count", fill = "Category") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          strip.placement = "outside",
+          strip.background = element_rect(fill = "grey95"),
+          panel.spacing = unit(0.2, "lines"))
+```
+
+```{r}
+#| label: lipid-coverage-by-mode
+#| fig-cap: "Lipid categories by ionization mode"
+
+coverage_df <- as.data.frame(
+  table(
+    category = rowData(res_combined)$`target_LIPID.CATEGORY..ABBREV.`,
+    mode = rowData(res_combined)$ionization_mode
+  )
+)
+
+ggplot(coverage_df, aes(x = category, y = Freq, fill = mode)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c("positive" = "#e41a1c", "negative" = "#377eb8")) +
+  labs(title = "Lipid Categories by Ionization Mode",
+       x = "Lipid Category", y = "Count", fill = "Mode") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+# Duplicate Resolution Summary
+
+```{r}
+#| label: duplicate-summary
+dup_summary <- comparison_df |>
+    dplyr::mutate(
+        decision = dplyr::case_when(
+            !rt_similar ~ "Kept both (different RT)",
+            keep_mode == "positive" ~ "Kept positive (higher abundance)",
+            keep_mode == "negative" ~ "Kept negative (higher abundance)"
+        )
+    )
+
+cat("Duplicate resolution summary:\n")
+table(dup_summary$decision)
+
+dup_summary[, c("lipid_name_unique", "decision",
+                "pos_mean_abundance", "neg_mean_abundance")]
+```
+
+# PCA Analysis
+
+```{r}
+#| label: pca-setup
+res_combined$sample_type <- ifelse(
+    grepl("^QC", colnames(res_combined)), "QC", "sample"
+)
+```
+
+```{r}
+#| label: pca-all
+#| fig-cap: "PCA of all samples (POS + NEG combined)"
+
+col_sample_type <- c("QC" = "#1b9e77", "sample" = "#d95f02")
+
+vals <- assay(res_combined, "ISnorm_filled_imputed") |>
+    as.matrix() |> t() |> log2() |> scale(center = TRUE, scale = TRUE)
+pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
+
+vals_st <- as.data.frame(vals)
+vals_st$sample_type <- res_combined$sample_type
+
+autoplot(pca_res, data = vals_st, colour = "sample_type", scale = 0) +
+    scale_color_manual(values = col_sample_type) +
+    labs(title = "PCA - All samples (Positive + Negative combined)")
+```
+
+```{r}
+#| label: pca-by-mode
+#| fig-cap: "PCA of features colored by ionization mode"
+
+is_sample <- res_combined$sample_type == "sample"
+res_samples <- res_combined[, is_sample]
+
+vals_features <- assay(res_samples, "ISnorm_filled_imputed") |>
+    as.matrix() |> log2() |> t() |> scale(center = TRUE, scale = TRUE) |> t()
+pca_features <- prcomp(vals_features, scale = FALSE, center = FALSE)
+
+feature_df <- data.frame(
+    PC1 = pca_features$x[, 1],
+    PC2 = pca_features$x[, 2],
+    ionization_mode = rowData(res_samples)$ionization_mode
+)
+
+ggplot(feature_df, aes(x = PC1, y = PC2, color = ionization_mode)) +
+    geom_point(alpha = 0.7) +
+    scale_color_manual(values = c("positive" = "#e41a1c", "negative" = "#377eb8")) +
+    labs(title = "PCA of features colored by ionization mode") +
+    theme_bw()
+```
+
+# Export Annotated Compounds
+
+```{r}
+#| label: export-annotated-xlsx
+
+annot_cols <- intersect(
+    c("target_lipid.name", "target_lipid_name_unique",
+      "target_LIPID.CATEGORY..ABBREV.", "target_LIPID.SUBCLASS..ABBREV.",
+      "target_Adduct", "target_IS_norm", "origin", "ionization_mode",
+      "mzmed", "rtmed"),
+    colnames(rowData(res_combined_all))
+)
+
+annotation_df <- data.frame(
+    feature_id = rownames(res_combined_all),
+    as.data.frame(rowData(res_combined_all)[, annot_cols, drop = FALSE]),
+    check.names = FALSE,
+    stringsAsFactors = FALSE
+)
+
+abundance_df <- as.data.frame(
+    assay(res_combined_all, "ISnorm_filled_imputed"),
+    check.names = FALSE
+)
+
+export_df <- cbind(annotation_df, abundance_df)
+
+xlsx_path <- file.path("objects",
+                       paste0(STUDY_ID, "_annotated_compounds_abundances.xlsx"))
+dir.create(dirname(xlsx_path), recursive = TRUE, showWarnings = FALSE)
+writexl::write_xlsx(export_df, path = xlsx_path)
+cat("Saved annotated compound abundances to:", xlsx_path, "\n")
+```
+
+---
+
+## Session Info
+
+```{r}
+#| label: session-info
+sessionInfo()
+```
+
+```{r}
+toc()
+```
