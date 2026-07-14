@@ -1,7 +1,0 @@
-Test: TC-04
-Status: SUCCESS
-Input size: 10x20
-Output size: 10x20
-Parameters: a=0.3000, b=0.6000, k=3
-NaN in input: 90
-NaN in output: 0

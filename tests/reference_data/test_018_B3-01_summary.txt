@@ -1,7 +1,0 @@
-Test: B3-01
-Status: SUCCESS
-Input size: 2x5
-Output size: 2x5
-Parameters: a=0.4000, b=0.7000, k=2
-NaN in input: 4
-NaN in output: 0

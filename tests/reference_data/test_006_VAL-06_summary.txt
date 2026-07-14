@@ -1,7 +1,0 @@
-Test: VAL-06
-Status: SUCCESS
-Input size: 2x3
-Output size: 2x3
-Parameters: a=0.0000, b=1.0000, k=2
-NaN in input: 2
-NaN in output: 0

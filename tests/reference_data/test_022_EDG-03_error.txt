@@ -1,5 +1,0 @@
-Test: EDG-03
-Status: ERROR/VALIDATION_FAILED
-Error message: Dimensions of arrays being concatenated are not consistent.
-Input size: 3x1
-Parameters: a=0.4000, b=0.7000, k=1
