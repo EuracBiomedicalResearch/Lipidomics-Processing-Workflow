@@ -501,7 +501,7 @@ We impute here only to perfrom PCA plotting.
 ```{r imputation}
 #| label: imputation
 
-tmp <- apply(assay(annotated_res, "raw_filled"), MARGIN = 1, na_unidis)
+tmp <- apply(assay(annotated_res, "raw_filled"), MARGIN = 1, impute_unidis)
 assays(annotated_res)$raw_filled_imputed <- t(tmp)
 ```
 
@@ -520,7 +520,7 @@ annotated_res <- normalize_by_is(
 )
 
 # Impute normalized data
-tmp <- apply(assay(annotated_res, "ISnorm_filled"), MARGIN = 1, na_unidis)
+tmp <- apply(assay(annotated_res, "ISnorm_filled"), MARGIN = 1, impute_unidis)
 assays(annotated_res)$ISnorm_filled_imputed <- t(tmp)
 ```
 

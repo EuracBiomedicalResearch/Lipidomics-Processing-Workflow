@@ -1,4 +1,4 @@
-# Validation script for R translation of imputeBlockKNN
+# Validation script for R translation of impute_block_knn
 # This script compares R implementation outputs against MATLAB reference data
 #
 # Prerequisites:
@@ -18,7 +18,7 @@ if (requireNamespace("SummarizedExperiment", quietly = TRUE)) {
     library(SummarizedExperiment)
 }
 
-source("R/imputeBlockKNN.R")
+source("R/imputers.R")
 
 cat("===== R Translation Validation Suite =====\n\n")
 t_total_start <- proc.time()
@@ -172,7 +172,7 @@ validate_test <- function(test_num, test_id) {
         r_error <- NULL
         r_output <- tryCatch(
             {
-                imputeBlockKNN(
+                impute_block_knn(
                     test_case$input,
                     test_case$a,
                     test_case$b,
@@ -214,7 +214,7 @@ validate_test <- function(test_num, test_id) {
     t0 <- proc.time()
     r_output <- tryCatch(
         {
-            imputeBlockKNN(
+            impute_block_knn(
                 test_case$input,
                 test_case$a,
                 test_case$b,
@@ -368,14 +368,14 @@ for (spec in se_test_specs) {
     b <- as.numeric(sub("b = ", "", params_lines[2]))
     k <- as.integer(sub("k = ", "", params_lines[3]))
 
-    # Run imputeBlockKNN on the SE
+    # Run impute_block_knn on the SE
     r_error <- NULL
     elapsed <- NA
 
     t0 <- proc.time()
     se_result <- tryCatch(
         {
-            imputeBlockKNN(se_input, a, b, k)
+            impute_block_knn(se_input, a, b, k)
         },
         error = function(e) {
             r_error <<- e$message

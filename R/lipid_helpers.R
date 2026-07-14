@@ -1576,18 +1576,6 @@ resolve_sm_isomers <- function(mtched_data) {
 # NORMALIZATION HELPERS
 # =============================================================================
 
-#' Impute missing values using uniform distribution
-#'
-#' @param z Numeric vector with potential NA values
-#' @return Vector with NAs replaced by random values
-na_unidis <- function(z) {
-  na <- is.na(z)
-  if (any(na)) {
-    min_val <- min(z, na.rm = TRUE)
-    z[na] <- runif(sum(na), min = min_val / 2, max = min_val)
-  }
-  z
-}
 
 #' Apply volume correction factors
 #'
