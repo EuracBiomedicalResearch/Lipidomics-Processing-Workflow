@@ -536,11 +536,12 @@ We impute here only to perfrom PCA plotting.
 #| label: imputation
 
 # Impute missing values
-tmp <- apply(assay(annotated_res, "raw_filled"), MARGIN = 1, impute_unidis)
-assays(annotated_res)$raw_filled_imputed <- t(tmp)
-
-tmp <- apply(assay(annotated_res, "corr_filled"), MARGIN = 1, impute_unidis)
-assays(annotated_res)$corr_filled_imputed <- t(tmp)
+assays(annotated_res)$raw_filled_imputed <- impute_block_knn_log(
+    as.matrix(assay(annotated_res, "raw_filled")), a = 0.4, b = 0.7, k = 5
+)
+assays(annotated_res)$corr_filled_imputed <- impute_block_knn_log(
+    as.matrix(assay(annotated_res, "corr_filled")), a = 0.4, b = 0.7, k = 5
+)
 ```
 
 ## Internal Standard Normalization
@@ -558,8 +559,9 @@ annotated_res <- normalize_by_is(
 )
 
 # Impute normalized data
-tmp <- apply(assay(annotated_res, "ISnorm_filled"), MARGIN = 1, impute_unidis)
-assays(annotated_res)$ISnorm_filled_imputed <- t(tmp)
+assays(annotated_res)$ISnorm_filled_imputed <- impute_block_knn_log(
+    as.matrix(assay(annotated_res, "ISnorm_filled")), a = 0.4, b = 0.7, k = 5
+)
 ```
 
 ---
