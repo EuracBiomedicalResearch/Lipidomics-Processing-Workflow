@@ -1177,6 +1177,53 @@ plot_lipid_donut <- function(category_counts, category_names = NULL,
   invisible(NULL)
 }
 
+#' Prepare subclass count data frame for plotting
+#'
+#' Extracts bracketed abbreviations from the category/subclass rowData columns,
+#' validates that each subclass maps to exactly one category, and returns a
+#' count data frame ordered for faceted bar plots.
+#'
+#' @param se SummarizedExperiment with annotated rowData
+#' @param cat_col rowData column for lipid category
+#' @param sub_col rowData column for lipid subclass
+#' @param cat_levels Display order for lipid categories. Categories absent from
+#'   this vector are appended at the end. Defaults to the five classes present
+#'   in the current study database; adjust if your database covers additional
+#'   LIPID MAPS top-level classes (e.g. PK, PR, SL).
+#' @return data.frame with columns category (factor), subclass (factor), Freq
+prepare_subclass_counts <- function(
+        se,
+        cat_col = "target_LIPID.CATEGORY..ABBREV.",
+        sub_col = "target_LIPID.SUBCLASS..ABBREV.",
+        cat_levels = c("FA", "GL", "GP", "SP", "ST")) {
+
+    rd <- as.data.frame(SummarizedExperiment::rowData(se))
+    df <- data.frame(
+        category = sub(".*\\[(.*)\\]$", "\\1", rd[[cat_col]]),
+        subclass  = sub(".*\\[(.*)\\]$", "\\1", rd[[sub_col]]),
+        stringsAsFactors = FALSE
+    )
+
+    mismatch <- unique(df[, c("subclass", "category")]) |>
+        dplyr::group_by(subclass) |>
+        dplyr::filter(dplyr::n() > 1) |>
+        as.data.frame()
+    if (nrow(mismatch) > 0) {
+        stop("Subclass abbreviation maps to multiple categories:\n",
+             paste(capture.output(print(mismatch)), collapse = "\n"))
+    }
+
+    cat_levels <- c(cat_levels, setdiff(unique(df$category), cat_levels))
+    counts_df <- as.data.frame(table(category = df$category,
+                                     subclass  = df$subclass))
+    counts_df <- counts_df[counts_df$Freq > 0, ]
+    counts_df$category <- factor(counts_df$category, levels = cat_levels)
+    counts_df <- counts_df[order(counts_df$category, -counts_df$Freq), ]
+    counts_df$subclass <- factor(counts_df$subclass,
+                                 levels = unique(counts_df$subclass))
+    counts_df
+}
+
 # =============================================================================
 # DATA PREPROCESSING HELPERS
 # =============================================================================
@@ -1208,40 +1255,86 @@ prepare_reference_lipids <- function(file_path, rt_window_left = 30,
 #' least one entry in the Lipid Reference Set (LRS). Emits a warning listing
 #' any subclasses that are not represented in the LRS.
 #'
-#' Note: this is a straight set-difference on the raw subclass strings. If
-#' the LRS and database use different vocabularies for the same subclass
-#' (e.g. "LysoPC" vs "LPC"), harmonise them before calling this function or
-#' pass the appropriate column names.
+#' The lipid database usually stores subclasses as full labels with an
+#' abbreviation in square brackets, e.g. "Sphingomyelins [SM]". Reference lipid
+#' spreadsheets do not always include a true subclass column; when
+#' `lrs_subclass_col` is `NULL`, subclasses are inferred from common LRS columns
+#' such as `short_name` and `lipid_name`.
 #'
 #' @param intern_standard Data frame returned by `prepare_reference_lipids()`.
 #' @param lipid_database Data frame returned by `prepare_lipid_database()`.
-#' @param lrs_subclass_col Column in `intern_standard` holding the subclass
-#'   (default: "type").
+#' @param lrs_subclass_col Optional column in `intern_standard` holding the
+#'   subclass. If `NULL`, infer subclasses from the LRS.
 #' @param db_subclass_col Column in `lipid_database` holding the subclass
 #'   (default: "LIPID.SUBCLASS..ABBREV.").
 #' @return Character vector of uncovered subclasses (invisibly); empty if
 #'   every database subclass is represented in the LRS.
 validate_lrs_coverage <- function(intern_standard,
                                   lipid_database,
-                                  lrs_subclass_col = "type",
+                                  lrs_subclass_col = NULL,
                                   db_subclass_col = "LIPID.SUBCLASS..ABBREV.") {
-  if (!lrs_subclass_col %in% colnames(intern_standard)) {
+  extract_subclass_abbrev <- function(x) {
+    x <- as.character(x)
+    x <- trimws(x)
+    bracketed <- sub("^.*\\[([^]]+)\\].*$", "\\1", x)
+    has_brackets <- grepl("\\[[^]]+\\]", x)
+    x[has_brackets] <- bracketed[has_brackets]
+    x <- sub("_[0-9]+$", "", x)
+    x <- sub("^d([A-Z][A-Za-z0-9 /-]*)$", "\\1", x)
+    x <- sub("^([A-Za-z]+)\\s*\\(.*$", "\\1", x)
+    x <- sub("^Chol\\s+Ester.*$", "CE", x, ignore.case = TRUE)
+    x <- sub("^C[0-9]+\\s+Sphinganine.*$", "SPB", x, ignore.case = TRUE)
+    x <- sub("^Sphinganine.*$", "SPB", x, ignore.case = TRUE)
+    x <- toupper(trimws(x))
+    x[!is.na(x) & x != ""]
+  }
+
+  if (!is.null(lrs_subclass_col) &&
+      !lrs_subclass_col %in% colnames(intern_standard)) {
     stop("LRS subclass column '", lrs_subclass_col,
          "' not found in intern_standard. Available: ",
          paste(colnames(intern_standard), collapse = ", "))
   }
   if (!db_subclass_col %in% colnames(lipid_database)) {
-    stop("Database subclass column '", db_subclass_col,
-         "' not found in lipid_database. Available: ",
-         paste(colnames(lipid_database), collapse = ", "))
+    db_subclass_aliases <- c(
+      "LIPID.SUBCLASS..ABBREV.",
+      "LIPID SUBCLASS [ABBREV]",
+      "target_LIPID.SUBCLASS..ABBREV.",
+      "target_LIPID SUBCLASS [ABBREV]"
+    )
+    db_subclass_match <- intersect(db_subclass_aliases, colnames(lipid_database))
+    if (length(db_subclass_match) > 0) {
+      db_subclass_col <- db_subclass_match[[1]]
+    } else {
+      stop("Database subclass column '", db_subclass_col,
+           "' not found in lipid_database. Available: ",
+           paste(colnames(lipid_database), collapse = ", "))
+    }
   }
 
   db_subclasses <- unique(lipid_database[[db_subclass_col]])
   db_subclasses <- db_subclasses[!is.na(db_subclasses) & db_subclasses != ""]
-  lrs_subclasses <- unique(intern_standard[[lrs_subclass_col]])
-  lrs_subclasses <- lrs_subclasses[!is.na(lrs_subclasses) & lrs_subclasses != ""]
+  db_subclass_abbrev <- unique(extract_subclass_abbrev(db_subclasses))
 
-  missing <- setdiff(db_subclasses, lrs_subclasses)
+  if (!is.null(lrs_subclass_col)) {
+    lrs_subclasses <- unique(intern_standard[[lrs_subclass_col]])
+  } else {
+    candidate_cols <- intersect(
+      c("subclass", "lipid_subclass", "LIPID SUBCLASS [ABBREV]", "short_name",
+        "lipid_name"),
+      colnames(intern_standard)
+    )
+    if (length(candidate_cols) == 0) {
+      stop("Could not infer LRS subclasses. Available intern_standard columns: ",
+           paste(colnames(intern_standard), collapse = ", "))
+    }
+    lrs_subclasses <- unlist(intern_standard[candidate_cols], use.names = FALSE)
+  }
+  lrs_subclass_abbrev <- unique(extract_subclass_abbrev(lrs_subclasses))
+
+  missing_abbrev <- setdiff(db_subclass_abbrev, lrs_subclass_abbrev)
+  missing <- db_subclasses[extract_subclass_abbrev(db_subclasses) %in% missing_abbrev]
+  missing <- unique(missing)
 
   if (length(missing) > 0) {
     warning("LRS is missing at least one lipid for ", length(missing),
@@ -2171,5 +2264,4 @@ export_ambiguity_tables <- function(mtched_data,
     feature_ambiguities = table_amb
   ))
 }
-
 
