@@ -45,19 +45,19 @@ setMethod(
     }
 )
 
-setMethod(
-    "impute_block_knn", "SummarizedExperiment",
-    function(mat, a, b, k, ..., assay.type = 1L) {
-        if (!requireNamespace("SummarizedExperiment", quietly = TRUE))
-            stop("SummarizedExperiment package is required.")
-        m <- SummarizedExperiment::assay(mat, assay.type)
-        imputed <- .impute_block_knn_impl(m, a, b, k)
-        SummarizedExperiment::assay(
-            mat, assay.type, withDimnames = FALSE
-        ) <- imputed
-        mat
-    }
-)
+if (requireNamespace("SummarizedExperiment", quietly = TRUE)) {
+    setMethod(
+        "impute_block_knn", "SummarizedExperiment",
+        function(mat, a, b, k, ..., assay.type = 1L) {
+            m <- SummarizedExperiment::assay(mat, assay.type)
+            imputed <- .impute_block_knn_impl(m, a, b, k)
+            SummarizedExperiment::assay(
+                mat, assay.type, withDimnames = FALSE
+            ) <- imputed
+            mat
+        }
+    )
+}
 
 .impute_block_knn_impl <- function(mat, a, b, k) {
     if (a > b || a < 0 || b > 1)
