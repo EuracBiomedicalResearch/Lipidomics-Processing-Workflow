@@ -66,6 +66,7 @@ setMethod(
     m <- ncol(mat)
     if (m == 1 && any(is.na(mat)))
         stop("KNN imputation requires at least 2 samples (columns).")
+    orig_dimnames <- dimnames(mat)
     mat <- t(mat)              # m x n: samples in rows, features in cols
     mat_indexed <- rbind(seq_len(n), mat)
     prop_na <- colSums(is.na(mat)) / m
@@ -118,7 +119,9 @@ setMethod(
     orig_order <- c(idx1, idx2, idx3)
     mat_ordered <- cbind(orig_order, mat_imputed)
     mat_ordered <- mat_ordered[order(orig_order), , drop = FALSE]
-    mat_ordered[, 2:(m + 1), drop = FALSE]
+    result <- mat_ordered[, 2:(m + 1), drop = FALSE]
+    dimnames(result) <- orig_dimnames
+    result
 }
 
 .knn_impute_rcpp <- function(mat, k) {
