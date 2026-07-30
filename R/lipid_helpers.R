@@ -2597,6 +2597,169 @@ evaluate_annotation_phase <- function(candidate_annotations, truth, phase) {
 }
 
 
+#' Summarize POS/NEG annotation overlap for a merged-compound worksheet
+#'
+#' Produces one row per unique lipid annotation in the union of the two input
+#' modes. Rows are ordered as annotations found in both modes, positive-only
+#' annotations and negative-only annotations. Multiple features carrying the
+#' same lipid name within one mode are collapsed into semicolon-separated
+#' source fields.
+#'
+#' @param res_pos Final positive-mode SummarizedExperiment before merging
+#' @param res_neg Final negative-mode SummarizedExperiment before merging
+#' @param res_pos_filtered Positive-mode object after cross-mode resolution
+#' @param res_neg_filtered Negative-mode object after cross-mode resolution
+#' @param comparison_df Cross-mode comparison table created by POS_NEG_merge
+#' @return Data frame with one row per unique lipid annotation
+summarize_pos_neg_annotation_overlap <- function(res_pos,
+                                                  res_neg,
+                                                  res_pos_filtered,
+                                                  res_neg_filtered,
+                                                  comparison_df) {
+  rd_pos <- as.data.frame(SummarizedExperiment::rowData(res_pos))
+  rd_neg <- as.data.frame(SummarizedExperiment::rowData(res_neg))
+  rd_pos_filtered <- as.data.frame(
+    SummarizedExperiment::rowData(res_pos_filtered)
+  )
+  rd_neg_filtered <- as.data.frame(
+    SummarizedExperiment::rowData(res_neg_filtered)
+  )
+
+  lipid_col <- "target_lipid_name_unique"
+  required <- vapply(
+    list(rd_pos, rd_neg, rd_pos_filtered, rd_neg_filtered),
+    function(x) lipid_col %in% colnames(x),
+    logical(1)
+  )
+  if (!all(required)) {
+    stop("Merged annotation overlap requires target_lipid_name_unique.")
+  }
+
+  clean_names <- function(x) {
+    x <- as.character(x)
+    unique(x[!is.na(x) & nzchar(x)])
+  }
+  pos_names <- clean_names(rd_pos[[lipid_col]])
+  neg_names <- clean_names(rd_neg[[lipid_col]])
+  both_names <- sort(intersect(pos_names, neg_names))
+  pos_only_names <- sort(setdiff(pos_names, neg_names))
+  neg_only_names <- sort(setdiff(neg_names, pos_names))
+  lipid_names <- c(both_names, pos_only_names, neg_only_names)
+  overlap_group <- c(
+    rep("both", length(both_names)),
+    rep("positive_only", length(pos_only_names)),
+    rep("negative_only", length(neg_only_names))
+  )
+
+  values_at <- function(x, column, idx) {
+    if (!column %in% colnames(x) || !length(idx)) return(character())
+    x[[column]][idx]
+  }
+  collapse_values <- function(x, digits = NULL) {
+    if (!length(x)) return(NA_character_)
+    if (!is.null(digits)) {
+      x <- suppressWarnings(as.numeric(x))
+      x <- x[!is.na(x)]
+      if (!length(x)) return(NA_character_)
+      x <- format(round(x, digits), trim = TRUE, scientific = FALSE)
+    } else {
+      x <- as.character(x)
+      x <- x[!is.na(x) & nzchar(x)]
+      if (!length(x)) return(NA_character_)
+    }
+    paste(unique(x), collapse = "; ")
+  }
+  first_combined_value <- function(column, pos_idx, neg_idx) {
+    value <- c(values_at(rd_pos, column, pos_idx),
+               values_at(rd_neg, column, neg_idx))
+    collapse_values(value)
+  }
+  origin_at <- function(x, idx) {
+    if (!length(idx)) return(character())
+    if (all(c("target_IS_norm", "target_lipid.name") %in% colnames(x))) {
+      is_istd <- !is.na(x$target_IS_norm[idx]) &
+        x$target_lipid.name[idx] == x$target_IS_norm[idx]
+      return(ifelse(is_istd, "ISTD", "endogenous"))
+    }
+    rep(NA_character_, length(idx))
+  }
+
+  rows <- lapply(seq_along(lipid_names), function(i) {
+    lipid <- lipid_names[[i]]
+    pos_idx <- which(as.character(rd_pos[[lipid_col]]) == lipid)
+    neg_idx <- which(as.character(rd_neg[[lipid_col]]) == lipid)
+    pos_filtered_idx <- which(
+      as.character(rd_pos_filtered[[lipid_col]]) == lipid
+    )
+    neg_filtered_idx <- which(
+      as.character(rd_neg_filtered[[lipid_col]]) == lipid
+    )
+    comparison_idx <- match(lipid, comparison_df$lipid_name_unique)
+
+    if (is.na(comparison_idx)) {
+      merge_selection <- if (length(pos_idx)) "positive_only" else "negative_only"
+      accepted_source <- if (length(pos_idx)) "positive" else "negative"
+      primary_rt_diff <- NA_real_
+      positive_mean <- NA_real_
+      negative_mean <- NA_real_
+    } else {
+      rt_similar <- comparison_df$rt_similar[[comparison_idx]]
+      primary_rt_diff <- comparison_df$rt_diff[[comparison_idx]]
+      positive_mean <- comparison_df$pos_mean_abundance[[comparison_idx]]
+      negative_mean <- comparison_df$neg_mean_abundance[[comparison_idx]]
+      if (is.na(rt_similar)) {
+        merge_selection <- "kept_both_missing_rt"
+        accepted_source <- "both"
+      } else if (!rt_similar) {
+        merge_selection <- "kept_both_different_rt"
+        accepted_source <- "both"
+      } else {
+        accepted_source <- comparison_df$keep_mode[[comparison_idx]]
+        merge_selection <- paste0("selected_", accepted_source)
+      }
+    }
+
+    data.frame(
+      overlap_group = overlap_group[[i]],
+      lipid_name = lipid,
+      in_positive = length(pos_idx) > 0,
+      in_negative = length(neg_idx) > 0,
+      merge_selection = merge_selection,
+      accepted_source = accepted_source,
+      positive_annotation_rows = length(pos_idx),
+      negative_annotation_rows = length(neg_idx),
+      post_merge_positive_rows = length(pos_filtered_idx),
+      post_merge_negative_rows = length(neg_filtered_idx),
+      post_merge_total_rows = length(pos_filtered_idx) + length(neg_filtered_idx),
+      positive_feature_ids = collapse_values(rownames(rd_pos)[pos_idx]),
+      negative_feature_ids = collapse_values(rownames(rd_neg)[neg_idx]),
+      positive_adducts = collapse_values(values_at(rd_pos, "target_Adduct", pos_idx)),
+      negative_adducts = collapse_values(values_at(rd_neg, "target_Adduct", neg_idx)),
+      positive_rt_seconds = collapse_values(values_at(rd_pos, "rtmed", pos_idx), 5),
+      negative_rt_seconds = collapse_values(values_at(rd_neg, "rtmed", neg_idx), 5),
+      primary_rt_difference_seconds = primary_rt_diff,
+      positive_mz = collapse_values(values_at(rd_pos, "mzmed", pos_idx), 5),
+      negative_mz = collapse_values(values_at(rd_neg, "mzmed", neg_idx), 5),
+      positive_mean_abundance = positive_mean,
+      negative_mean_abundance = negative_mean,
+      lipid_category = first_combined_value(
+        "target_LIPID.CATEGORY..ABBREV.", pos_idx, neg_idx
+      ),
+      lipid_subclass = first_combined_value(
+        "target_LIPID.SUBCLASS..ABBREV.", pos_idx, neg_idx
+      ),
+      positive_origin = collapse_values(origin_at(rd_pos, pos_idx)),
+      negative_origin = collapse_values(origin_at(rd_neg, neg_idx)),
+      stringsAsFactors = FALSE
+    )
+  })
+
+  out <- do.call(rbind, rows)
+  rownames(out) <- NULL
+  out
+}
+
+
 #' Evaluate multiple annotation phases against curated truth
 #'
 #' @param candidate_annotations_by_phase Named list of annotation data frames

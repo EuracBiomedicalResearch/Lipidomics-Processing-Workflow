@@ -816,6 +816,54 @@ dir.create(dirname(combined_metrics_path), recursive = TRUE, showWarnings = FALS
 write.csv(combined_metrics, combined_metrics_path, row.names = FALSE, na = "")
 message("Saved combined POS/NEG metrics: ", combined_metrics_path)
 
+merge_metrics_path <- file.path(
+  study_dir,
+  "objects",
+  paste0(study_id, "_annotation_merge_metrics.csv")
+)
+if (file.exists(merge_metrics_path)) {
+  merge_metrics <- read.csv(
+    merge_metrics_path,
+    check.names = FALSE,
+    stringsAsFactors = FALSE
+  )
+} else {
+  warning(
+    "Merge metrics were not found at ", merge_metrics_path,
+    ". Render POS_NEG_merge.qmd before generating the metrics workbook."
+  )
+  merge_metrics <- data.frame(
+    scope = "merged",
+    phase = "not_available",
+    status = "Render POS_NEG_merge.qmd before generating metrics.",
+    stringsAsFactors = FALSE
+  )
+}
+
+merge_details_path <- file.path(
+  study_dir,
+  "objects",
+  paste0(study_id, "_annotation_merge_details.csv")
+)
+if (file.exists(merge_details_path)) {
+  merge_details <- read.csv(
+    merge_details_path,
+    check.names = FALSE,
+    stringsAsFactors = FALSE
+  )
+} else {
+  warning(
+    "Merged compound details were not found at ", merge_details_path,
+    ". Render POS_NEG_merge.qmd before generating the metrics workbook."
+  )
+  merge_details <- data.frame(
+    scope = "merged",
+    phase = "not_available",
+    status = "Render POS_NEG_merge.qmd before generating metrics.",
+    stringsAsFactors = FALSE
+  )
+}
+
 rt_diagnostics_path <- file.path(
   study_dir,
   "objects",
@@ -838,6 +886,8 @@ readme <- data.frame(
             "annotation_status_missed",
             "Summary",
             "DB_only_metrics",
+            "Merge_metrics",
+            "merged",
             "RT_fit_diagnostics",
             "ISTD_filter",
             "all_feature_curated_match_rate",
@@ -851,12 +901,14 @@ readme <- data.frame(
     "The manually curated annotation was not recovered in this phase.",
     "All-candidate overview. Positive and negative ionization modes are kept separate, and unknown candidates outside the curated set are retained.",
     "Precision, recall and F1 after excluding candidates on features outside the curated truth set.",
+    "Operational merge counts, including positive-only, negative-only, overlap and union annotation totals for a POS/NEG Venn diagram. These are retention metrics, not annotation precision/recall metrics.",
+    "One row per unique lipid annotation. Overlapping POS/NEG annotations are listed first with source details side by side, followed by positive-only and negative-only annotations.",
     "Diagnostics for the merged main RT correction method: monotone scam P-spline fitting, including reference-lipid residuals and database extrapolation counts.",
     "Counts of injected-standard annotations/features removed before computing annotation metrics.",
     "Curated matches divided by all candidate annotations, including uncurated features. This is a candidate-burden indicator, not precision.",
     "The absence of a curated annotation for a feature does not prove the candidate is wrong; it may simply not have been manually resolved.",
     "The adduct_required sheet is a strict comparison phase requiring adduct_ratio > 0; default workflow uses adduct_ratio as support/ambiguity evidence, not as a hard filter.",
-    "Summary and DB_only_metrics keep positive and negative ionization modes as separate rows."
+    "Summary and DB_only_metrics keep positive and negative ionization modes as separate rows; Merge_metrics reports the later combined scope."
   ),
   stringsAsFactors = FALSE
 )
@@ -869,6 +921,8 @@ workbook_path <- file.path(
 write_xlsx(
   c(list(README = readme, Summary = summary_all,
          DB_only_metrics = db_only_metrics,
+         Merge_metrics = merge_metrics,
+         merged = merge_details,
          RT_fit_diagnostics = rt_diagnostics,
          ISTD_filter = istd_filter_summary,
          RT_reference_residuals = rt_references), detail_sheets),

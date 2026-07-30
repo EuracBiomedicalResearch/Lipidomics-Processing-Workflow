@@ -166,35 +166,26 @@ comparison_df[!comparison_df$rt_similar,
 
 ```{r}
 #| label: remove-duplicates
-pos_remove_idx <- comparison_df$pos_idx[
+pos_remove_idx <- comparison_df$pos_idx[which(
     comparison_df$keep_mode == "negative" & comparison_df$rt_similar
-]
-neg_remove_idx <- comparison_df$neg_idx[
+)]
+neg_remove_idx <- comparison_df$neg_idx[which(
     comparison_df$keep_mode == "positive" & comparison_df$rt_similar
-]
+)]
 
 cat("Removing", length(pos_remove_idx), "duplicates from positive mode\n")
 cat("Removing", length(neg_remove_idx), "duplicates from negative mode\n")
 
-res_pos_filtered <- res_pos[-pos_remove_idx, ]
-res_neg_filtered <- res_neg[-neg_remove_idx, ]
-
-duplicate_metrics <- data.frame(
-    common_lipids = length(common_lipids),
-    rt_similar_duplicates = sum(comparison_df$rt_similar),
-    kept_positive_removed_negative = length(neg_remove_idx),
-    kept_negative_removed_positive = length(pos_remove_idx),
-    kept_both_different_rt = sum(!comparison_df$rt_similar)
-)
-
-dir.create("objects", recursive = TRUE, showWarnings = FALSE)
-duplicate_metrics_path <- file.path(
-    "objects",
-    paste0(STUDY_ID, "_pos_neg_duplicate_resolution_metrics.csv")
-)
-write.csv(duplicate_metrics, duplicate_metrics_path,
-          row.names = FALSE, na = "")
-cat("Saved duplicate resolution metrics to:", duplicate_metrics_path, "\n")
+res_pos_filtered <- if (length(pos_remove_idx)) {
+    res_pos[-pos_remove_idx, ]
+} else {
+    res_pos
+}
+res_neg_filtered <- if (length(neg_remove_idx)) {
+    res_neg[-neg_remove_idx, ]
+} else {
+    res_neg
+}
 ```
 
 # Combine
@@ -235,6 +226,111 @@ rowData(res_combined)$origin <- ifelse(is_istd, "ISTD", "endogenous")
 cat("Origin marked:",
     sum(rowData(res_combined)$origin == "ISTD"), "ISTD,",
     sum(rowData(res_combined)$origin == "endogenous"), "endogenous\n")
+```
+
+```{r}
+#| label: export-merge-metrics
+
+output_lipids <- rowData(res_combined)$target_lipid_name_unique
+output_modes <- rowData(res_combined)$ionization_mode
+output_origins <- rowData(res_combined)$origin
+positive_annotation_names <- unique(
+    na.omit(as.character(rowData(res_pos)$target_lipid_name_unique))
+)
+negative_annotation_names <- unique(
+    na.omit(as.character(rowData(res_neg)$target_lipid_name_unique))
+)
+
+merge_metrics <- data.frame(
+    scope = "merged",
+    phase = "post_duplicate_resolution",
+    input_positive_rows = nrow(res_pos),
+    input_negative_rows = nrow(res_neg),
+    input_total_rows = nrow(res_pos) + nrow(res_neg),
+    positive_unique_annotations = length(positive_annotation_names),
+    negative_unique_annotations = length(negative_annotation_names),
+    positive_only_annotations = length(setdiff(
+        positive_annotation_names, negative_annotation_names
+    )),
+    negative_only_annotations = length(setdiff(
+        negative_annotation_names, positive_annotation_names
+    )),
+    overlap_annotations = length(intersect(
+        positive_annotation_names, negative_annotation_names
+    )),
+    union_annotations = length(union(
+        positive_annotation_names, negative_annotation_names
+    )),
+    common_lipid_names = length(common_lipids),
+    rt_threshold_seconds = RT_DIFF_THRESHOLD,
+    rt_similar_duplicates = sum(comparison_df$rt_similar, na.rm = TRUE),
+    missing_rt_comparisons = sum(is.na(comparison_df$rt_similar)),
+    removed_positive_rows = length(pos_remove_idx),
+    removed_negative_rows = length(neg_remove_idx),
+    kept_both_different_rt = sum(!comparison_df$rt_similar, na.rm = TRUE),
+    output_positive_rows = sum(output_modes == "positive", na.rm = TRUE),
+    output_negative_rows = sum(output_modes == "negative", na.rm = TRUE),
+    output_total_rows = nrow(res_combined),
+    output_mode_qualified_features = length(unique(paste(
+        output_modes, rownames(res_combined), sep = "::"
+    ))),
+    output_unqualified_feature_ids = length(unique(rownames(res_combined))),
+    cross_mode_feature_id_collisions = length(intersect(
+        rownames(res_pos_filtered), rownames(res_neg_filtered)
+    )),
+    output_unique_lipid_names = length(unique(output_lipids)),
+    output_duplicate_lipid_rows = sum(duplicated(output_lipids)),
+    output_istd_rows = sum(output_origins == "ISTD", na.rm = TRUE),
+    output_endogenous_rows = sum(output_origins == "endogenous", na.rm = TRUE),
+    analysis_rows_after_istd_policy = if (INCLUDE_ISTDS) {
+        nrow(res_combined)
+    } else {
+        sum(output_origins == "endogenous", na.rm = TRUE)
+    },
+    include_istds_downstream = INCLUDE_ISTDS,
+    row_retention_rate = nrow(res_combined) / (nrow(res_pos) + nrow(res_neg)),
+    stringsAsFactors = FALSE
+)
+
+merge_details <- summarize_pos_neg_annotation_overlap(
+    res_pos,
+    res_neg,
+    res_pos_filtered,
+    res_neg_filtered,
+    comparison_df
+)
+
+dir.create("objects", recursive = TRUE, showWarnings = FALSE)
+merge_metrics_path <- file.path(
+    "objects", paste0(STUDY_ID, "_annotation_merge_metrics.csv")
+)
+write.csv(merge_metrics, merge_metrics_path, row.names = FALSE, na = "")
+merge_details_path <- file.path(
+    "objects", paste0(STUDY_ID, "_annotation_merge_details.csv")
+)
+write.csv(merge_details, merge_details_path, row.names = FALSE, na = "")
+
+# Preserve the original, smaller duplicate-resolution artifact for consumers
+# that already use it.
+duplicate_metrics <- merge_metrics[, c(
+    "common_lipid_names", "rt_similar_duplicates",
+    "removed_negative_rows", "removed_positive_rows",
+    "kept_both_different_rt"
+)]
+colnames(duplicate_metrics) <- c(
+    "common_lipids", "rt_similar_duplicates",
+    "kept_positive_removed_negative", "kept_negative_removed_positive",
+    "kept_both_different_rt"
+)
+duplicate_metrics_path <- file.path(
+    "objects", paste0(STUDY_ID, "_pos_neg_duplicate_resolution_metrics.csv")
+)
+write.csv(duplicate_metrics, duplicate_metrics_path,
+          row.names = FALSE, na = "")
+
+cat("Saved merge metrics to:", merge_metrics_path, "\n")
+cat("Saved merged compound details to:", merge_details_path, "\n")
+cat("Saved duplicate resolution metrics to:", duplicate_metrics_path, "\n")
 ```
 
 # Save
