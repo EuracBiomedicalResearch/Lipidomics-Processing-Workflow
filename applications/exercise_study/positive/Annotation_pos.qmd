@@ -100,6 +100,7 @@ SAMPLE_TYPE_COLORS <- c(
 #| label: load-helpers
 
 source(file.path(PROJECT_ROOT, "R/lipid_helpers.R"))
+source(file.path(PROJECT_ROOT, "R/imputers.R"))
 load_lipid_packages(verbose = TRUE)
 ```
 
@@ -607,8 +608,9 @@ We impute here only to perfrom PCA plotting.
 ```{r imputation}
 #| label: imputation
 
-tmp <- apply(assay(annotated_res, "raw_filled"), MARGIN = 1, na_unidis)
-assays(annotated_res)$raw_filled_imputed <- t(tmp)
+assays(annotated_res)$raw_filled_imputed <- impute_block_knn_log(
+    as.matrix(assay(annotated_res, "raw_filled")), a = 0.4, b = 0.7, k = 5
+)
 ```
 
 ## Internal Standard Normalization
@@ -626,8 +628,9 @@ annotated_res <- normalize_by_is(
 )
 
 # Impute normalized data
-tmp <- apply(assay(annotated_res, "ISnorm_filled"), MARGIN = 1, na_unidis)
-assays(annotated_res)$ISnorm_filled_imputed <- t(tmp)
+assays(annotated_res)$ISnorm_filled_imputed <- impute_block_knn_log(
+    as.matrix(assay(annotated_res, "ISnorm_filled")), a = 0.4, b = 0.7, k = 5
+)
 ```
 
 ---
