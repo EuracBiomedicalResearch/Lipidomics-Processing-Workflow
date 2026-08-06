@@ -1395,6 +1395,23 @@ isopattern_to_spectra <- function(x) {
   Spectra(df)
 }
 
+#' Collapse an enviPat isopattern to nominal-resolution isotope peaks
+#'
+#' Sums the isotopologue fine-structure sub-peaks into one centroid per nominal
+#' isotope (intensity-weighted m/z) - what routine Orbitrap/QTOF resolution
+#' records. Assumes singly-charged patterns.
+#'
+#' @param x isopattern matrix (column 1 = m/z, column 2 = abundance).
+#' @return Two-column matrix (m/z, abundance), one row per nominal isotope.
+collapse_isopattern_nominal <- function(x) {
+  mz <- x[, 1L]
+  ab <- x[, 2L]
+  o <- order(mz); mz <- mz[o]; ab <- ab[o]
+  k <- round(mz - mz[1L])                    # isotope index: M+0, M+1, ...
+  mzc <- tapply(seq_along(mz), k, function(i) sum(mz[i] * ab[i]) / sum(ab[i]))
+  cbind("m/z" = as.numeric(mzc), abundance = as.numeric(tapply(ab, k, sum)))
+}
+
 # =============================================================================
 # FEATURE MATCHING
 # =============================================================================
@@ -1534,6 +1551,7 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
     isopattern(isotopes, chem_checked$new_formula,
                threshold = 0.001, charge = charge, rel_to = 0)
   ))
+  ip <- lapply(ip, collapse_isopattern_nominal)
   theoretical_spectra <- isopattern_to_spectra(ip)
   # Normalize theoretical spectra to [0,1] to match experimental scalePeaks output
   theoretical_spectra <- scalePeaks(theoretical_spectra, by = max)
@@ -2222,9 +2240,26 @@ export_ambiguity_tables <- function(mtched_data,
                mtched_data$target_adduct, sep = "_")
   is_duplicated <- key %in% key[duplicated(key)]
   amblip <- mtched_data[is_duplicated, cols_use]
-  amblip$keep_row <- TRUE
+  # Auto-resolve (Type 1): keep the feature closest to the expected RT
+  # (smallest |score_rt|). Drops redundant features of the same lipid, never a
+  # lipid; keep_row is editable.
+  amblip$keep_row <- FALSE
+  rt_dev <- if ("score_rt" %in% names(amblip)) abs(amblip$score_rt) else
+    rep(0, nrow(amblip))
+  rt_dev[is.na(rt_dev)] <- Inf
+  tie <- if ("isopeak_sim" %in% names(amblip))
+    ifelse(is.na(amblip$isopeak_sim), 0, amblip$isopeak_sim) else
+    rep(0, nrow(amblip))
+  alip_key <- paste(amblip$target_lipid_name_unique, amblip$target_adduct,
+                    sep = "_")
+  for (kk in unique(alip_key)) {
+    grp <- which(alip_key == kk)
+    # closest RT wins; break exact RT ties by higher isotope similarity
+    amblip$keep_row[grp[order(rt_dev[grp], -tie[grp])][1]] <- TRUE
+  }
 
-  # Feature ambiguities: one feature -> multiple lipids
+  # Feature ambiguities: one feature -> multiple lipids (left unresolved;
+  # keep_row TRUE, merged downstream to keep all candidate lipids).
   fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
   table_amb <- mtched_data[mtched_data$feature_id %in% fids_ambiguous, cols_use]
   table_amb <- table_amb[order(table_amb$feature_id), ]
@@ -2233,8 +2268,11 @@ export_ambiguity_tables <- function(mtched_data,
   # Export files
   if (nrow(amblip) > 0) {
     writexl::write_xlsx(amblip, path = file.path(output_dir, lipid_file))
-    if (verbose) message("Exported ", nrow(amblip),
-                         " lipid ambiguities to ", lipid_file)
+    if (verbose) {
+      message("Exported ", nrow(amblip), " lipid ambiguities to ", lipid_file,
+              " (keep_row pre-filled: closest-RT feature per lipid).")
+      message("  Review recommended: edit keep_row where you disagree.")
+    }
   } else {
     if (verbose) message("No lipid ambiguities to export")
   }
