@@ -1,13 +1,13 @@
 ---
-title: "Pilot Study — LC-MS Data Preprocessing"
+title: "MICROSAMPLING Study — LC-MS Data Preprocessing"
 subtitle: "Peak detection, RT alignment, correspondence and gap filling"
 author: "CEMBIO-EURAC Team"
 date: today
 params:
-  study_id: "pilot"
+  study_id: "MICROSAMPLING"
 format:
   html:
-    output-file: "pilot_Preprocessing_pos.html"
+    output-file: "MICROSAMPLING_Preprocessing_pos.html"
     toc: true
     toc-depth: 3
 execute:
@@ -28,7 +28,7 @@ tic("Quarto compilation")
 
 ::: {.callout-tip}
 ## Study-specific instance
-This is the **positive mode** preprocessing for the **pilot study**
+This is the **positive ionization mode** preprocessing for the **MICROSAMPLING study**
 (BμS device comparison). See the `negative/` folder for the negative mode
 counterpart.
 :::
@@ -48,12 +48,12 @@ the `objects/` folder, ready for annotation in `Annotation_pos.qmd`.
 ## Folder Hierarchy
 
 ```
-pilot_study/
+MICROSAMPLING_study/
 ├── LipidDatabase_R.xlsx                  # Lipid database (shared by both polarities)
 ├── positive/                            # Positive mode (this folder)
 │   ├── Preprocessing_pos.qmd            # Step 1 (this file)
 │   ├── Annotation_pos.qmd              # Step 2
-│   ├── seq_pos_pilot.xlsx               # Sample sequence
+│   ├── seq_pos_MICROSAMPLING.xlsx               # Sample sequence
 │   ├── pos_lipid_reference_set.xlsx     # Reference lipids
 │   ├── data/                            # .mzML files
 │   ├── objects/                         # Saved R objects (auto-generated)
@@ -70,7 +70,7 @@ pilot_study/
 Before running this workflow, ensure you have:
 
 1. **LC-MS raw data** (`.mzML` files) in the `data/` folder
-2. **Sample sequence file** (`seq_pos_pilot.xlsx`) in this folder
+2. **Sample sequence file** (`seq_pos_MICROSAMPLING.xlsx`) in this folder
 3. **Lipid database** (`LipidDatabase_R.xlsx`) in the parent study folder
 4. **Lipid Reference Set** (`pos_lipid_reference_set.xlsx`) in this folder
 
@@ -82,19 +82,19 @@ Before running this workflow, ensure you have:
 #| label: configuration
 
 # ============================================================================
-# PILOT STUDY CONFIGURATION
+# MICROSAMPLING STUDY CONFIGURATION
 # ============================================================================
 
 # Project root: relative path from this file to the main project directory
 PROJECT_ROOT <- "../../.."
 
 # Study identifier
-STUDY_ID <- "pilot"
+STUDY_ID <- "MICROSAMPLING"
 
-# Analysis polarity: "pos" or "neg"
+# Ionization mode: "pos" or "neg"
 POLARITY <- "pos"
 
-# Data source: "local", "sqlite", or "metaboLights"
+# Input data source: "local", "sqlite", or "metaboLights"
 DATA_SOURCE <- "local"
 
 # MetaboLights study ID (only used if DATA_SOURCE = "metaboLights")
@@ -106,10 +106,10 @@ SQLITE_DB <- NULL
 # Number of CPU cores for parallel processing (use 1-2 below your max)
 CORES_NB <- 4
 
-# Expected sample types in your sequence file (for validation)
+# Expected sample types for sequence validation
 EXPECTED_SAMPLE_TYPES <- c("QC", "M-VAMS", "W-DBS", "C-qDBS", "Plasma")
 
-# Color palette for sample types
+# Sample type color palette  
 SAMPLE_TYPE_COLORS <- c(
   "QC" = "#999999",
   "M-VAMS" = "#377EB8",
@@ -118,7 +118,7 @@ SAMPLE_TYPE_COLORS <- c(
   "Plasma" = "#984EA3"
 )
 
-# --- MetaboLights options (only used if DATA_SOURCE = "metaboLights") ---
+# --- MetaboLights configuration (only used if DATA_SOURCE = "metaboLights") ---
 MTBLS_ASSAY_POS <- "a_MTBLS10722_LC-MS_positive_reverse-phase_metabolite_profiling.txt"
 MTBLS_ASSAY_NEG <- "a_MTBLS10722_LC-MS_negative_reverse-phase_metabolite_profiling.txt"
 
@@ -351,7 +351,7 @@ qc_idx <- sampleData(mse)$sample_type == "QC"
 eic_is <- extract_is_eics(mse, intern_standard, sample_subset = qc_idx)
 ```
 
-The pilot study is small enough that we use the default (all samples).
+The MICROSAMPLING study is small enough that we use the default (all samples).
 :::
 
 ```{r plot-is-eics}

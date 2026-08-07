@@ -1,13 +1,13 @@
 ---
-title: "Pilot Study — Targeted Lipid Annotation"
-subtitle: "RT correction, annotation, normalization and quality control"
+title: "MICROSAMPLING Study — Targeted Lipid Annotation"
+subtitle: "SRM 1950 Database RT adjustment, Multi-evidence lipid annotation, normalization and quality control"
 author: "CEMBIO-EURAC Team"
 date: today
 params:
-  study_id: "pilot"
+  study_id: "MICROSAMPLING"
 format:
   html:
-    output-file: "pilot_Annotation_pos.html"
+    output-file: "MICROSAMPLING_Annotation_pos.html"
     toc: true
     toc-depth: 3
 execute:
@@ -28,13 +28,13 @@ tic("Quarto compilation")
 
 ::: {.callout-tip}
 ## Study-specific instance
-This is the **positive mode** annotation for the **pilot study**
-(BμS device comparison). See the `negative/` folder for the negative mode
+This is the **positive ionization mode** annotation for the **MICROSAMPLING study**
+(BμS device comparison). See the `negative/` folder for the negative ionization mode
 counterpart.
 :::
 
 This is the second step of the targeted lipidomics workflow. It handles
-**RT correction, annotation, normalization and QC** for targeted lipidomic
+**SRM 1950 Database RT adjustment, Multi-evidence lipid annotation, normalization and QC** for targeted lipidomic
 profiling using LC-MS data. It expects preprocessed objects from
 `Preprocessing_pos.qmd`.
 
@@ -55,14 +55,14 @@ used in `Preprocessing_pos.qmd`.
 #| label: configuration
 
 # ============================================================================
-# PILOT STUDY CONFIGURATION
+# MICROSAMPLING STUDY CONFIGURATION
 # ============================================================================
 
 # Project root: relative path from this file to the main project directory
 PROJECT_ROOT <- "../../.."
 
 # Study identifier: must match the value used in Preprocessing.qmd
-STUDY_ID <- "pilot"
+STUDY_ID <- "MICROSAMPLING"
 
 # Analysis polarity: "pos" or "neg"
 POLARITY <- "pos"
@@ -167,14 +167,14 @@ message("  - SummarizedExperiment: ", nrow(res), " features x ", ncol(res), " sa
 
 ---
 
-# Database RT Correction
+# SRM 1950 Database RT adjustment
 
-Fit a polynomial model to correct library retention times based on observed
-shifts in reference lipids.
+Fit a SCAM model by default to correct library retention times based on observed
+shifts in lipid reference set.
 
 ```{r rt-correction-fit}
 #| label: rt-correction-fit
-#| fig-cap: "RT correction model diagnostic plots"
+#| fig-cap: "RT adjustment model diagnostic plots"
 
 # Prepare grouping parameter
 group <- eic_is$sample_type
@@ -186,7 +186,7 @@ param_group <- PeakDensityParam(
   binSize = 0.01, ppm = PPM, bw = 2
 )
 
-# Fit RT correction model
+# Fit RT adjutment model
 rt_fit <- fit_rt_correction(
   eic_is, intern_standard, param_group,
   output_dir = folders$ref_lipid
@@ -200,16 +200,16 @@ validate_rt_correction(rt_fit, min_r_squared = 0.90, max_residual = 15)
 ```
 
 ::: {.callout-important}
-## 📋 USER CHECKPOINT: RT Correction Model
+## 📋 USER CHECKPOINT: RT adjustment Model
 Review the diagnostic plots in **`r folders$ref_lipid`**.
 
-- Red points (reference lipids) should align closely with the fitted curve
+- Red points (lipid reference set) should align closely with the fitted curve
 - **R² > 0.95** is expected for a good fit; values below 0.90 indicate poor calibration
 - **Residuals** should be randomly distributed around zero with no systematic patterns
 - Typical residual range: ±10 seconds; larger deviations suggest outlier reference compounds
 :::
 
-## Load and Correct Lipid Database
+## Load and Adjust RT in SRM1950 Lipid Database
 
 The `prepare_lipid_database()` function handles all database preprocessing:
 
@@ -219,7 +219,7 @@ The `prepare_lipid_database()` function handles all database preprocessing:
 4. Adduct processing - Calculates theoretical m/z using `adductFormula()`
 5. Deuterium handling - Converts D↔[2H] notation for formula calculation
 6. NA removal - Cleans empty rows from Excel import
-7. RT correction - Applies polynomial model from reference lipids
+7. RT adjustment - Applies SCAM model from reference lipids
 
 ```{r load-database}
 #| label: load-database
@@ -247,7 +247,7 @@ validate_lrs_coverage(intern_standard, lipid_database, db_subclass_col = "LIPID 
 #| label: plot-rt-correction
 #| fig-cap: "Database RT vs. adjusted RT with reference lipids overlay"
 
-# Plot RT correction results
+# Plot RT adjustment results
 plot(y = lipid_database$rt_sd, x = lipid_database$rt_adjusted, type = "l",
      xlab = "Adjusted RT", ylab = "Database RT")
 points(intern_standard$RT ~ rt_fit$exp_rt, col = "red", pch = 16, cex = 1)
@@ -261,7 +261,7 @@ legend("topleft", legend = c("Database compounds", "Reference lipids"),
 
 ---
 
-# Annotation / Matching
+# Multi-evidence lipid annotation
 
 ## Rank 1 Matching
 
@@ -569,7 +569,7 @@ assays(annotated_res)$ISnorm_filled_imputed <- impute_block_knn_log(
 
 # Quality Control
 
-## RSD Filtering
+## Relative Standard Deviation (RSD) Filtering
 
 ```{r rsd-filter}
 #| label: rsd-filter
@@ -630,7 +630,7 @@ grid(nx = NA, ny = NULL)
 abline(h = 0, lty = 3)
 ```
 
-## CV Summary
+## Coeficient of variation (CV) summary
 
 ```{r cv-summary}
 #| label: cv-summary
