@@ -10,8 +10,8 @@ A vendor-independent, open-source workflow for LC-MS lipidomics data processing 
 
 This workflow provides:
 
-- **Automated RT correction** using reference lipids (SPLASH LIPIDOMIX)
-- **Targeted lipid annotation** against a curated human plasma lipid database
+- **Automated RT adjustment** using a Lipid reference set (containing SPLASH LIPIDOMIX and some endogenous compounds)
+- **Targeted lipid annotation** against a curated SRM1950 human plasma lipid database
 - **Isotope pattern validation** for high-confidence identification
 - **Adduct profile matching** for improved annotation
 - **Internal standard normalization** by lipid subclass
