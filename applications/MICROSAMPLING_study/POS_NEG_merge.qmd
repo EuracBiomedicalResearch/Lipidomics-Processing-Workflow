@@ -1,13 +1,13 @@
 ---
-title: "Exercise Study — POS & NEG Mode Merge"
-subtitle: "Combine positive and negative ionization mode results"
+title: "MICROSAMPLING Study — Stage 3: Cross-Mode Data Integration"
+subtitle: "Positive and negative ionization mode integration for coverage reporting and downstream anallysis"
 author: "CEMBIO-EURAC Team"
 date: today
 params:
-  study_id: "exercise"
+  study_id: "MICROSAMPLING"
 format:
   html:
-    output-file: "exercise_POS_NEG_merge.html"
+    output-file: "MICROSAMPLING_Cross_mode_integration.html"
     toc: true
     toc-depth: 3
 execute:
@@ -27,12 +27,12 @@ tic("Quarto compilation")
 # Overview
 
 ::: {.callout-tip}
-## Study-specific instance
+## Study-specific configuration
 This is a configured copy of `generic_workflow/POS_NEG_merge.qmd` for the
-**exercise study**. Run after completing `Annotation_pos.qmd` and `Annotation_neg.qmd`.
+**MICROSAMPLING study**. Run after completing `Annotation_pos.qmd` and `Annotation_neg.qmd`.
 :::
 
-This document merges positive and negative mode annotation results into a
+This document merges positive and negative ionization mode annotation results into a
 single `SummarizedExperiment`. It handles:
 
 1. Adding ionization mode metadata
@@ -47,13 +47,13 @@ single `SummarizedExperiment`. It handles:
 #| label: configuration
 
 # ============================================================================
-# EXERCISE STUDY CONFIGURATION
+# MICROSAMPLING STUDY CONFIGURATION
 # ============================================================================
 
 PROJECT_ROOT <- "../.."
 
 # Study identifier: must match what was used in the annotation workflow
-STUDY_ID <- "exercise"
+STUDY_ID <- "MICROSAMPLING"
 
 # Paths to the final result objects (from Annotation.qmd)
 RES_POS_PATH <- file.path("positive", "objects", paste0(STUDY_ID, "_final_res_pos"))
@@ -65,8 +65,8 @@ RES_COMBINED_PATH <- file.path("objects", paste0(STUDY_ID, "_res_combined"))
 # RT difference threshold for duplicate resolution (seconds)
 RT_DIFF_THRESHOLD <- 30
 
-# Whether ISTDs participate in downstream plots, metrics, and PCA.
-# When FALSE, ISTDs are dropped from res_combined *after* the Save section,
+# Whether IS participate in downstream plots, metrics, and PCA.
+# When FALSE, IS are dropped from res_combined *after* the Save section,
 # so the saved binary still has them (with an origin column) for reuse.
 INCLUDE_ISTDS <- FALSE
 ```
@@ -126,7 +126,7 @@ stopifnot(all(colData(res_pos)$sample_name == colData(res_neg)$sample_name))
 
 # Resolve Duplicate Lipids
 
-For duplicated lipid names between modes, keep the entry with higher mean
+For duplicated lipid names between ionization modes, keep the entry with higher mean
 abundance when retention times are similar (within `RT_DIFF_THRESHOLD` seconds).
 
 ```{r}
@@ -258,7 +258,7 @@ if (!INCLUDE_ISTDS) {
 
 ```{r}
 #| label: lipid-coverage
-#| fig-cap: "Lipid class distribution in the combined POS+NEG dataset"
+#| fig-cap: "Lipid category distribution in the combined dataset"
 
 counts_cat <- table(rowData(res_combined)$`target_LIPID.CATEGORY..ABBREV.`)
 bar_colors_cat <- rep(c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854"),

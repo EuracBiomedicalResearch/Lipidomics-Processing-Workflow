@@ -6,7 +6,7 @@
 
 #' and annotation workflow. Source this file at the beginning of your analysis.
 #'
-#' @author Philippine Louail, Sara Londono
+#' @author Philippine Louail, Sara Londono-Osorio
 #' @date 2026
 #' ===========================================================================
 
@@ -133,7 +133,7 @@ validate_metadata <- function(file_path,
 }
 
 
-#' Validate the reference lipid (internal standard) Excel file
+#' Validate the lipid reference set (internal standard) Excel file
 #'
 #' Checks the file exists and contains the expected columns with valid values.
 #'
@@ -188,7 +188,7 @@ validate_reference_lipids <- function(file_path,
 #'
 #' Checks the database file and specific sheet for expected structure.
 #'
-#' @param db_path Path to the lipid database Excel file
+#' @param db_path Path to the SRM 1950-derived lipid database Excel file
 #' @param sheet Sheet number to validate
 #' @param polarity "pos" or "neg"
 #' @param rt_col Name of the retention time column
@@ -268,7 +268,7 @@ validate_lipid_database <- function(db_path,
 #' Checks that the user-defined configuration parameters are within
 #' reasonable ranges and consistent with each other.
 #'
-#' @param polarity "pos" or "neg"
+#' @param polarity "pos" or "neg" ionization mode
 #' @param data_source "local", "sqlite", or "metaboLights"
 #' @param cores_nb Number of CPU cores
 #' @param rt_filter Range for RT filter c(min, max)
@@ -505,7 +505,7 @@ validate_matches <- function(mtched_data,
   if (nrow(mtched_data) == 0) {
     stop("No matches found. Check:\n",
          "  - PPM and RT tolerance parameters\n",
-         "  - RT correction model quality\n",
+         "  - RT adjustment model quality\n",
          "  - Database polarity (pos/neg)")
   }
 
@@ -545,9 +545,9 @@ validate_matches <- function(mtched_data,
 }
 
 
-#' Validate RT correction fit quality
+#' Validate RT adjustment fit quality
 #'
-#' Checks R-squared and residuals of the RT correction model.
+#' Checks R-squared and residuals of the RT adjustment model.
 #'
 #' @param rt_fit List returned by fit_rt_correction()
 #' @param min_r_squared Minimum acceptable R-squared (warns below)
@@ -674,7 +674,7 @@ setup_folders <- function(polarity = c("pos", "neg"), base_path = ".") {
     }
   }
 
-  message("✓ Folder structure created for ", toupper(polarity), " mode")
+  message("✓ Folder structure created for ", toupper(polarity), " ionization mode")
   return(folders)
 }
 
@@ -695,7 +695,7 @@ setup_folders <- function(polarity = c("pos", "neg"), base_path = ".") {
 #'
 #' @examples
 #' seq_data <- readxl::read_xlsx("seq_pos.xlsx") |> as.data.frame()
-#' mse <- load_from_sqlite("data/pilot_pos.sqlite", seq_data)
+#' mse <- load_from_sqlite("data/MICROSAMPLING_pos.sqlite", seq_data)
 load_from_sqlite <- function(db_path, sample_data) {
   # Check database exists
   if (!file.exists(db_path)) {
@@ -1578,7 +1578,7 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
               theoretical_spectra = theoretical_spectra_filtered))
 }
 
-#' Resolve SM1/SM2 isomer ambiguity
+#' Resolve sn1/sn2 isomer ambiguity
 #'
 #' @param mtched_data Matched data frame
 #' @return Filtered mtched_data with resolved isomers
@@ -1632,7 +1632,7 @@ resolve_sm_isomers <- function(mtched_data) {
   final_resolved$keep_row <- NULL
   final_resolved$ntch_idx <- seq_len(nrow(final_resolved))
 
-  message("✓ SM1/SM2 resolution: ", nrow(mtched_data), " -> ", nrow(final_resolved), " rows")
+  message("✓ sn1/sn2 resolution: ", nrow(mtched_data), " -> ", nrow(final_resolved), " rows")
   return(final_resolved)
 }
 
@@ -1738,10 +1738,10 @@ filter_by_qc_rsd <- function(se, threshold = 0.3, qc_col = "sample_type",
 }
 
 # =============================================================================
-# DATABASE CORRECTION
+# DATABASE ADJUSTMENT
 # =============================================================================
 
-#' Fit RT correction model using reference lipids
+#' Fit RT adjustment model using reference lipids
 #'
 #' @param eic_is EIC object for internal standards
 #' @param intern_standard Reference lipid data frame
@@ -1822,14 +1822,14 @@ fit_rt_correction <- function(eic_is, intern_standard, param_group,
   # the in/out-of-range decision instead of fit$fitted.values (output).
   attr(fit, "ref_rt_range") <- range(df_fit$ref_rt)
 
-  message("✓ RT correction model fitted (R² = ", round(r2, 4), ")")
+  message("✓ RT adjustment model fitted (R² = ", round(r2, 4), ")")
 
   return(list(fit = fit, exp_rt = exp_rt, ref_rt = ref_rt))
 }
 
-#' Apply RT correction to lipid database
+#' Apply RT adjustment to lipid database
 #'
-#' Applies an RT correction model (fitted by `fit_rt_correction()`) to a
+#' Applies an RT adjustment model (fitted by `fit_rt_correction()`) to a
 #' lipid database. Database entries whose reference RT falls within the
 #' calibration range are corrected by direct model prediction. Entries
 #' outside the calibration range (below the earliest or above the latest
@@ -1918,7 +1918,7 @@ apply_rt_correction <- function(lipid_database, fit, rt_col = "rt_sd",
 
   lipid_database$rt_adjusted <- corrected_rt
 
-  message("✓ RT correction applied. Extrapolated ",
+  message("✓ RT adjustment applied. Extrapolated ",
           nrow(lipid_database) - length(in_range_idx),
           " compounds outside fitted range")
 
@@ -1933,7 +1933,7 @@ apply_rt_correction <- function(lipid_database, fit, rt_col = "rt_sd",
 #'
 #' This function performs all necessary preprocessing steps on the lipid database:
 #'
-#' 1. **Filter by rank**: Removes rank=0 entries (typically unconfirmed identifications)
+#' 1. **Rank filtering**: Removes rank=0 entries (typically unconfirmed identifications)
 #' 2. **RT conversion**: Converts retention time from minutes to seconds
 #' 3. **Unique naming**: Creates unique lipid identifiers by appending RT rank
 #'    (handles lipids with same name but different RT)
@@ -1942,13 +1942,13 @@ apply_rt_correction <- function(lipid_database, fit, rt_col = "rt_sd",
 #' 5. **Deuterium handling**: Fixes formula notation for deuterated compounds
 #'    (D -> [2H] for calculation, then back)
 #' 6. **NA removal**: Removes empty rows from Excel import
-#' 7. **RT correction**: Applies polynomial RT correction based on reference lipids
+#' 7. **RT adjustment**: Applies SCAM RT adjustment based on reference lipids
 #'
 #' @param db_path Path to the lipid database Excel file
 #' @param sheet Sheet number (4 for POS, 5 for NEG)
 #' @param polarity "pos" or "neg"
 #' @param rt_col Column name for retention time
-#' @param rt_fit Fitted RT correction model (from fit_rt_correction)
+#' @param rt_fit Fitted RT adjustment model (from fit_rt_correction)
 #' @param extrapolate Extrapolation policy for database entries outside
 #'   the calibration range; forwarded to `apply_rt_correction()`. One of
 #'   `"auto"` (default; model-aware), `TRUE`, or `FALSE`. See
@@ -1979,7 +1979,7 @@ prepare_lipid_database <- function(db_path,
                                     extrapolate = "auto",
                                     verbose = TRUE) {
 
-  if (verbose) message("Loading lipid database from sheet ", sheet, "...")
+  if (verbose) message("Loading SRM 1950-derived lipid database from sheet ", sheet, "...")
 
   # Step 1: Load and filter by rank
   lipid_database <- readxl::read_xlsx(db_path, sheet = sheet)
@@ -2035,8 +2035,8 @@ prepare_lipid_database <- function(db_path,
   form <- gsub("\\[2H([0-9]+)\\]", "D\\1", form)
   lipid_database$adduct_formula <- unname(gsub("^\\[|\\].*$", "", form))
 
-  # Step 8: Apply RT correction from reference lipids
-  if (verbose) message("  - Applying RT correction...")
+  # Step 8: Apply RT adjustment from reference lipids
+  if (verbose) message("  - Applying RT adjustment...")
   lipid_database <- apply_rt_correction(lipid_database, rt_fit$fit, "rt_sd",
                                         extrapolate = extrapolate)
   lipid_database$mz <- as.numeric(lipid_database$mz)
