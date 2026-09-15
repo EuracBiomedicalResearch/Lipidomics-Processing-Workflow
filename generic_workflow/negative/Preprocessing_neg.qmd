@@ -136,6 +136,10 @@ RT_FILTER_MAX <- 800
 PEAK_WIDTH <- c(4, 8)  # min and max peak width in seconds
 PPM <- 10              # m/z tolerance in ppm
 SN_THRESHOLD <- 2      # signal-to-noise threshold
+
+# EIC window setting
+eic_rt_window_left <- 30
+eic_rt_window_right <- 20
 ```
 
 # Setup
@@ -322,8 +326,8 @@ plot_bpc(mse, palette = palette_sample_type,
 
 intern_standard <- prepare_reference_lipids(
   IS_FILE,
-  rt_window_left = 30,
-  rt_window_right = ifelse(POLARITY == "pos", 15, 20)
+  rt_window_left = eic_rt_window_left,
+  rt_window_right = eic_rt_window_right
 )
 
 eic_is <- extract_is_eics(mse, intern_standard)
@@ -356,12 +360,12 @@ Leave `sample_subset = NULL` (the default) to use all samples.
 #| label: plot-is-eics
 
 plot_eic_batch(eic_is, fdata, palette = palette_sample_type,
-               output_dir = folders$eic_istd)
+               output_dir = folders$eic_is)
 ```
 
 ::: {.callout-important}
 ## 📋 USER CHECKPOINT: EIC of Lipid reference set
-Check the EIC plots saved in **`r folders$eic_istd`**.
+Check the EIC plots saved in **`r folders$eic_is`** and adjust `eic_rt_window_left` and `eic_rt_window_right` in the **Configuration** section if needed.
 
 - The red dashed line indicates the expected RT.
 - Each peak should be detected in most or all samples.
@@ -554,7 +558,7 @@ saveObject(res, res_save_path)
 message("✓ Preprocessed objects saved to: ", folders$objects)
 message("  - MsExperiment: ", basename(mse_save_path))
 message("  - SummarizedExperiment: ", basename(res_save_path))
-message("\nNext step: Run Annotation.qmd for RT correction and annotation.")
+message("\nNext step: Run Annotation.qmd for RT adjustment and annotation.")
 ```
 
 ---

@@ -549,23 +549,23 @@ validate_matches <- function(mtched_data,
 #'
 #' Checks R-squared and residuals of the RT adjustment model.
 #'
-#' @param rt_fit List returned by fit_rt_correction()
+#' @param rt_fit List returned by fit_rt_adjustment()
 #' @param min_r_squared Minimum acceptable R-squared (warns below)
 #' @param max_residual Maximum acceptable residual in seconds (warns above)
 #' @return TRUE invisibly
-validate_rt_correction <- function(rt_fit,
+validate_rt_adjustment <- function(rt_fit,
                                    min_r_squared = 0.90,
                                    max_residual = 15) {
 
   if (!is.list(rt_fit) || !"fit" %in% names(rt_fit)) {
-    stop("rt_fit must be a list with a 'fit' element (from fit_rt_correction)")
+    stop("rt_fit must be a list with a 'fit' element (from fit_rt_adjustment)")
   }
 
   fit <- rt_fit$fit
   r2 <- if (inherits(fit, "scam")) summary(fit)$r.sq else summary(fit)$r.squared
 
   if (r2 < min_r_squared) {
-    warning("RT correction R\u00b2 = ", round(r2, 4),
+    warning("RT adjustment R\u00b2 = ", round(r2, 4),
             " (threshold: ", min_r_squared,
             "). Model fit is poor — review reference lipid EICs.")
   }
@@ -574,7 +574,7 @@ validate_rt_correction <- function(rt_fit,
   resids <- abs(residuals(fit))
   max_res <- max(resids, na.rm = TRUE)
   if (max_res > max_residual) {
-    warning("Largest RT correction residual is ", round(max_res, 1),
+    warning("Largest RT adjustment residual is ", round(max_res, 1),
             "s (threshold: ", max_residual,
             "s). Some reference lipids may be poorly detected.")
   }
@@ -586,7 +586,7 @@ validate_rt_correction <- function(rt_fit,
             "Consider removing them from the reference list.")
   }
 
-  message("\u2713 RT correction validated: R\u00b2 = ", round(r2, 4),
+  message("\u2713 RT adjustment validated: R\u00b2 = ", round(r2, 4),
           ", max residual = ", round(max_res, 1), "s")
   invisible(TRUE)
 }
@@ -660,11 +660,11 @@ setup_folders <- function(polarity = c("pos", "neg"), base_path = ".") {
     data = file.path(base_path, "data"),
     objects = file.path(base_path, "objects"),
     figures = file.path(base_path, "figures"),
-    eic_istd = file.path(base_path, "figures", "EIC_internal_standards"),
+    eic_is = file.path(base_path, "figures", "EIC_internal_standards"),
     iso_pattern = file.path(base_path, "figures", "iso_pattern_check"),
     peak_detection = file.path(base_path, "figures", "peak_detection_ref_lipid"),
     ref_lipid = file.path(base_path, "figures", "ref_lipid_image"),
-    istd_matched = file.path(base_path, "figures", "ISTD_mtched_data")
+    is_matched = file.path(base_path, "figures", "IS_mtched_data")
   )
 
   # Create directories
@@ -1350,7 +1350,7 @@ validate_lrs_coverage <- function(intern_standard,
   invisible(missing)
 }
 
-#' Extract EICs for internal standards
+#' Extract EIC for internal standards
 #'
 #' @param mse MsExperiment object
 #' @param intern_standard Prepared internal standard data frame
@@ -1751,7 +1751,7 @@ filter_by_qc_rsd <- function(se, threshold = 0.3, qc_col = "sample_type",
 #' @param poly_degree Polynomial degree; only used when method = "poly"
 #' @param output_dir Directory to save diagnostic plots
 #' @return List with fit model and experimental RT values
-fit_rt_correction <- function(eic_is, intern_standard, param_group,
+fit_rt_adjustment <- function(eic_is, intern_standard, param_group,
                               method = c("scam", "poly"),
                               poly_degree = 6, output_dir = NULL) {
   method <- match.arg(method)
@@ -1818,7 +1818,7 @@ fit_rt_correction <- function(eic_is, intern_standard, param_group,
   }
 
   # Calibration range = span of training ref_rt (input axis). Stored as
-  # an attribute so apply_rt_correction() can use the correct axis for
+  # an attribute so apply_rt_adjustment() can use the correct axis for
   # the in/out-of-range decision instead of fit$fitted.values (output).
   attr(fit, "ref_rt_range") <- range(df_fit$ref_rt)
 
@@ -1829,14 +1829,14 @@ fit_rt_correction <- function(eic_is, intern_standard, param_group,
 
 #' Apply RT adjustment to lipid database
 #'
-#' Applies an RT adjustment model (fitted by `fit_rt_correction()`) to a
+#' Applies an RT adjustment model (fitted by `fit_rt_adjustment()`) to a
 #' lipid database. Database entries whose reference RT falls within the
 #' calibration range are corrected by direct model prediction. Entries
 #' outside the calibration range (below the earliest or above the latest
 #' reference standard) are handled according to `extrapolate`.
 #'
 #' @param lipid_database Data frame with lipid database
-#' @param fit Fitted model from `fit_rt_correction()` (either an `lm`
+#' @param fit Fitted model from `fit_rt_adjustment()` (either an `lm`
 #'   polynomial fit or a `scam` monotone-spline fit)
 #' @param rt_col Column name containing RT in seconds
 #' @param extrapolate How to correct entries whose reference RT lies
@@ -1852,11 +1852,11 @@ fit_rt_correction <- function(eic_is, intern_standard, param_group,
 #'       outside the calibration range, regardless of model type. Use with
 #'       care for high-degree polynomial fits.}
 #'     \item{`FALSE`}{Always use the constant-offset fallback: apply a
-#'       zero-order ("hold last value") shift equal to the correction at
+#'       zero-order ("hold last value") shift equal to the adjustment at
 #'       the nearest calibration boundary.}
 #'   }
 #' @return Data frame with `rt_adjusted` column added
-apply_rt_correction <- function(lipid_database, fit, rt_col = "rt_sd",
+apply_rt_adjustment <- function(lipid_database, fit, rt_col = "rt_sd",
                                 extrapolate = "auto") {
 
   if (!(identical(extrapolate, "auto") ||
@@ -1873,10 +1873,10 @@ apply_rt_correction <- function(lipid_database, fit, rt_col = "rt_sd",
   rt_sd <- lipid_database[[rt_col]]
 
   # Calibration range = training ref_rt span (input axis), attached by
-  # fit_rt_correction(). Must be present.
+  # fit_rt_adjustment(). Must be present.
   rng <- attr(fit, "ref_rt_range")
   if (is.null(rng))
-    stop("fit is missing 'ref_rt_range' attribute; refit with fit_rt_correction()")
+    stop("fit is missing 'ref_rt_range' attribute; refit with fit_rt_adjustment()")
   rt_min <- rng[1]
   rt_max <- rng[2]
 
@@ -1948,11 +1948,11 @@ apply_rt_correction <- function(lipid_database, fit, rt_col = "rt_sd",
 #' @param sheet Sheet number (4 for POS, 5 for NEG)
 #' @param polarity "pos" or "neg"
 #' @param rt_col Column name for retention time
-#' @param rt_fit Fitted RT adjustment model (from fit_rt_correction)
+#' @param rt_fit Fitted RT adjustment model (from fit_rt_adjustment)
 #' @param extrapolate Extrapolation policy for database entries outside
-#'   the calibration range; forwarded to `apply_rt_correction()`. One of
+#'   the calibration range; forwarded to `apply_rt_adjustment()`. One of
 #'   `"auto"` (default; model-aware), `TRUE`, or `FALSE`. See
-#'   `?apply_rt_correction` for details.
+#'   `?apply_rt_adjustment` for details.
 #' @param verbose Print progress messages
 #'
 #' @return Prepared lipid database data frame with columns:
@@ -2037,7 +2037,7 @@ prepare_lipid_database <- function(db_path,
 
   # Step 8: Apply RT adjustment from reference lipids
   if (verbose) message("  - Applying RT adjustment...")
-  lipid_database <- apply_rt_correction(lipid_database, rt_fit$fit, "rt_sd",
+  lipid_database <- apply_rt_adjustment(lipid_database, rt_fit$fit, "rt_sd",
                                         extrapolate = extrapolate)
   lipid_database$mz <- as.numeric(lipid_database$mz)
 

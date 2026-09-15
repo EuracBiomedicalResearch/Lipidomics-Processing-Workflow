@@ -90,6 +90,10 @@ SAMPLE_TYPE_COLORS <- c(
   "C-qDBS" = "#4DAF4A",
   "Plasma" = "#984EA3"
 )
+
+# EIC window setting
+eic_rt_window_left <- 30
+eic_rt_window_right <- 20
 ```
 
 # Setup
@@ -145,8 +149,8 @@ res <- readObject(res_save_path)
 # Reload reference lipids and EICs
 intern_standard <- prepare_reference_lipids(
   IS_FILE,
-  rt_window_left = 30,
-  rt_window_right = ifelse(POLARITY == "pos", 15, 20)
+  rt_window_left = eic_rt_window_left,
+  rt_window_right = eic_rt_window_right
 )
 eic_is <- extract_is_eics(mse, intern_standard)
 fdata <- fData(eic_is)
@@ -169,8 +173,8 @@ message("  - SummarizedExperiment: ", nrow(res), " features x ", ncol(res), " sa
 
 By default, the code fits a SCAM model to the lipid reference set and uses the observed retention time shifts to adjust the SRM 1950 database RT.
 
-```{r rt-correction-fit}
-#| label: rt-correction-fit
+```{r rt-adjustment-fit}
+#| label: rt-adjustment-fit
 #| fig-cap: "RT adjustment model diagnostic plots"
 
 # Prepare grouping parameter
@@ -184,7 +188,7 @@ param_group <- PeakDensityParam(
 )
 
 # Fit RT adjustment model
-rt_fit <- fit_rt_correction(
+rt_fit <- fit_rt_adjustment(
   eic_is, intern_standard, param_group,
   output_dir = folders$ref_lipid
 )
@@ -193,11 +197,11 @@ rt_fit <- fit_rt_correction(
 summary(rt_fit$fit)
 
 # Validate the RT adjustment model
-validate_rt_correction(rt_fit, min_r_squared = 0.90, max_residual = 15)
+validate_rt_adjustment(rt_fit, min_r_squared = 0.90, max_residual = 15)
 ```
 
 ::: {.callout-important}
-## 📋 USER CHECKPOINT: RT adjustment Model
+## 📋 USER CHECKPOINT: RT Adjustment Model
 Review the diagnostic plots in **`r folders$ref_lipid`**.
 
 - Red points (lipid reference set) should align closely with the fitted curve.
@@ -240,8 +244,8 @@ lipid_database <- prepare_lipid_database(
 validate_lrs_coverage(intern_standard, lipid_database, db_subclass_col = "LIPID SUBCLASS [ABBREV]")
 ```
 
-```{r plot-rt-correction}
-#| label: plot-rt-correction
+```{r plot-rt-adjustment}
+#| label: plot-rt-adjustment
 #| fig-cap: "Database RT vs. adjusted RT with lipid reference set overlay"
 
 # Plot RT adjustment results
@@ -411,7 +415,7 @@ ambiguities <- export_ambiguity_tables(mtched_data)
 
 Two Excel files are generated for manual review of ambiguous annotations:
 
-1. **`lipid_ambiguity_resolution.xlsx`**: Cases where a single lipid matches multiple features. By default, all entries have `keep_row = VERDADERO`.
+1. **`lipid_ambiguity_resolution.xlsx`**: Cases where a single lipid matches multiple features. By default, all entries have `keep_row = TRUE`.
 2. **`feature_ambiguity_resolution.xlsx`**: Cases where a single feature matches multiple lipids.If these ambiguities are not resolved, the corresponding entries will be merged.
 
 **Action Required:**
@@ -626,7 +630,7 @@ grid(nx = NA, ny = NULL)
 abline(h = 0, lty = 3)
 ```
 
-## Coeficient of variation (CV) summary
+## Coefficient of variation (CV) summary
 
 ```{r cv-summary}
 #| label: cv-summary

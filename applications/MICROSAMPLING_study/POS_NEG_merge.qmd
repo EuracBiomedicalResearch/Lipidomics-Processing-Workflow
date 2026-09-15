@@ -68,7 +68,7 @@ RT_DIFF_THRESHOLD <- 30
 # Whether IS participate in downstream plots, metrics, and PCA.
 # When FALSE, IS are dropped from res_combined *after* the Save section,
 # so the saved binary still has them (with an origin column) for reuse.
-INCLUDE_ISTDS <- FALSE
+INCLUDE_IS <- FALSE
 ```
 
 # Setup
@@ -217,13 +217,13 @@ cat("Features from negative mode:", sum(rowData(res_combined)$ionization_mode ==
 #| label: mark-origin
 
 # Use IS_norm to differentiate between Internal Standards and Endogenous lipids
-is_istd <- !is.na(rowData(res_combined)$target_IS_norm) &
+is_IS <- !is.na(rowData(res_combined)$target_IS_norm) &
     rowData(res_combined)$target_lipid.name ==
         rowData(res_combined)$target_IS_norm
-rowData(res_combined)$origin <- ifelse(is_istd, "ISTD", "endogenous")
+rowData(res_combined)$origin <- ifelse(is_IS, "IS", "endogenous")
 
 cat("Origin marked:",
-    sum(rowData(res_combined)$origin == "ISTD"), "ISTD,",
+    sum(rowData(res_combined)$origin == "IS"), "IS,",
     sum(rowData(res_combined)$origin == "endogenous"), "endogenous\n")
 ```
 
@@ -236,21 +236,21 @@ saveObject(res_combined, RES_COMBINED_PATH)
 ```
 
 ```{r}
-#| label: filter-istds-for-analysis
+#| label: filter-IS-for-analysis
 
 # Keep an unfiltered snapshot for the xlsx export at the end of this file
 res_combined_all <- res_combined
-if (!INCLUDE_ISTDS) {
+if (!INCLUDE_IS) {
     n_before <- nrow(res_combined)
     res_combined <- res_combined[rowData(res_combined)$origin == "endogenous", ]
-    cat("INCLUDE_ISTDS = FALSE: dropped",
+    cat("INCLUDE_IS = FALSE: dropped",
         n_before - nrow(res_combined),
-        "ISTDs from downstream analysis (",
+        "IS from downstream analysis (",
         nrow(res_combined), "features remain).\n")
 } else {
-    cat("INCLUDE_ISTDS = TRUE: keeping",
-        sum(rowData(res_combined)$origin == "ISTD"),
-        "ISTDs in downstream analysis.\n")
+    cat("INCLUDE_IS = TRUE: keeping",
+        sum(rowData(res_combined)$origin == "IS"),
+        "IS in downstream analysis.\n")
 }
 ```
 

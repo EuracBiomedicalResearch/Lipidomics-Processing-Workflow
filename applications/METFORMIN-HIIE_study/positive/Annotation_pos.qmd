@@ -1,13 +1,13 @@
 ---
-title: "HIIE Study — Stage 2: Lipid Annotation"
+title: "METFORMIN-HIIE Study — Stage 2: Lipid Annotation"
 subtitle: "SRM 1950 Database RT adjustment, Multi-evidence annotation, normalization and quality control"
 author: "CEMBIO-EURAC Team"
 date: today
 params:
-  study_id: "HIIE"
+  study_id: "METFORMIN-HIIE"
 format:
   html:
-    output-file: "HIIE_Annotation_pos.html"
+    output-file: "METFORMIN-HIIE_Annotation_pos.html"
     toc: true
     toc-depth: 3
 execute:
@@ -28,8 +28,9 @@ tic("Quarto compilation")
 
 ::: {.callout-tip}
 ## Study-specific configuration
-This document performs **positive mode** annotation for the **HIIE study**
-(exercise vs resting comparison). The corresponding negative ionization mode workflow is available in the `negative/` folder.
+This document performs **positive ionization mode** annotation for the high intensity 
+interval exercise **METFORMIN-HIIE study** (exercise vs resting comparison). 
+The corresponding negative ionization mode workflow is available in the `negative/` folder.
 :::
 
 This is the second step of the targeted lipidomics workflow. It handles
@@ -53,14 +54,14 @@ used in `Preprocessing_pos.qmd`.
 #| label: configuration
 
 # ============================================================================
-# HIIE STUDY CONFIGURATION
+# METFORMIN-HIIE STUDY CONFIGURATION
 # ============================================================================
 
 # Project root: relative path from this file to the main project directory
 PROJECT_ROOT <- "../../.."
 
 # Study identifier: must match the value used in Preprocessing.qmd
-STUDY_ID <- "HIIE"
+STUDY_ID <- "METFORMIN-HIIE"
 
 # Ionization mode: "pos" or "neg"
 POLARITY <- "pos"
@@ -88,6 +89,10 @@ SAMPLE_TYPE_COLORS <- c(
   "Exercise" = "#377EB8",
   "Resting" = "#E41A1C"
 )
+
+# EIC window setting
+eic_rt_window_left <- 40
+eic_rt_window_right <- 20
 ```
 
 # Setup
@@ -143,8 +148,8 @@ res <- readObject(res_save_path)
 # Reload reference lipids and EIC
 intern_standard <- prepare_reference_lipids(
   IS_FILE,
-  rt_window_left = 30, # make sure is the same as preprocessing
-  rt_window_right = ifelse(POLARITY == "pos", 15, 20) # make sure is the same as preprocessing
+  rt_window_left = eic_rt_window_left,
+  rt_window_right = eic_rt_window_right 
 )
 eic_is <- extract_is_eics(mse, intern_standard)
 fdata <- fData(eic_is)
@@ -168,8 +173,8 @@ message("  - SummarizedExperiment: ", nrow(res), " features x ", ncol(res), " sa
 By default, the code fits a SCAM model to the lipid reference set and uses the
 observed retention time shifts to adjust the SRM 1950 database RT.
 
-```{r rt-correction-fit}
-#| label: rt-correction-fit
+```{r rt-adjustment-fit}
+#| label: rt-adjustment-fit
 #| fig-cap: "RT adjustment model diagnostic plots"
 
 # Prepare grouping parameter
@@ -183,7 +188,7 @@ param_group <- PeakDensityParam(
 )
 
 # Fit RT adjustment model
-rt_fit <- fit_rt_correction(
+rt_fit <- fit_rt_adjustment(
   eic_is, intern_standard, param_group,
   output_dir = folders$ref_lipid
 )
@@ -192,7 +197,7 @@ rt_fit <- fit_rt_correction(
 summary(rt_fit$fit)
 
 # Validate the RT adjustment model
-validate_rt_correction(rt_fit, min_r_squared = 0.90, max_residual = 15)
+validate_rt_adjustment(rt_fit, min_r_squared = 0.90, max_residual = 15)
 ```
 
 ::: {.callout-important}
@@ -239,8 +244,8 @@ lipid_database <- prepare_lipid_database(
 validate_lrs_coverage(intern_standard, lipid_database)
 ```
 
-```{r plot-rt-correction}
-#| label: plot-rt-correction
+```{r plot-rt-adjustment}
+#| label: plot-rt-adjustment
 #| fig-cap: "Database RT vs. adjusted RT with lipid reference set overlay"
 
 # Plot RT adjustment results
@@ -410,7 +415,7 @@ ambiguities <- export_ambiguity_tables(mtched_data)
 
 Two Excel files are generated for manual review of ambiguous annotations:
 
-1. **`lipid_ambiguity_resolution.xlsx`**: Cases where a single lipid matches multiple features. By default, all entries have `keep_row = VERDADERO`.
+1. **`lipid_ambiguity_resolution.xlsx`**: Cases where a single lipid matches multiple features. By default, all entries have `keep_row = TRUE`.
 2. **`feature_ambiguity_resolution.xlsx`**: Cases where a single feature matches multiple lipids.If these ambiguities are not resolved, the corresponding entries will be merged.
 
 **Action Required:**
@@ -596,7 +601,7 @@ grid(nx = NA, ny = NULL)
 abline(h = 0, lty = 3)
 ```
 
-## Coeficient of variation (CV) summary
+## Coefficient of variation (CV) summary
 
 ```{r cv-summary}
 #| label: cv-summary
@@ -658,4 +663,4 @@ toc()
 1. SRM 1950-derived Lipid Database source: <https://doi.org/10.1016/j.jlr.2024.100671>
 2. Original study (MICROSAMPLING dataset): <https://doi.org/10.1016/j.microc.2025.113760>
 3. Metabonaut tutorial: <https://rformassspectrometry.github.io/Metabonaut/articles/a-end-to-end-untargeted-metabolomics.html#retention-time-alignment>
-4. Application study (HIIE dataset ): <https://pubs.acs.org/doi/10.1021/acs.jproteome.5c00480>
+4. Application study (METFORMIN-HIIE dataset ): <https://pubs.acs.org/doi/10.1021/acs.jproteome.5c00480>
