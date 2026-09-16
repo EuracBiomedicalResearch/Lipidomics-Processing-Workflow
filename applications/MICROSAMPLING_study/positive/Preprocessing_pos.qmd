@@ -1,13 +1,13 @@
 ---
-title: "Pilot Study — LC-MS Data Preprocessing"
-subtitle: "Peak detection, RT alignment, correspondence and gap filling"
+title: "MICROSAMPLING Study — Stage 1: LC-MS Data Preprocessing"
+subtitle: "Data import and validation, Peak detection, RT alignment, correspondence and gap filling"
 author: "CEMBIO-EURAC Team"
 date: today
 params:
-  study_id: "pilot"
+  study_id: "MICROSAMPLING"
 format:
   html:
-    output-file: "pilot_Preprocessing_neg.html"
+    output-file: "MICROSAMPLING_Preprocessing_pos.html"
     toc: true
     toc-depth: 3
 execute:
@@ -27,52 +27,51 @@ tic("Quarto compilation")
 # Overview
 
 ::: {.callout-tip}
-## Study-specific instance
-This is the **negative mode** preprocessing for the **pilot study**
-(BμS device comparison). See the `positive/` folder for the positive mode
-counterpart.
+## Study-specific configuration
+This document performs **positive ionization mode** preprocessing for the **MICROSAMPLING study**
+(BμS device comparison). The corresponding negative ionization mode workflow is available in the `negative/` folder.
 :::
 
-This document handles the preprocessing of LC-MS lipidomics data:
+This document handles the preprocessing of Untargeted LC-MS lipidomics data:
 
-1. **Data Import** — Load raw `.mzML` data (local files, SQLite, or MetaboLights)
-2. **Dataset Investigation** — BPC visualization and reference lipid EICs
-3. **Chromatographic Peak Detection** — CentWave algorithm
-4. **Retention Time Alignment** — QC-based peak group alignment
-5. **Correspondence** — Feature grouping across samples
-6. **Gap Filling** — Fill missing peak values
+1. **Data Import** — Imports raw `.mzML` data from (local files, SQLite, or MetaboLights).
+2. **Dataset Investigation** — Visualizes base peak chromatograms (BPC) and extracted ion chromatograms (EIC) for reference lipids.
+3. **Chromatographic Peak Detection** — Detects chromatographic features using the CentWave algorithm.
+4. **Retention Time Alignment** — Aligns retention time across samples using QC-based peak groups.
+5. **Correspondence** — Groups corresponding feature across samples.
+6. **Gap Filling** — Fill missing peak values.
 
 The output is a preprocessed `MsExperiment` and `SummarizedExperiment` saved to
-the `objects/` folder, ready for annotation in `Annotation_neg.qmd`.
+the `objects/` folder, and used as input for lipid annotation in `Annotation_pos.qmd`.
 
 ## Folder Hierarchy
 
 ```
-pilot_study/
-├── LipidDatabase_R.xlsx                  # Lipid database (shared by both polarities)
-├── positive/                            # Positive mode
-│   ├── Preprocessing_pos.qmd
-│   ├── Annotation_pos.qmd
-│   └── ...
-├── negative/                            # Negative mode (this folder)
-│   ├── Preprocessing_neg.qmd            # Step 1 (this file)
-│   ├── Annotation_neg.qmd              # Step 2
-│   ├── seq_neg_pilot.xlsx               # Sample sequence
-│   ├── neg_lipid_reference_set.xlsx     # Reference lipids
+MICROSAMPLING_study/
+├── LipidDatabase_R.xlsx                 # SRM 1950-derived Lipid database (shared by both polarities)
+├── positive/                            # Positive ionization mode (this folder)
+│   ├── Preprocessing_pos.qmd            # Stage 1 (this file)
+│   ├── Annotation_pos.qmd               # Stage 2
+│   ├── seq_pos_MICROSAMPLING.xlsx       # Sample sequence
+│   ├── pos_lipid_reference_set.xlsx     # Lipid reference set
 │   ├── data/                            # .mzML files
 │   ├── objects/                         # Saved R objects (auto-generated)
 │   └── figures/                         # Output figures (auto-generated)
-└── POS_NEG_merge.qmd                   # Step 3: Combine POS + NEG results
+├── negative/                            # Negative ionization mode
+│   ├── Preprocessing_neg.qmd
+│   ├── Annotation_neg.qmd
+│   └── ...
+└── POS_NEG_merge.qmd                   # Stage 3: Cross-Mode Data Integration
 ```
 
 ## Required Input Files
 
 Before running this workflow, ensure you have:
 
-1. **Sequence file** (`seq_neg_pilot.xlsx`) in this folder
-2. **Reference lipid list** (`neg_lipid_reference_set.xlsx`) in this folder
-3. **Raw data** (`.mzML` files) in the `data/` folder
-4. **Lipid database** (`LipidDatabase_R.xlsx`) in the parent study folder
+1. **LC-MS raw data** (`.mzML` files) in the `data/` folder
+2. **Sample sequence file** (`seq_pos_MICROSAMPLING.xlsx`) in this folder
+3. **SRM 1950-derived lipid database** (`LipidDatabase_R.xlsx`) in the parent study folder
+4. **Lipid Reference Set** (`pos_lipid_reference_set.xlsx`) in this folder
 
 ---
 
@@ -82,19 +81,19 @@ Before running this workflow, ensure you have:
 #| label: configuration
 
 # ============================================================================
-# PILOT STUDY CONFIGURATION
+# MICROSAMPLING STUDY CONFIGURATION
 # ============================================================================
 
 # Project root: relative path from this file to the main project directory
 PROJECT_ROOT <- "../../.."
 
 # Study identifier
-STUDY_ID <- "pilot"
+STUDY_ID <- "MICROSAMPLING"
 
-# Analysis polarity: "pos" or "neg"
-POLARITY <- "neg"
+# Ionization mode: "pos" or "neg"
+POLARITY <- "pos"
 
-# Data source: "local", "sqlite", or "metaboLights"
+# Input data source: "local", "sqlite", or "metaboLights"
 DATA_SOURCE <- "local"
 
 # MetaboLights study ID (only used if DATA_SOURCE = "metaboLights")
@@ -106,10 +105,10 @@ SQLITE_DB <- NULL
 # Number of CPU cores for parallel processing (use 1-2 below your max)
 CORES_NB <- 4
 
-# Expected sample types in your sequence file (for validation)
+# Expected sample types in the sequence file
 EXPECTED_SAMPLE_TYPES <- c("QC", "M-VAMS", "W-DBS", "C-qDBS", "Plasma")
 
-# Color palette for sample types
+# Sample type color palette  
 SAMPLE_TYPE_COLORS <- c(
   "QC" = "#999999",
   "M-VAMS" = "#377EB8",
@@ -118,7 +117,7 @@ SAMPLE_TYPE_COLORS <- c(
   "Plasma" = "#984EA3"
 )
 
-# --- MetaboLights options (only used if DATA_SOURCE = "metaboLights") ---
+# --- MetaboLights configuration (only used if DATA_SOURCE = "metaboLights") ---
 MTBLS_ASSAY_POS <- "a_MTBLS10722_LC-MS_positive_reverse-phase_metabolite_profiling.txt"
 MTBLS_ASSAY_NEG <- "a_MTBLS10722_LC-MS_negative_reverse-phase_metabolite_profiling.txt"
 
@@ -135,12 +134,16 @@ MTBLS_EXCLUDE_TYPES <- c("Blank")
 
 # Retention time filter range (seconds) - adjust based on your BPC
 RT_FILTER_MIN <- 10
-RT_FILTER_MAX <- 800
+RT_FILTER_MAX <- 950
 
 # Chromatographic peak detection parameters
 PEAK_WIDTH <- c(4, 8)
 PPM <- 10
 SN_THRESHOLD <- 2
+
+# EIC window setting
+eic_rt_window_left <- 30
+eic_rt_window_right <- 20
 ```
 
 # Setup
@@ -178,7 +181,7 @@ if (.Platform$OS.type == "unix") {
 
 # Data Import
 
-Load MS data based on the selected `DATA_SOURCE` option.
+Load LC-MS data based on the selected `DATA_SOURCE` option.
 
 ::: {.panel-tabset}
 
@@ -213,8 +216,8 @@ validate_reference_lipids(IS_FILE)
 
 ::: {.callout-important}
 ## 📋 USER CHECKPOINT: Input Validation
-Check the output above for any **errors** or **warnings**.
-Fix any reported problems in your input files **before** continuing.
+Review the output above for any **errors** or **warnings**.
+Fix all reported issues in the input files **before continuing**.
 :::
 
 ```{r load-data}
@@ -300,8 +303,8 @@ plot_bpc(mse, palette = palette_sample_type, main = "BPC - All Samples")
 
 ::: {.callout-important}
 ## 📋 USER CHECKPOINT: RT Filter Range
-Examine the BPC above and adjust `RT_FILTER_MIN` and `RT_FILTER_MAX` in the
-Configuration section if needed. The current filter range is
+Review the BPC above and adjust `RT_FILTER_MIN` and `RT_FILTER_MAX` in the
+**Configuration** section if needed. The current RT filter range is
 **`r RT_FILTER_MIN`** to **`r RT_FILTER_MAX`** seconds.
 :::
 
@@ -319,16 +322,16 @@ plot_bpc(mse, palette = palette_sample_type,
          main = "BPC - After RT Filtering")
 ```
 
-## Reference Lipid EICs
+## Reference Lipid EIC
 
 ```{r load-is}
 #| label: load-is
-#| tbl-cap: "Reference lipids for RT correction"
+#| tbl-cap: "Reference lipids for RT adjustment"
 
 intern_standard <- prepare_reference_lipids(
   IS_FILE,
-  rt_window_left = 30,
-  rt_window_right = ifelse(POLARITY == "pos", 15, 20)
+  rt_window_left = eic_rt_window_left,
+  rt_window_right = eic_rt_window_right
 )
 
 eic_is <- extract_is_eics(mse, intern_standard)
@@ -338,7 +341,7 @@ kable(intern_standard[, c("short_name", "mz", "RT")], format = "pipe")
 ```
 
 ::: {.callout-note}
-## Subsetting EICs to speed up RT-window tuning
+## Subsetting EIC to speed up RT-window tuning
 
 `extract_is_eics()` accepts an optional `sample_subset` argument to restrict
 the chromatogram extraction to a subset of samples. This is useful when
@@ -351,24 +354,26 @@ qc_idx <- sampleData(mse)$sample_type == "QC"
 eic_is <- extract_is_eics(mse, intern_standard, sample_subset = qc_idx)
 ```
 
-The pilot study is small enough that we use the default (all samples).
+The MICROSAMPLING dataset is small enough that the default settings (using all
+samples) is sufficient.
 :::
 
 ```{r plot-is-eics}
 #| label: plot-is-eics
 
 plot_eic_batch(eic_is, fdata, palette = palette_sample_type,
-               output_dir = folders$eic_istd)
+               output_dir = folders$eic_is)
 ```
 
 ::: {.callout-important}
-## 📋 USER CHECKPOINT: Reference Lipid EICs
-Check the EIC plots saved in **`r folders$eic_istd`**.
+## 📋 USER CHECKPOINT: EIC of Lipid reference set 
+Review the EIC plots saved in **`r folders$eic_is`** and adjust `eic_rt_window_left` and `eic_rt_window_right` in the
+**Configuration** section if needed. 
 
-- The red dashed line indicates the expected RT
-- Each peak should be detected in most/all samples
-- Note any compounds that show poor signal or unexpected RT shifts
-- Note Peak Width
+- The red dashed line indicates the expected RT.
+- Each peak should be detected in most or all samples.
+- Note compounds showing poor signal or unexpected RT shifts.
+- Check the Peak Width and confirm that they are consistent with the expected range.
 :::
 
 ---
@@ -427,9 +432,11 @@ plot_eic_batch(eic_is, fdata, palette = palette_sample_type,
 ## 📋 USER CHECKPOINT: Peak Detection Results
 Review the plots in **`r folders$peak_detection`**.
 
-- Each peak should be detected in most samples
-- Check that peaks are not merged incorrectly
-- Adjust `PEAK_WIDTH`, `PPM`, or `SN_THRESHOLD` if needed
+- Confirm that expected peaks are detected consistently across most samples.
+- Check that peaks are not merged incorrectly.
+- If the peak detection is not satisfactory, adjust `PEAK_WIDTH`, `PPM`, 
+or `SN_THRESHOLD` in the **configuration** section and rerun the peak-detection 
+step.
 :::
 
 ## Retention Time Alignment
@@ -556,7 +563,7 @@ saveObject(res, res_save_path)
 message("✓ Preprocessed objects saved to: ", folders$objects)
 message("  - MsExperiment: ", basename(mse_save_path))
 message("  - SummarizedExperiment: ", basename(res_save_path))
-message("\nNext step: Run Annotation.qmd for RT correction and annotation.")
+message("\nNext step: Run Annotation.qmd for RT adjustment and annotation.")
 ```
 
 ---

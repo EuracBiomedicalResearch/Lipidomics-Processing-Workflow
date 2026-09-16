@@ -1,3 +1,4 @@
+library("SummarizedExperiment")
 # Resolve script directory at source() time so .knn_impute_rcpp can find
 # knn_impute.cpp regardless of the caller's working directory.
 .script_dir <- local({
