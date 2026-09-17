@@ -205,8 +205,9 @@ RSD_THRESHOLD <- 0.3        # QC RSD filter (30%)
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 — see the
-[LICENSE](LICENSE) file for details.
+This project is licensed under the Creative Commons Attribution 4.0
+International License (CC BY 4.0) — see the [LICENSE](LICENSE) file for
+details.
 
 Please also cite the associated publication and the original data/database
 sources listed under [References](#references) when using this workflow.
