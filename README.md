@@ -27,7 +27,7 @@ This workflow provides:
 
 ## Project Structure
 
-Each analysis is split by **ionization polarity** — positive and negative each
+Each analysis is split by **ionization mode** — positive and negative each
 have their own Quarto documents so that parameter choices are fully traceable.
 
 ```
@@ -41,7 +41,7 @@ CEMBIO-EURAC/
 │   ├── negative/                    #   Negative ionisation mode templates
 │   │   ├── Preprocessing_neg.qmd    #   Stage 1 (POLARITY = "neg")
 │   │   └── Annotation_neg.qmd       #   Stage 2 (POLARITY = "neg")
-│   └── POS_NEG_merge.qmd            #   Stage 3: Cross-mode Data Integration
+│   └── POS_NEG_merge.qmd            #   Stage 3: Cross-ionization mode Data Integration
 │
 ├── applications/                    # Study-specific applications (self-contained)
 │   ├── MICROSAMPLING_study/
@@ -51,15 +51,15 @@ CEMBIO-EURAC/
 │   │   │   ├── Annotation_pos.qmd      #     Configured for MICROSAMPLING, POS
 │   │   │   ├── seq_pos_MICROSAMPLING.xlsx   #     Sample sequence
 │   │   │   ├── pos_lipid_reference_set.xlsx  # Reference lipids
-│   │   │   └── data/               #     .mzML files (gitignored)
+│   │   │   └── data/                #     .mzML files (gitignored)
 │   │   ├── negative/                #   Negative ionization mode analysis
 │   │   │   ├── Preprocessing_neg.qmd   #     Configured for MICROSAMPLING, NEG
 │   │   │   ├── Annotation_neg.qmd      #     Configured for MICROSAMPLING, NEG
 │   │   │   ├── seq_neg_MICROSAMPLING.xlsx   #     Sample sequence
 │   │   │   ├── neg_lipid_reference_set.xlsx  # Reference lipids
 │   │   │   └── data/               #     .mzML files (gitignored)
-│   │   └── POS_NEG_merge.qmd       #   Stage 3: Cross-mode Data Integration MICROSAMPLING study
-│   └── HIIE_study/              #   (same structure as MICROSAMPLING study)
+│   │   └── POS_NEG_merge.qmd       #   Stage 3: Cross-ionization mode Data Integration MICROSAMPLING study
+│   └── METFORMIN-HIIE_study/                 #   (same structure as MICROSAMPLING study)
 │       ├── positive/ ...
 │       ├── negative/ ...
 │       └── POS_NEG_merge.qmd
@@ -101,7 +101,7 @@ install.packages(c(
 
 ### 2. Prepare Input Files
 
-Each polarity folder is self-contained. Place these files inside your
+Each ionization mode folder is self-contained. Place these files inside your
 polarity folder (e.g. `applications/my_study/positive/`):
 
 1. **LC-MS raw data**: Place `.mzML` files in the `data/` subfolder
@@ -126,7 +126,7 @@ so parameter choices are fully traceable.
 |------|-------|-------------|
 | 1 | `positive/Preprocessing_pos.qmd`, `negative/Preprocessing_neg.qmd` | Data import and validation, peak detection, RT alignment,correspondance and gap filling |
 | 2 | `positive/Annotation_pos.qmd`, `negative/Annotation_neg.qmd` | SRM1950 Database RT adjustment, Multi-evidence annotation, normalization, QC |
-| 3 | `POS_NEG_merge.qmd` | Positive and negative ionisation mode integration for coverage reporting and downstream analysis |
+| 3 | `POS_NEG_merge.qmd` | Positive and negative ionization mode integration for coverage reporting and downstream analysis |
 
 **Example: run the MICROSAMPLING study**
 
@@ -154,16 +154,16 @@ so parameter choices are fully traceable.
 
 ---
 
-## User Checkpoints
+## User Validation Checkpoints
 
 The workflow includes several interactive checkpoints:
 
 | Checkpoint | Location | Action Required |
 |------------|----------|-----------------|
 | RT Filter Range | Preprocessing | Adjust RT filter based on BPC |
-| Reference Lipid EIC | Preprocessing | Verify internal standard signals |
+| Lipid Reference Set EIC | Preprocessing | Verify internal standard signals |
 | Peak Detection Results | Preprocessing | Check peak detection quality |
-| RT Correction Model | Annotation | Validate R-squared and residuals |
+| RT Adjustment Model | Annotation | Validate R-squared and residuals |
 | Isotope Pattern Validation | Annotation | Review mirror plots |
 | Manual Ambiguity Resolution | Annotation | Curate Excel files |
 
@@ -175,7 +175,7 @@ Key parameters in the Configuration section of each workflow file:
 
 ```r
 PROJECT_ROOT <- "../../.."  # Path to project root (for shared R/ helper functions)
-STUDY_ID <- "pilot"         # Study prefix for saved objects and seq file names
+STUDY_ID <- "MICROSAMPLING" # Study prefix for saved objects and seq file names
 POLARITY <- "pos"           # Hardcoded per folder ("pos" in positive/, "neg" in negative/)
 CORES_NB <- 4               # Parallel processing cores
 PPM <- 10                   # m/z tolerance for peak detection
@@ -190,15 +190,15 @@ RSD_THRESHOLD <- 0.3        # QC RSD filter (30%)
 ## References
 
 1. **SRM 1950-DERIVED Lipid Database**: <https://doi.org/10.1016/j.jlr.2024.100671>
-2. **Original Study (MICROSAMPLING dataset)**: <https://doi.org/10.1016/j.microc.2025.113760>
-3. **Application Study (HIIE dataset)**: <https://pubs.acs.org/doi/10.1021/acs.jproteome.5c00480>
+2. **Original study (MICROSAMPLING dataset)**: <https://doi.org/10.1016/j.microc.2025.113760>
+3. **Application study (METFORMIN-HIIE dataset)**: <https://pubs.acs.org/doi/10.1021/acs.jproteome.5c00480>
 
 ---
 
 ## Contributors
 
 - CEMBIO-EURAC Team
-- Sara Londono
+- Sara Londoño-Osorio
 - Philippe Louail
 
 ---
