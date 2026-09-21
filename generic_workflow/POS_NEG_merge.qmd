@@ -1,6 +1,6 @@
 ---
-title: "Stage 3: Cross-Mode Data Integration"
-subtitle: "Positive and negative ionization mode integration for coverage reporting and downstream anallysis"
+title: "Stage 3: Cross-Ionization Mode Data Integration"
+subtitle: "Positive and negative ionization mode integration for coverage reporting and downstream analysis"
 author: "CEMBIO-EURAC Team"
 date: today
 params:
@@ -27,14 +27,13 @@ Run this document from the study folder (the parent of `positive/` and
 `negative/`). It reads final results from both polarity sub folders.
 :::
 
-This document merges positive and negative ionization mode annotation results into a
-single `SummarizedExperiment`. It handles:
+This document merges positive and negative ionization mode annotation results into a single `SummarizedExperiment`. It handles:
 
 1. Adding ionization mode metadata
-2. Aligning samples between modes
-3. Resolving duplicate lipids (keeps higher abundance when RT is similar)
-4. Lipid coverage visualization
-5. PCA analysis of the combined dataset
+2. Aligning samples between ionization modes
+3. Resolving duplicate lipids by retaining the higher-abundance feature when RT is similar
+4. Visualizing lipid distribution
+5. Performing PCA on of the combined dataset
 
 # Configuration
 
@@ -87,8 +86,8 @@ source(file.path(PROJECT_ROOT, "R/lipid_helpers.R"))
 res_pos <- readObject(RES_POS_PATH)
 res_neg <- readObject(RES_NEG_PATH)
 
-cat("Positive mode:", nrow(res_pos), "features x", ncol(res_pos), "samples\n")
-cat("Negative mode:", nrow(res_neg), "features x", ncol(res_neg), "samples\n")
+cat("Positive ionization mode:", nrow(res_pos), "features x", ncol(res_pos), "samples\n")
+cat("Negative ionization mode:", nrow(res_neg), "features x", ncol(res_neg), "samples\n")
 ```
 
 # Add Ionization Mode
@@ -119,10 +118,9 @@ res_neg <- res_neg[, match(pos_samples, neg_samples)]
 stopifnot(all(colData(res_pos)$sample_name == colData(res_neg)$sample_name))
 ```
 
-# Resolve Duplicate Lipids
+# Resolve Duplicate Annotations
 
-For duplicated lipid names between ionization modes, keep the entry with higher mean
-abundance when retention times are similar (within `RT_DIFF_THRESHOLD` seconds).
+For duplicated lipid names between ionization modes, keep the entry with higher mean abundance when retention times are similar (within `RT_DIFF_THRESHOLD` seconds).
 
 ```{r}
 #| label: find-duplicates
@@ -173,14 +171,14 @@ neg_remove_idx <- comparison_df$neg_idx[
     comparison_df$keep_mode == "positive" & comparison_df$rt_similar
 ]
 
-cat("Removing", length(pos_remove_idx), "duplicates from positive mode\n")
-cat("Removing", length(neg_remove_idx), "duplicates from negative mode\n")
+cat("Removing", length(pos_remove_idx), "duplicates from positive ionization mode\n")
+cat("Removing", length(neg_remove_idx), "duplicates from Negative ionization mode\n")
 
 res_pos_filtered <- res_pos[-pos_remove_idx, ]
 res_neg_filtered <- res_neg[-neg_remove_idx, ]
 ```
 
-# Combine
+# Combine Lipid Annotations
 
 ```{r}
 #| label: combine-results
@@ -204,8 +202,8 @@ if (!"ionization_mode" %in% colnames(rowData(res_neg_filtered)))
 res_combined <- rbind(res_pos_filtered, res_neg_filtered)
 
 cat("Combined dataset:", nrow(res_combined), "features x", ncol(res_combined), "samples\n")
-cat("Features from positive mode:", sum(rowData(res_combined)$ionization_mode == "positive"), "\n")
-cat("Features from negative mode:", sum(rowData(res_combined)$ionization_mode == "negative"), "\n")
+cat("Features from positive ionization mode:", sum(rowData(res_combined)$ionization_mode == "positive"), "\n")
+cat("Features from negative ionization mode:", sum(rowData(res_combined)$ionization_mode == "negative"), "\n")
 ```
 
 ```{r}
@@ -222,7 +220,7 @@ cat("Origin marked:",
     sum(rowData(res_combined)$origin == "endogenous"), "endogenous\n")
 ```
 
-# Save
+# Save Results
 
 ```{r}
 #| label: save-combined
@@ -249,11 +247,11 @@ if (!INCLUDE_IS) {
 }
 ```
 
-# Lipid Coverage
+# Lipid Distributio
 
 ```{r}
 #| label: lipid-coverage
-#| fig-cap: "Lipid category distribution in the combined dataset"
+#| fig-cap: "Annotated lipid category distribution in the combined dataset"
 
 counts_cat <- table(rowData(res_combined)$`target_LIPID.CATEGORY..ABBREV.`)
 bar_colors_cat <- rep(c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854"),
@@ -262,7 +260,7 @@ bar_colors_cat <- rep(c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854"),
 par(mar = c(1, 1, 2, 1))
 pie(counts_cat, col = bar_colors_cat, labels = counts_cat,
     border = "white",
-    main = paste0("Combined Lipid Distribution (n = ", sum(counts_cat), ")"),
+    main = paste0("Lipid Category Distribution (n = ", sum(counts_cat), ")"),
     cex = 0.9)
 symbols(0, 0, circles = 0.5, inches = FALSE, add = TRUE, bg = "white")
 legend("topright", legend = names(counts_cat), fill = bar_colors_cat,
@@ -270,25 +268,8 @@ legend("topright", legend = names(counts_cat), fill = bar_colors_cat,
 ```
 
 ```{r}
-#| label: lipid-coverage-subclass
-#| fig-cap: "Lipid subclass distribution in the combined dataset"
-
-counts_sub <- table(rowData(res_combined)$`target_LIPID.SUBCLASS..ABBREV.`)
-sub_colors <- rep(brewer.pal(9, "Set1"), length.out = length(counts_sub))
-
-par(mar = c(1, 1, 2, 1))
-pie(counts_sub, col = sub_colors, labels = counts_sub,
-    border = "white",
-    main = paste0("Subclass Distribution (n = ", sum(counts_sub), ")"),
-    cex = 0.9)
-symbols(0, 0, circles = 0.5, inches = FALSE, add = TRUE, bg = "white")
-legend("topright", legend = names(counts_sub), fill = sub_colors,
-       border = NA, bty = "n", title = "Lipid Subclass", cex = 0.5)
-```
-
-```{r}
 #| label: lipid-coverage-subclass-by-category
-#| fig-cap: "Annotated lipid subclass distribution, grouped and colored by category"
+#| fig-cap: "Annotated lipid subclass distribution, grouped and colored by category in the combined dataset"
 
 counts_df <- prepare_subclass_counts(res_combined)
 cat_palette <- c(FA = "#66c2a5", GL = "#fc8d62", GP = "#8da0cb",
@@ -298,7 +279,7 @@ ggplot(counts_df, aes(x = subclass, y = Freq, fill = category)) +
     geom_col() +
     facet_grid(~ category, scales = "free_x", space = "free_x", switch = "x") +
     scale_fill_manual(values = cat_palette) +
-    labs(title = "Annotated Lipid Subclass Distribution",
+    labs(title = "Lipid Subclass Distribution",
          x = NULL, y = "Count", fill = "Category") +
     theme_bw() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1),
@@ -309,7 +290,7 @@ ggplot(counts_df, aes(x = subclass, y = Freq, fill = category)) +
 
 ```{r}
 #| label: lipid-coverage-by-mode
-#| fig-cap: "Lipid categories by ionization mode"
+#| fig-cap: "Lipid category distribution by ionization mode"
 
 coverage_df <- as.data.frame(
   table(
@@ -321,7 +302,7 @@ coverage_df <- as.data.frame(
 ggplot(coverage_df, aes(x = category, y = Freq, fill = mode)) +
   geom_col(position = "dodge") +
   scale_fill_manual(values = c("positive" = "#e41a1c", "negative" = "#377eb8")) +
-  labs(title = "Lipid Categories by Ionization Mode",
+  labs(title = "Lipid Category Distribution by Ionization Mode",
        x = "Lipid Category", y = "Count", fill = "Mode") +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
@@ -358,7 +339,7 @@ res_combined$sample_type <- ifelse(
 
 ```{r}
 #| label: pca-all
-#| fig-cap: "PCA of all samples (POS + NEG combined)"
+#| fig-cap: "PCA of all samples (POS + NEG ionization mode combined)"
 
 col_sample_type <- c("QC" = "#1b9e77", "sample" = "#d95f02")
 
@@ -371,7 +352,7 @@ vals_st$sample_type <- res_combined$sample_type
 
 autoplot(pca_res, data = vals_st, colour = "sample_type", scale = 0) +
     scale_color_manual(values = col_sample_type) +
-    labs(title = "PCA - All samples (Positive + Negative combined)")
+    labs(title = "PCA - All samples (from positive and negative ionization mode)")
 ```
 
 ```{r}
