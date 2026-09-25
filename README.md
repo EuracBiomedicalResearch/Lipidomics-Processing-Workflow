@@ -75,29 +75,33 @@ CEMBIO-EURAC/
 
 ## Quick Start
 
-### 1. Prerequisites
+### 1. Create the Reproducible Environment
 
-Install required R packages:
+The project uses two complementary environment layers:
 
-```r
-# Bioconductor packages
-BiocManager::install(c(
-  "MsExperiment", "alabaster.se", "MsBackendMetaboLights",
-  "SummarizedExperiment", "xcms", "Spectra", "MetaboCoreUtils",
-  "limma", "matrixStats", "BiocFileCache", "AnnotationHub",
-  "CompoundDb", "MetaboAnnotation"
-))
+- Conda supplies R 4.6.0, Quarto, compilers, and native libraries from
+  `environment.yml`.
+- `renv` supplies the exact CRAN, Bioconductor 3.23, and GitHub package
+  versions recorded in `renv.lock`.
 
-# MsIO — pin to version 0.0.15
-remotes::install_version("MsIO", version = "0.0.15")
+From the repository root, create and activate the Conda environment:
 
-# CRAN packages
-install.packages(c(
-  "knitr", "readxl", "writexl", "pander", "RColorBrewer",
-  "pheatmap", "vioplot", "ggplot2", "ggfortify", "gridExtra",
-  "enviPat", "ggVennDiagram", "UpSetR", "dbplyr"
-))
+```bash
+mamba env create --file environment.yml
+conda activate cembio_eurac
 ```
+
+`conda env create` can be used instead if Mamba is unavailable. Restore the R
+package library and verify the complete installation:
+
+```bash
+Rscript scripts/bootstrap_environment.R
+Rscript scripts/check_environment.R
+```
+
+The bootstrap script creates `renv.lock` on the initial maintainer run. On a
+fresh clone containing that lockfile, the same command restores its exact
+package versions. Always activate `cembio_eurac` before running R or Quarto.
 
 ### 2. Prepare Input Files
 
@@ -127,6 +131,12 @@ so parameter choices are fully traceable.
 | 1 | `positive/Preprocessing_pos.qmd`, `negative/Preprocessing_neg.qmd` | Data import and validation, peak detection, RT alignment,correspondance and gap filling |
 | 2 | `positive/Annotation_pos.qmd`, `negative/Annotation_neg.qmd` | SRM1950 Database RT adjustment, Multi-evidence annotation, normalization, QC |
 | 3 | `POS_NEG_merge.qmd` | Positive and negative ionization mode integration for coverage reporting and downstream analysis |
+
+The MICROSAMPLING preprocessing documents retrieve their mzML files from the
+public MetaboLights study `MTBLS10722`. The first positive and negative
+preprocessing runs download 48 files per polarity (approximately 2 GB total)
+into the user's BiocFileCache, normally `~/.cache/R/BiocFileCache`. Later runs
+reuse the cached files.
 
 **Example: run the MICROSAMPLING study**
 
