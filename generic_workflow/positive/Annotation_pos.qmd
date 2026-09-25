@@ -424,14 +424,16 @@ ambiguities <- export_ambiguity_tables(mtched_data)
 Two Excel files are generated for manual review of ambiguous annotations:
 
 1. **`lipid_ambiguity_resolution.xlsx`**: Cases where a single lipid matches
-   multiple features. By default, all entries have `keep_row = TRUE`.
+   multiple features. `keep_row` is pre-filled: for each lipid, the feature
+   closest to the expected RT is set to `TRUE` and the others to `FALSE`.
+   Please review these decisions and edit them if needed.
 2. **`feature_ambiguity_resolution.xlsx`**: Cases where a single feature matches
    multiple lipids. If these ambiguities are not resolved, the corresponding
    entries will be merged.
 
 **Action Required:**
 - Open each Excel file and review the ambiguous matches.
-- Set `keep_row = FALSE` for entries that should be removed.
+- Set `keep_row` to `FALSE` to remove an entry, or `TRUE` to keep it.
 - Save the files after completing the review.
 - Run the code chunk below to apply your curation decisions.
 :::
