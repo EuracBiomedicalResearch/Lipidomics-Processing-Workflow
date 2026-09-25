@@ -59,7 +59,7 @@ CEMBIO-EURAC/
 │   │   │   ├── neg_lipid_reference_set.xlsx  # Reference lipids
 │   │   │   └── data/               #     .mzML files (gitignored)
 │   │   └── POS_NEG_merge.qmd       #   Stage 3: Cross-ionization mode Data Integration MICROSAMPLING study
-│   └── METFORMIN-HIIE_study/                 #   (same structure as MICROSAMPLING study)
+│   └── METFORMIN-HIIE_study/        #   (same structure as MICROSAMPLING study)
 │       ├── positive/ ...
 │       ├── negative/ ...
 │       └── POS_NEG_merge.qmd
@@ -124,7 +124,7 @@ so parameter choices are fully traceable.
 
 | Step | Files | Description |
 |------|-------|-------------|
-| 1 | `positive/Preprocessing_pos.qmd`, `negative/Preprocessing_neg.qmd` | Data import and validation, peak detection, RT alignment,correspondance and gap filling |
+| 1 | `positive/Preprocessing_pos.qmd`, `negative/Preprocessing_neg.qmd` | Data import and validation, peak detection, RT alignment, correspondence and gap filling |
 | 2 | `positive/Annotation_pos.qmd`, `negative/Annotation_neg.qmd` | SRM1950 Database RT adjustment, Multi-evidence annotation, normalization, QC |
 | 3 | `POS_NEG_merge.qmd` | Positive and negative ionization mode integration for coverage reporting and downstream analysis |
 
@@ -205,4 +205,9 @@ RSD_THRESHOLD <- 0.3        # QC RSD filter (30%)
 
 ## License
 
-This project is for research purposes. Please cite the original publications when using this workflow.
+This project is licensed under the Creative Commons Attribution 4.0
+International License (CC BY 4.0) — see the [LICENSE](LICENSE) file for
+details.
+
+Please also cite the associated publication and the original data/database
+sources listed under [References](#references) when using this workflow.
