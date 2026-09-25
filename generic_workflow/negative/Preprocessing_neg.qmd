@@ -35,7 +35,7 @@ This document handles the preprocessing of untargeted LC-MS lipidomics data:
 1. **Data Import** — Imports raw `.mzML` data from (local files, SQLite, or
    MetaboLights).
 2. **Dataset Investigation** — Visualizes base peak chromatograms (BPC) and
-   extracted ion chromatograms (EIC) for reference lipids.
+   extracted ion chromatograms (EIC) for lipid reference set.
 3. **Chromatographic Peak Detection** — Detects chromatographic features using
    the CentWave algorithm.
 4. **Retention Time Alignment** — Aligns retention time across samples using
@@ -64,7 +64,7 @@ study_folder/
 │   ├── data/                            # .mzML files
 │   ├── objects/                         # Saved R objects (auto-generated)
 │   └── figures/                         # Output figures (auto-generated)
-└── POS_NEG_merge.qmd                    # Stage 3: Cross-Mode Data Integration
+└── POS_NEG_merge.qmd                    # Stage 3: Cross-Ionization Integration
 ```
 
 ## Required Input Files
@@ -331,11 +331,11 @@ plot_bpc(mse, palette = palette_sample_type,
          main = "BPC - After RT Filtering")
 ```
 
-## Reference Lipid EIC
+## Lipid Reference Set EIC
 
 ```{r load-is}
 #| label: load-is
-#| tbl-cap: "Reference lipids for RT adjustment"
+#| tbl-cap: "Lipid reference set for RT adjustment"
 
 intern_standard <- prepare_reference_lipids(
   IS_FILE,
@@ -429,7 +429,7 @@ data.frame(
 
 ::: {.callout-note}
 This is the second EIC plot in the file (after peak detection). If you
-adjust `rt_window_left` / `rt_window_right` when tuning the first plot
+adjust `eic_rt_window_left` / `eic_rt_window_right` when tuning the first plot
 above, make sure the same values are reflected here — both extractions
 must use matching windows for the before/after comparison to be valid.
 :::
