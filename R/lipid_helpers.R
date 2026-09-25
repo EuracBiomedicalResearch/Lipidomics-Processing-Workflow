@@ -663,8 +663,7 @@ setup_folders <- function(polarity = c("pos", "neg"), base_path = ".") {
     eic_is = file.path(base_path, "figures", "EIC_internal_standards"),
     iso_pattern = file.path(base_path, "figures", "iso_pattern_check"),
     peak_detection = file.path(base_path, "figures", "peak_detection_ref_lipid"),
-    ref_lipid = file.path(base_path, "figures", "ref_lipid_image"),
-    is_matched = file.path(base_path, "figures", "IS_mtched_data")
+    ref_lipid = file.path(base_path, "figures", "ref_lipid_image")
   )
 
   # Create directories

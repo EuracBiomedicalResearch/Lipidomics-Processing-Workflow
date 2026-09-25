@@ -1,6 +1,8 @@
 ---
 title: "MICROSAMPLING dataset — Stage 3: Cross-Ionization Mode Data Integration"
-subtitle: "Positive and negative ionization mode integration for coverage reporting and downstream analysis"
+subtitle: >-
+  Positive and negative ionization mode integration for coverage reporting
+  and downstream analysis
 author: "CEMBIO-EURAC Team"
 date: today
 params:
@@ -29,14 +31,17 @@ tic("Quarto compilation")
 ::: {.callout-tip}
 ## Study-specific configuration
 This is a configured copy of `generic_workflow/POS_NEG_merge.qmd` for the
-**MICROSAMPLING study**. Run after completing `Annotation_pos.qmd` and `Annotation_neg.qmd`.
+**MICROSAMPLING study**. Run after completing `Annotation_pos.qmd` and
+`Annotation_neg.qmd`.
 :::
 
-This document merges positive and negative ionization mode annotation results into a single `SummarizedExperiment`. It handles:
+This document merges positive and negative ionization mode annotation results
+into a single `SummarizedExperiment`. It handles:
 
 1. Adding ionization mode metadata
 2. Aligning samples between ionization modes
-3. Resolving duplicate lipids by retaining the higher-abundance feature when RT is similar
+3. Resolving duplicate lipids by retaining the higher-abundance feature when RT
+   is similar
 4. Visualizing lipid distribution
 5. Performing PCA on of the combined dataset
 
@@ -55,8 +60,10 @@ PROJECT_ROOT <- "../.."
 STUDY_ID <- "MICROSAMPLING"
 
 # Paths to the final result objects (from Annotation.qmd)
-RES_POS_PATH <- file.path("positive", "objects", paste0(STUDY_ID, "_final_res_pos"))
-RES_NEG_PATH <- file.path("negative", "objects", paste0(STUDY_ID, "_final_res_neg"))
+RES_POS_PATH <- file.path("positive", "objects",
+                          paste0(STUDY_ID, "_final_res_pos"))
+RES_NEG_PATH <- file.path("negative", "objects",
+                          paste0(STUDY_ID, "_final_res_neg"))
 
 # Output path for combined result
 RES_COMBINED_PATH <- file.path("objects", paste0(STUDY_ID, "_res_combined"))
@@ -91,8 +98,10 @@ source(file.path(PROJECT_ROOT, "R/lipid_helpers.R"))
 res_pos <- readObject(RES_POS_PATH)
 res_neg <- readObject(RES_NEG_PATH)
 
-cat("Positive ionization mode:", nrow(res_pos), "features x", ncol(res_pos), "samples\n")
-cat("Negative ionization mode:", nrow(res_neg), "features x", ncol(res_neg), "samples\n")
+cat("Positive ionization mode:", nrow(res_pos), "features x", ncol(res_pos),
+    "samples\n")
+cat("Negative ionization mode:", nrow(res_neg), "features x", ncol(res_neg),
+    "samples\n")
 ```
 
 # Add Ionization Mode
@@ -125,7 +134,9 @@ stopifnot(all(colData(res_pos)$sample_name == colData(res_neg)$sample_name))
 
 # Resolve Duplicate Annotations
 
-For duplicated lipid names between ionization modes, keep the entry with higher mean abundance when retention times are similar (within `RT_DIFF_THRESHOLD` seconds).
+For duplicated lipid names between ionization modes, keep the entry with higher
+mean abundance when retention times are similar (within `RT_DIFF_THRESHOLD`
+seconds).
 
 ```{r}
 #| label: find-duplicates
@@ -176,8 +187,10 @@ neg_remove_idx <- comparison_df$neg_idx[
     comparison_df$keep_mode == "positive" & comparison_df$rt_similar
 ]
 
-cat("Removing", length(pos_remove_idx), "duplicates from positive ionization mode\n")
-cat("Removing", length(neg_remove_idx), "duplicates from negative ionization mode\n")
+cat("Removing", length(pos_remove_idx),
+    "duplicates from positive ionization mode\n")
+cat("Removing", length(neg_remove_idx),
+    "duplicates from negative ionization mode\n")
 
 res_pos_filtered <- res_pos[-pos_remove_idx, ]
 res_neg_filtered <- res_neg[-neg_remove_idx, ]
@@ -206,9 +219,12 @@ if (!"ionization_mode" %in% colnames(rowData(res_neg_filtered)))
 
 res_combined <- rbind(res_pos_filtered, res_neg_filtered)
 
-cat("Combined dataset:", nrow(res_combined), "features x", ncol(res_combined), "samples\n")
-cat("Features from positive ionization mode:", sum(rowData(res_combined)$ionization_mode == "positive"), "\n")
-cat("Features from negative ionization mode:", sum(rowData(res_combined)$ionization_mode == "negative"), "\n")
+cat("Combined dataset:", nrow(res_combined), "features x",
+    ncol(res_combined), "samples\n")
+cat("Features from positive ionization mode:",
+    sum(rowData(res_combined)$ionization_mode == "positive"), "\n")
+cat("Features from negative ionization mode:",
+    sum(rowData(res_combined)$ionization_mode == "negative"), "\n")
 ```
 
 ```{r}
@@ -274,7 +290,9 @@ legend("topright", legend = names(counts_cat), fill = bar_colors_cat,
 
 ```{r}
 #| label: lipid-coverage-subclass-by-category
-#| fig-cap: "Annotated lipid subclass distribution, grouped and colored by category in the combined dataset"
+#| fig-cap: >-
+#|   Annotated lipid subclass distribution, grouped and colored by category in
+#|   the combined dataset
 
 counts_df <- prepare_subclass_counts(res_combined)
 cat_palette <- c(FA = "#66c2a5", GL = "#fc8d62", GP = "#8da0cb",
@@ -306,7 +324,8 @@ coverage_df <- as.data.frame(
 
 ggplot(coverage_df, aes(x = category, y = Freq, fill = mode)) +
   geom_col(position = "dodge") +
-  scale_fill_manual(values = c("positive" = "#e41a1c", "negative" = "#377eb8")) +
+  scale_fill_manual(values = c("positive" = "#e41a1c",
+                               "negative" = "#377eb8")) +
   labs(title = "Lipid Category Distribution by Ionization Mode",
        x = "Lipid Category", y = "Count", fill = "Mode") +
   theme_bw() +
@@ -357,7 +376,9 @@ vals_st$sample_type <- res_combined$sample_type
 
 autoplot(pca_res, data = vals_st, colour = "sample_type", scale = 0) +
     scale_color_manual(values = col_sample_type) +
-    labs(title = "PCA - All samples (from positive and negative ionization mode)")
+    labs(
+        title = "PCA - All samples (from positive and negative ionization mode)"
+    )
 ```
 
 ```{r}
@@ -379,7 +400,8 @@ feature_df <- data.frame(
 
 ggplot(feature_df, aes(x = PC1, y = PC2, color = ionization_mode)) +
     geom_point(alpha = 0.7) +
-    scale_color_manual(values = c("positive" = "#e41a1c", "negative" = "#377eb8")) +
+    scale_color_manual(values = c("positive" = "#e41a1c",
+                                  "negative" = "#377eb8")) +
     labs(title = "PCA of features colored by ionization mode") +
     theme_bw()
 ```

@@ -1,6 +1,8 @@
 ---
 title: "MICROSAMPLING dataset — Stage 1: LC-MS Data Preprocessing"
-subtitle: "Data import and validation, Peak detection, RT alignment, correspondence and gap filling"
+subtitle: >-
+  Data import and validation, Peak detection, RT alignment, correspondence
+  and gap filling
 author: "CEMBIO-EURAC Team"
 date: today
 params:
@@ -28,32 +30,38 @@ tic("Quarto compilation")
 
 ::: {.callout-tip}
 ## Study-specific configuration
-This document performs **negative ionization mode** preprocessing for the **MICROSAMPLING study**
-(BμS device comparison). The corresponding positive ionization mode workflow is available in the `positive/` folder.
+This document performs **negative ionization mode** preprocessing for the
+**MICROSAMPLING study** (BμS device comparison). The corresponding positive
+ionization mode workflow is available in the `positive/` folder.
 :::
 
 This document handles the preprocessing of Untargeted LC-MS lipidomics data:
 
-1. **Data Import** — Imports raw `.mzML` data from (local files, SQLite, or MetaboLights).
-2. **Dataset Investigation** — Visualizes base peak chromatograms (BPC) and extracted ion chromatograms (EIC) for lipid reference set.
-3. **Chromatographic Peak Detection** — Detects chromatographic features using the CentWave algorithm
-4. **Retention Time Alignment** — Aligns retention time across samples using QC-based peak groups.
+1. **Data Import** — Imports raw `.mzML` data from (local files, SQLite, or
+   MetaboLights).
+2. **Dataset Investigation** — Visualizes base peak chromatograms (BPC) and
+   extracted ion chromatograms (EIC) for lipid reference set.
+3. **Chromatographic Peak Detection** — Detects chromatographic features using
+   the CentWave algorithm.
+4. **Retention Time Alignment** — Aligns retention time across samples using
+   QC-based peak groups.
 5. **Correspondence** — Groups corresponding feature across samples.
 6. **Gap Filling** — Fill missing peak values.
 
 The output is a preprocessed `MsExperiment` and `SummarizedExperiment` saved to
-the `objects/` folder, and used as input for lipid annotation in `Annotation_neg.qmd`.
+the `objects/` folder, and used as input for lipid annotation in
+`Annotation_neg.qmd`.
 
 ## Folder Hierarchy
 
 ```
 MICROSAMPLING_study/
-├── LipidDatabase_R.xlsx                 # SRM 1950-derived Lipid database (shared by both polarities)
+├── LipidDatabase_R.xlsx                 # SRM 1950 lipid DB (both polarities)
 ├── positive/                            # Positive ionization mode
 │   ├── Preprocessing_pos.qmd
 │   ├── Annotation_pos.qmd
 │   └── ...
-├── negative/                            # Negative ionization mode (this folder)
+├── negative/                            # Negative ionization mode
 │   ├── Preprocessing_neg.qmd            # Stage 1 (this file)
 │   ├── Annotation_neg.qmd               # Stage 2
 │   ├── seq_neg_MICROSAMPLING.xlsx       # Sample sequence
@@ -61,7 +69,7 @@ MICROSAMPLING_study/
 │   ├── data/                            # .mzML files
 │   ├── objects/                         # Saved R objects (auto-generated)
 │   └── figures/                         # Output figures (auto-generated)
-└── POS_NEG_merge.qmd                    # Stage 3: Cross-Ionization Mode Data Integration
+└── POS_NEG_merge.qmd                    # Stage 3: Cross-Ionization Integration
 ```
 
 ## Required Input Files
@@ -70,7 +78,8 @@ Before running this workflow, ensure you have:
 
 1. **LC-MS raw data** (`.mzML` files) in the `data/` folder
 2. **Sample sequence file** (`seq_neg_MICROSAMPLING.xlsx`) in this folder
-3. **SRM 1950-derived lipid database** (`LipidDatabase_R.xlsx`) in the parent study folder
+3. **SRM 1950-derived lipid database** (`LipidDatabase_R.xlsx`) in the parent
+   study folder
 4. **Lipid Reference Set** (`neg_lipid_reference_set.xlsx`) in this folder
 
 ---
@@ -118,8 +127,10 @@ SAMPLE_TYPE_COLORS <- c(
 )
 
 # --- MetaboLights options (only used if DATA_SOURCE = "metaboLights") ---
-MTBLS_ASSAY_POS <- "a_MTBLS10722_LC-MS_positive_reverse-phase_metabolite_profiling.txt"
-MTBLS_ASSAY_NEG <- "a_MTBLS10722_LC-MS_negative_reverse-phase_metabolite_profiling.txt"
+MTBLS_ASSAY_POS <-
+  "a_MTBLS10722_LC-MS_positive_reverse-phase_metabolite_profiling.txt"
+MTBLS_ASSAY_NEG <-
+  "a_MTBLS10722_LC-MS_negative_reverse-phase_metabolite_profiling.txt"
 
 MTBLS_COLUMN_MAPPING <- list(
   sample_name     = "Sample Name",
@@ -166,7 +177,8 @@ load_lipid_packages(verbose = TRUE)
 folders <- setup_folders(polarity = POLARITY)
 
 SEQ_FILE <- paste0("seq_", POLARITY, "_", STUDY_ID, ".xlsx")
-IS_FILE <- if (POLARITY == "pos") "pos_lipid_reference_set.xlsx" else "neg_lipid_reference_set.xlsx"
+IS_FILE <- if (POLARITY == "pos") "pos_lipid_reference_set.xlsx" else
+    "neg_lipid_reference_set.xlsx"
 DATA_SUFFIX <- paste0("_", POLARITY, ".mzML")
 
 # Setup parallel processing
@@ -239,10 +251,12 @@ if (DATA_SOURCE == "local") {
 
 } else if (DATA_SOURCE == "sqlite") {
   if (is.null(SQLITE_DB)) {
-    SQLITE_DB <- file.path(folders$data, paste0(STUDY_ID, "_", POLARITY, ".sqlite"))
+    SQLITE_DB <- file.path(folders$data,
+                           paste0(STUDY_ID, "_", POLARITY, ".sqlite"))
   }
   if (!file.exists(SQLITE_DB)) {
-    message("SQLite database not found at '", SQLITE_DB, "'. Creating from mzML files...")
+    message("SQLite database not found at '", SQLITE_DB,
+            "'. Creating from mzML files...")
     create_sqlite_database(
       study_id  = STUDY_ID,
       polarity  = POLARITY,
@@ -255,7 +269,8 @@ if (DATA_SOURCE == "local") {
 
 } else if (DATA_SOURCE == "metaboLights") {
   assay_name <- if (POLARITY == "pos") MTBLS_ASSAY_POS else MTBLS_ASSAY_NEG
-  if (is.null(assay_name)) stop("Set MTBLS_ASSAY_POS / MTBLS_ASSAY_NEG in the Configuration section.")
+  if (is.null(assay_name))
+    stop("Set MTBLS_ASSAY_POS / MTBLS_ASSAY_NEG in the Configuration section.")
 
   mse <- load_from_metaboLights(
     mtbls_id = MTBLS_ID,
@@ -268,7 +283,8 @@ if (DATA_SOURCE == "local") {
   )
 
 } else {
-  stop("Invalid DATA_SOURCE: '", DATA_SOURCE, "'. Use 'local', 'sqlite', or 'metaboLights'.")
+  stop("Invalid DATA_SOURCE: '", DATA_SOURCE,
+       "'. Use 'local', 'sqlite', or 'metaboLights'.")
 }
 
 message("✓ Loaded ", length(mse), " samples")
@@ -354,7 +370,8 @@ qc_idx <- sampleData(mse)$sample_type == "QC"
 eic_is <- extract_is_eics(mse, intern_standard, sample_subset = qc_idx)
 ```
 
-The MICROSAMPLING dataset is small enough that the default settings (using all samples) is sufficient.
+The MICROSAMPLING dataset is small enough that the default settings (using all
+samples) is sufficient.
 :::
 
 ```{r plot-is-eics}
@@ -366,13 +383,15 @@ plot_eic_batch(eic_is, fdata, palette = palette_sample_type,
 
 ::: {.callout-important}
 ## 📋 USER CHECKPOINT: Reference Lipid EIC
-Review the EIC plots saved in **`r folders$eic_is`** and adjust `eic_rt_window_left` and `eic_rt_window_right` in the
-**Configuration** section if needed. 
+Review the EIC plots saved in **`r folders$eic_is`** and adjust
+`eic_rt_window_left` and `eic_rt_window_right` in the **Configuration** section
+if needed.
 
 - The red dashed line indicates the expected RT.
 - Each peak should be detected in most or all samples.
 - Note compounds showing poor signal or unexpected RT shifts.
-- Check the Peak Width and confirm that they are consistent with the expected range.
+- Check the Peak Width and confirm that they are consistent with the expected
+  range.
 :::
 
 ---
@@ -433,7 +452,9 @@ Review the plots in **`r folders$peak_detection`**.
 
 - Confirm that expected peaks are detected consistently across most samples.
 - Check that peaks are not merged incorrectly.
-- If the peak detection is not satisfactory, adjust `PEAK_WIDTH`, `PPM`, or `SN_THRESHOLD` in the **configuration** section and rerun the peak-detection step.
+- If the peak detection is not satisfactory, adjust `PEAK_WIDTH`, `PPM`, or
+  `SN_THRESHOLD` in the **configuration** section and rerun the peak-detection
+  step.
 :::
 
 ## Retention Time Alignment
@@ -467,7 +488,8 @@ mse <- adjustRtime(mse, param = param_align)
 #| label: plot-alignment
 #| fig-cap: "Retention time alignment results"
 
-col_sample <- get_sample_colors(sampleData(mse)$sample_type, palette_sample_type)
+col_sample <- get_sample_colors(sampleData(mse)$sample_type,
+                                palette_sample_type)
 plotAdjustedRtime(mse, col = paste0(col_sample, "80"), peakGroupsPch = 1)
 grid()
 legend("topright", col = palette_sample_type,
@@ -514,7 +536,8 @@ mse <- fillChromPeaks(mse, param = ChromPeakAreaParam(), chunkSize = CORES_NB)
 
 na_after <- sum(is.na(featureValues(mse))) / length(featureValues(mse)) * 100
 
-message("Gap filling: ", round(na_before, 1), "% -> ", round(na_after, 1), "% NA")
+message("Gap filling: ", round(na_before, 1), "% -> ",
+        round(na_after, 1), "% NA")
 
 if (na_before > 50) {
   warning("High initial missing value percentage (", round(na_before, 1),
@@ -525,8 +548,10 @@ if (na_before > 50) {
 ::: {.callout-note}
 ## Gap Filling Guidance
 - **< 30% NA before filling**: Good — typical for well-detected features
-- **30-50% NA before filling**: Acceptable — may indicate lower abundance compounds
-- **> 50% NA before filling**: Review peak detection parameters or sample quality
+- **30-50% NA before filling**: Acceptable — may indicate lower abundance
+  compounds
+- **> 50% NA before filling**: Review peak detection parameters or sample
+  quality
 :::
 
 ## Extract Results and Save

@@ -26,3 +26,6 @@ features-matching-multiple-lipids.xlsx
 lipids-matching-multiple-features.xlsx
 *.zip
 *.sqlite
+
+# Quarto render artifacts
+*_files/
