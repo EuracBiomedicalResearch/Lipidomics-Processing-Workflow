@@ -559,10 +559,13 @@ mse_save_path <- file.path(folders$objects,
 res_save_path <- file.path(folders$objects,
                            paste0(STUDY_ID, "_preprocessed_res_", POLARITY))
 
-saveMsObject(mse, AlabasterParam(path = mse_save_path))
+replace_saved_directory(
+  mse_save_path,
+  function(path) saveMsObject(mse, AlabasterParam(path = path))
+)
 
 res@metadata <- list()
-saveObject(res, res_save_path)
+replace_saved_directory(res_save_path, function(path) saveObject(res, path))
 
 message("✓ Preprocessed objects saved to: ", folders$objects)
 message("  - MsExperiment: ", basename(mse_save_path))

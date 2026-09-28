@@ -634,7 +634,8 @@ res_final <- annotated_res[, annotated_res$sample_type != "QC"]
 rowData(res_final)$qc_cv <- assay(res_qc, "ISnorm_filled") |> rowRsd()
 
 # save objects
-saveObject(res_final, file.path(folders$objects, paste0(STUDY_ID, "_final_res_", POLARITY)))
+res_final_path <- file.path(folders$objects, paste0(STUDY_ID, "_final_res_", POLARITY))
+replace_saved_directory(res_final_path, function(path) saveObject(res_final, path))
 ```
 
 ## Session Info

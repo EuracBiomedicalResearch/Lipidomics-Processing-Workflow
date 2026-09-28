@@ -227,7 +227,7 @@ cat("Origin marked:",
 ```{r}
 #| label: save-combined
 dir.create(dirname(RES_COMBINED_PATH), recursive = TRUE, showWarnings = FALSE)
-saveObject(res_combined, RES_COMBINED_PATH)
+replace_saved_directory(RES_COMBINED_PATH, function(path) saveObject(res_combined, path))
 ```
 
 ```{r}

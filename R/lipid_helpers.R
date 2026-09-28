@@ -680,6 +680,59 @@ setup_folders <- function(polarity = c("pos", "neg"), base_path = ".") {
   return(folders)
 }
 
+#' Save an object into an objects/ directory, replacing a previous save
+#'
+#' The existing result stays in place until the new one is fully written.
+#' Only a direct child directory of objects/ can be replaced.
+#' @param path Destination directory
+#' @param save_fun Function accepting the destination path and writing a directory
+replace_saved_directory <- function(path, save_fun) {
+  if (!is.character(path) || length(path) != 1L || is.na(path) ||
+      !nzchar(path) || !is.function(save_fun)) {
+    stop("Provide a single output path and a save function.")
+  }
+
+  name <- basename(path)
+  parent <- normalizePath(dirname(path), mustWork = TRUE)
+  if (basename(parent) != "objects" || name %in% c("", ".", "..")) {
+    stop("Refusing to replace a path outside an objects/ output directory: ", path)
+  }
+  path <- file.path(parent, name)
+  link_target <- Sys.readlink(path)
+  if ((!is.na(link_target) && nzchar(link_target)) ||
+      (file.exists(path) && !dir.exists(path))) {
+    stop("Refusing to replace a file or symbolic link: ", path)
+  }
+
+  staged_path <- tempfile(pattern = paste0(".", name, "-new-"), tmpdir = parent)
+  backup_path <- tempfile(pattern = paste0(".", name, "-old-"), tmpdir = parent)
+  on.exit(if (dir.exists(staged_path)) unlink(staged_path, recursive = TRUE),
+          add = TRUE)
+
+  save_fun(staged_path)
+  if (!dir.exists(staged_path)) {
+    stop("Save function did not create an output directory: ", staged_path)
+  }
+
+  if (dir.exists(path) && !file.rename(path, backup_path)) {
+    stop("Could not move the previous output aside: ", path)
+  }
+  if (!file.rename(staged_path, path)) {
+    if (dir.exists(backup_path) && !file.rename(backup_path, path)) {
+      stop("Could not install the new output; previous output remains at: ",
+           backup_path)
+    }
+    stop("Could not install the new output at: ", path)
+  }
+  if (dir.exists(backup_path)) {
+    unlink(backup_path, recursive = TRUE)
+    if (dir.exists(backup_path)) {
+      warning("Previous output could not be removed: ", backup_path)
+    }
+  }
+  invisible(path)
+}
+
 # =============================================================================
 # DATA LOADING FUNCTIONS
 # =============================================================================
