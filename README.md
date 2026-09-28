@@ -1,4 +1,4 @@
-# CEMBIO-EURAC
+# Lipidomics-Processing_Workflow
 
 **Semi-automated workflow for High-confidence lipid annotation using a public SRM 1950-derived lipid database**
 
