@@ -1577,61 +1577,60 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
               theoretical_spectra = theoretical_spectra_filtered))
 }
 
-#' Resolve sn1/sn2 isomer ambiguity
+#' Resolve sn-1/sn-2 regioisomers of lysophospholipids
+#'
+#' Lysophospholipids annotated as both regioisomers, e.g. LPC(18:1/0:0)
+#' (acyl at sn-1) and LPC(0:0/18:1) (acyl at sn-2), are resolved by elution
+#' order on reversed-phase LC: the sn-2 isomer elutes before the sn-1 isomer.
+#' When the candidate features of a species have at least two distinct RTs,
+#' the sn-1 annotation is removed from the earliest feature and the sn-2
+#' annotation from the latest one. When both isomers map to a single RT they
+#' cannot be distinguished and both annotations are kept, so that they are
+#' handled by the feature-ambiguity merge downstream.
 #'
 #' @param mtched_data Matched data frame
 #' @return Filtered mtched_data with resolved isomers
-resolve_sm_isomers <- function(mtched_data) {
-  # Helper functions
-  get_lipid_base <- function(names) gsub("0:0/|/0:0", "", names)
-  is_sm2 <- function(name) grepl("0:0/", name, fixed = TRUE)
-  is_sm1 <- function(name) grepl("/0:0", name, fixed = TRUE)
-
-  df_clean <- mtched_data
-  df_clean$lipid_base_group <- get_lipid_base(df_clean$target_lipid_name_unique)
-  df_clean$keep_row <- TRUE
-
-  unique_species <- unique(df_clean$lipid_base_group)
-
-  for (species in unique_species) {
-    idx <- which(df_clean$lipid_base_group == species)
-    sub_df <- df_clean[idx, ]
-    has_sm1 <- any(is_sm1(sub_df$target_lipid_name_unique))
-    has_sm2 <- any(is_sm2(sub_df$target_lipid_name_unique))
-
-    if (has_sm1 && has_sm2) {
-      unique_rts <- sort(unique(round(sub_df$rtmed, 2)))
-
-      if (length(unique_rts) >= 2) {
-        rt_early <- unique_rts[1]
-        rt_late <- unique_rts[length(unique_rts)]
-
-        for (i in idx) {
-          row_rt <- round(df_clean$rtmed[i], 2)
-          row_name <- df_clean$target_lipid_name_unique[i]
-          if (row_rt == rt_early && is_sm1(row_name)) {
-            df_clean$keep_row[i] <- FALSE
-          }
-          if (row_rt == rt_late && is_sm2(row_name)) {
-            df_clean$keep_row[i] <- FALSE
-          }
-        }
-      } else {
-        for (i in idx) {
-          if (is_sm2(df_clean$target_lipid_name_unique[i])) {
-            df_clean$keep_row[i] <- FALSE
-          }
-        }
-      }
-    }
+resolve_lyso_sn_isomers <- function(mtched_data) {
+  # "(0:0/", "(O-0:0/", "(P-0:0/": acyl chain at sn-2
+  sn2_pattern <- "\\((O-|P-)?0:0/"
+  # "/0:0)" or "/0:0(d7)": acyl chain at sn-1
+  sn1_pattern <- "/0:0([)(])"
+  is_sn2 <- function(name) grepl(sn2_pattern, name)
+  is_sn1 <- function(name) grepl(sn1_pattern, name)
+  get_lipid_base <- function(names) {
+    gsub(sn1_pattern, "\\1", gsub(sn2_pattern, "(\\1", names))
   }
 
-  final_resolved <- df_clean[df_clean$keep_row, ]
-  final_resolved$lipid_base_group <- NULL
-  final_resolved$keep_row <- NULL
+  nms <- mtched_data$target_lipid_name_unique
+  base <- get_lipid_base(nms)
+  rt <- round(mtched_data$rtmed, 2)
+  keep_row <- rep(TRUE, nrow(mtched_data))
+  n_unresolved <- 0L
+
+  for (species in unique(base[is_sn1(nms) | is_sn2(nms)])) {
+    idx <- which(base == species)
+    if (!(any(is_sn1(nms[idx])) && any(is_sn2(nms[idx])))) next
+
+    unique_rts <- sort(unique(rt[idx]))
+    if (length(unique_rts) < 2) {
+      n_unresolved <- n_unresolved + 1L
+      next
+    }
+    rt_early <- unique_rts[1]
+    rt_late <- unique_rts[length(unique_rts)]
+    keep_row[idx[rt[idx] == rt_early & is_sn1(nms[idx])]] <- FALSE
+    keep_row[idx[rt[idx] == rt_late & is_sn2(nms[idx])]] <- FALSE
+  }
+
+  final_resolved <- mtched_data[keep_row, ]
   final_resolved$ntch_idx <- seq_len(nrow(final_resolved))
 
-  message("✓ sn1/sn2 resolution: ", nrow(mtched_data), " -> ", nrow(final_resolved), " rows")
+  message("✓ sn-1/sn-2 resolution: ", nrow(mtched_data), " -> ",
+          nrow(final_resolved), " rows")
+  if (n_unresolved > 0L) {
+    message("  ", n_unresolved, " species with both isomers at a single ",
+            "RT kept as ambiguous")
+  }
   return(final_resolved)
 }
 
