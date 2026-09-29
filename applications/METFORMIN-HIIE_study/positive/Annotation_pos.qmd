@@ -405,12 +405,12 @@ mtched_data <- mtched_data[rows_to_keep, ]
 message("After RT score filter: ", nrow(mtched_data), " matches")
 ```
 
-## sn1/sn2 Isomer Resolution
+## sn-1/sn-2 Isomer Resolution
 
-```{r sm-resolution}
-#| label: sm-resolution
+```{r sn-resolution}
+#| label: sn-resolution
 
-mtched_data <- resolve_sm_isomers(mtched_data)
+mtched_data <- resolve_lyso_sn_isomers(mtched_data)
 ```
 
 ## Export Ambiguity Tables for Manual Curation
