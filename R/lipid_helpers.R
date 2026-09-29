@@ -1577,12 +1577,12 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
               theoretical_spectra = theoretical_spectra_filtered))
 }
 
-#' Resolve sn-1/sn-2 regioisomers of lysophospholipids
+#' Resolve sn-1/sn-2 regioisomers of lysoglycerophospholipids
 #'
-#' Lysophospholipids annotated as both regioisomers, e.g. LPC(18:1/0:0)
+#' Lysoglycerophospholipids annotated as both regioisomers, e.g. LPC(18:1/0:0)
 #' (acyl at sn-1) and LPC(0:0/18:1) (acyl at sn-2), are resolved by elution
-#' order on reversed-phase LC: the sn-2 isomer elutes before the sn-1 isomer.
-#' When the candidate features of a species have at least two distinct RTs,
+#' order on RP-LC: the sn-2 isomer elutes before the sn-1 isomer.
+#' When the candidate features of a species have at least two distinct RT,
 #' the sn-1 annotation is removed from the earliest feature and the sn-2
 #' annotation from the latest one. When both isomers map to a single RT they
 #' cannot be distinguished and both annotations are kept, so that they are
