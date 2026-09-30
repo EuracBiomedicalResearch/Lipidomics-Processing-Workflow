@@ -27,6 +27,7 @@ lipids-matching-multiple-features.xlsx
 *.zip
 *.sqlite
 
+<<<<<<< HEAD
 # renv: keep renv.lock and renv/activate.R, ignore machine-local state
 /renv/library/
 /renv/staging/
@@ -37,3 +38,7 @@ lipids-matching-multiple-features.xlsx
 
 # Study applications and generated analysis files
 /applications/
+=======
+# Quarto render artifacts
+*_files/
+>>>>>>> 7af689fc9e419bad73a624b90d706d34a8c1c0a0
