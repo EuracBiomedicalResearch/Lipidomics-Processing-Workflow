@@ -72,10 +72,6 @@ RES_COMBINED_PATH <- file.path("objects", paste0(STUDY_ID, "_res_combined"))
 # RT difference threshold for duplicate resolution (seconds)
 RT_DIFF_THRESHOLD <- 30
 
-# Whether IS participate in downstream plots, metrics, and PCA.
-# When FALSE, IS are dropped from res_combined *after* the Save section,
-# so the saved binary still has them (with an origin column) for reuse.
-INCLUDE_IS <- FALSE
 ```
 
 # Setup
@@ -242,31 +238,28 @@ cat("Origin marked:",
     sum(rowData(res_combined)$origin == "endogenous"), "endogenous\n")
 ```
 
+# Remove Internal Standards
+
+Internal standards have already been used for normalization in the annotation
+workflow. Remove them from the final merged annotations before saving results,
+exporting abundances, and performing downstream analysis.
+
+```{r}
+#| label: remove-internal-standards
+
+n_before <- nrow(res_combined)
+res_combined <- res_combined[rowData(res_combined)$origin == "endogenous", ]
+cat("Internal-standard removal:", n_before, "->", nrow(res_combined),
+    "annotated features (", n_before - nrow(res_combined),
+    "internal standards removed).\n")
+```
+
 # Save Results
 
 ```{r}
 #| label: save-combined
 dir.create(dirname(RES_COMBINED_PATH), recursive = TRUE, showWarnings = FALSE)
 saveObject(res_combined, RES_COMBINED_PATH)
-```
-
-```{r}
-#| label: filter-IS-for-analysis
-
-# Keep an unfiltered snapshot for the xlsx export at the end of this file
-res_combined_all <- res_combined
-if (!INCLUDE_IS) {
-    n_before <- nrow(res_combined)
-    res_combined <- res_combined[rowData(res_combined)$origin == "endogenous", ]
-    cat("INCLUDE_IS = FALSE: dropped",
-        n_before - nrow(res_combined),
-        "IS from downstream analysis (",
-        nrow(res_combined), "features remain).\n")
-} else {
-    cat("INCLUDE_IS = TRUE: keeping",
-        sum(rowData(res_combined)$origin == "IS"),
-        "IS in downstream analysis.\n")
-}
 ```
 
 # Lipid Distribution
@@ -417,18 +410,18 @@ annot_cols <- intersect(
       "target_LIPID.CATEGORY..ABBREV.", "target_LIPID.SUBCLASS..ABBREV.",
       "target_Adduct", "target_IS_norm", "origin", "ionization_mode",
       "mzmed", "rtmed"),
-    colnames(rowData(res_combined_all))
+    colnames(rowData(res_combined))
 )
 
 annotation_df <- data.frame(
-    feature_id = rownames(res_combined_all),
-    as.data.frame(rowData(res_combined_all)[, annot_cols, drop = FALSE]),
+    feature_id = rownames(res_combined),
+    as.data.frame(rowData(res_combined)[, annot_cols, drop = FALSE]),
     check.names = FALSE,
     stringsAsFactors = FALSE
 )
 
 abundance_df <- as.data.frame(
-    assay(res_combined_all, "ISnorm_filled_imputed"),
+    assay(res_combined, "ISnorm_filled_imputed"),
     check.names = FALSE
 )
 
