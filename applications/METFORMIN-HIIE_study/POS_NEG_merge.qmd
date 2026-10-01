@@ -86,6 +86,7 @@ library(ggplot2)
 library(RColorBrewer)
 library(writexl)
 source(file.path(PROJECT_ROOT, "R/lipid_helpers.R"))
+source(file.path(PROJECT_ROOT, "R/annotation_reporting.R"))
 ```
 
 # Load Results
@@ -94,6 +95,13 @@ source(file.path(PROJECT_ROOT, "R/lipid_helpers.R"))
 #| label: load-data
 res_pos <- readObject(RES_POS_PATH)
 res_neg <- readObject(RES_NEG_PATH)
+merge_report <- new_annotation_report(STUDY_ID, "merged")
+merge_input <- rbind(
+  annotation_report_frame(res_pos, "positive"),
+  annotation_report_frame(res_neg, "negative")
+)
+# These frames are already standardized; retain both polarities in the snapshot.
+merge_report$phases$merge_input <- list(data = merge_input, annotations = TRUE)
 
 cat("Positive ionization mode:", nrow(res_pos), "features x", ncol(res_pos),
     "samples\n")
@@ -232,6 +240,7 @@ is_IS <- !is.na(rowData(res_combined)$target_IS_norm) &
     rowData(res_combined)$target_lipid.name ==
         rowData(res_combined)$target_IS_norm
 rowData(res_combined)$origin <- ifelse(is_IS, "IS", "endogenous")
+merge_report <- capture_annotation_phase(merge_report, "duplicate_resolution", res_combined)
 
 cat("Origin marked:",
     sum(rowData(res_combined)$origin == "IS"), "IS,",
@@ -249,6 +258,7 @@ exporting abundances, and performing downstream analysis.
 
 n_before <- nrow(res_combined)
 res_combined <- res_combined[rowData(res_combined)$origin == "endogenous", ]
+merge_report <- capture_annotation_phase(merge_report, "internal_standard_removal", res_combined)
 cat("Internal-standard removal:", n_before, "->", nrow(res_combined),
     "annotated features (", n_before - nrow(res_combined),
     "internal standards removed).\n")
@@ -432,6 +442,21 @@ xlsx_path <- file.path("objects",
 dir.create(dirname(xlsx_path), recursive = TRUE, showWarnings = FALSE)
 writexl::write_xlsx(export_df, path = xlsx_path)
 cat("Saved annotated compound abundances to:", xlsx_path, "\n")
+```
+
+# Export Annotation Metrics
+
+The metrics use snapshots captured by the annotation workflows, rather than
+recomputing matching or QC filtering. Rerun both annotation workflows after
+updating the reporting code. Workbook export requires the R package `openxlsx`.
+
+```{r}
+#| label: export-annotation-metrics
+
+saveRDS(merge_report, file.path(
+  "objects", paste0(STUDY_ID, "_annotation_report_merged.rds")
+))
+regenerate_annotation_metrics(".", STUDY_ID)
 ```
 
 ---
