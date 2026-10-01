@@ -136,6 +136,32 @@ so parameter choices are fully traceable.
 4. Render `applications/MICROSAMPLING_study/negative/Annotation_neg.qmd`
 5. Render `applications/MICROSAMPLING_study/POS_NEG_merge.qmd`
 
+#### Publication annotation metrics
+
+Both studies capture annotation-stage snapshots and export
+`objects/<STUDY_ID>_annotation_metrics_publication.xlsx` at the end of the merge.
+Install the additional reporting dependency with `install.packages("openxlsx")`.
+Existing preprocessing outputs can be reused, but rerun both annotation documents
+and the merge once to capture the new snapshots. Missing or incompatible snapshots
+produce an error instead of reconstructing annotations with separate settings.
+
+The workbook starts with `Summary`: actual workflow phases, positive then negative
+then merged, with feature counts, distinct feature–lipid pairs, removed features,
+and ambiguous features. Standards remain in intermediate counts and details until
+the explicit final removal phase. The final detail sheet matches the feature rows
+in the annotated-abundances workbook. Column definitions appear beneath headers.
+`Curated_reference_comparison` reports agreement with manually curated assignments,
+not accuracy against independently established chemical identities.
+
+After snapshots exist, refresh reporting without rerunning annotation:
+
+```bash
+Rscript applications/MICROSAMPLING_study/generate_annotation_metrics.R
+Rscript applications/METFORMIN-HIIE_study/generate_annotation_metrics.R
+```
+
+Reporting regression tests: `Rscript tests/test_annotation_reporting.R`.
+
 ### 4. Start a New Study
 
 1. Create a new folder under `applications/` (e.g. `applications/my_study/`)

@@ -109,6 +109,7 @@ eic_rt_window_right <- 20
 
 source(file.path(PROJECT_ROOT, "R/lipid_helpers.R"))
 source(file.path(PROJECT_ROOT, "R/imputers.R"))
+source(file.path(PROJECT_ROOT, "R/annotation_reporting.R"))
 load_lipid_packages(verbose = TRUE)
 ```
 
@@ -150,6 +151,12 @@ res_save_path <- file.path(folders$objects,
 
 mse <- readMsObject(XcmsExperiment(), AlabasterParam(path = mse_save_path))
 res <- readObject(res_save_path)
+annotation_report <- new_annotation_report(
+  STUDY_ID, if (POLARITY == "pos") "positive" else "negative"
+)
+annotation_report <- capture_annotation_phase(
+  annotation_report, "preprocessed_features", res, annotations = FALSE
+)
 
 # Reload lipid reference set and EIC
 intern_standard <- prepare_reference_lipids(
@@ -296,6 +303,7 @@ match_result <- match_features_to_database(
 mtched_data <- match_result$mtched_data
 query <- match_result$query
 lipid_db_r1 <- match_result$lipid_db_r1
+annotation_report <- capture_annotation_phase(annotation_report, "rank1_mz_rt", mtched_data)
 
 # Validate matching results
 validate_matches(mtched_data, min_matches = 10, max_ppm_error = 15)
@@ -314,6 +322,7 @@ iso_result <- calculate_isotope_similarity(
 )
 
 mtched_data <- iso_result$mtched_data
+annotation_report <- capture_annotation_phase(annotation_report, "isotope_filter", mtched_data)
 
 message("Matches after isotope filter: ", nrow(mtched_data))
 ```
@@ -357,6 +366,7 @@ mtched_data <- match_adducts(
   ppm = MATCH_PPM,
   rt_tol = 5
 )
+annotation_report <- capture_annotation_phase(annotation_report, "adduct_scored", mtched_data)
 ```
 
 ## Resolve Ambiguities
@@ -411,6 +421,7 @@ message("After RT score filter: ", nrow(mtched_data), " matches")
 #| label: sn-resolution
 
 mtched_data <- resolve_lyso_sn_isomers(mtched_data)
+annotation_report <- capture_annotation_phase(annotation_report, "ambiguity_auto", mtched_data)
 ```
 
 ## Export Ambiguity Tables for Manual Curation
@@ -481,6 +492,7 @@ for (i in unique(fids_ambiguous)) {
 }
 
 message("Final matched lipids: ", nrow(mtched_data))
+annotation_report <- capture_annotation_phase(annotation_report, "manual_curation", mtched_data)
 ```
 
 ## Annotation Summary
@@ -556,6 +568,7 @@ annotated_res <- normalize_by_is(
 assays(annotated_res)$ISnorm_filled_imputed <- impute_block_knn_log(
     as.matrix(assay(annotated_res, "ISnorm_filled")), a = 0.4, b = 0.7, k = 5
 )
+annotation_report <- capture_annotation_phase(annotation_report, "normalization", annotated_res)
 ```
 
 ---
@@ -572,6 +585,7 @@ res_unfilt <- annotated_res
 
 # Apply RSD filter
 annotated_res <- filter_by_qc_rsd(annotated_res, threshold = RSD_THRESHOLD)
+annotation_report <- capture_annotation_phase(annotation_report, "qc_rsd_filtered", annotated_res)
 ```
 
 ## Quality Assessment Plots
@@ -671,10 +685,14 @@ res_final <- annotated_res[, annotated_res$sample_type != "QC"]
 
 # Add QC CV as feature metadata
 rowData(res_final)$qc_cv <- assay(res_qc, "ISnorm_filled") |> rowRsd()
+annotation_report <- capture_annotation_phase(annotation_report, "qc_samples_removed", res_final)
 
 # save objects
 saveObject(res_final, file.path(folders$objects,
                                 paste0(STUDY_ID, "_final_res_", POLARITY)))
+save_annotation_report(annotation_report, file.path(
+  folders$objects, paste0(STUDY_ID, "_annotation_report_", POLARITY, ".rds")
+))
 ```
 
 ## Session Info
