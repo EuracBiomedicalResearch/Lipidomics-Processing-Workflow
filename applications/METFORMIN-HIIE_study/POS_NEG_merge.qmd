@@ -41,8 +41,8 @@ into a single `SummarizedExperiment`. It handles:
 
 1. Adding ionization mode metadata
 2. Aligning samples between ionization modes
-3. Resolving duplicate lipids by retaining the higher-abundance feature when RT
-   is similar
+3. Resolving duplicate adducts within each mode, then duplicate lipids across
+   modes by retaining the higher-mean-abundance feature when RT is similar
 4. Visualizing lipid distribution
 5. Performing PCA on of the combined dataset
 
@@ -71,6 +71,9 @@ RES_COMBINED_PATH <- file.path("objects", paste0(STUDY_ID, "_res_combined"))
 
 # RT difference threshold for duplicate resolution (seconds)
 RT_DIFF_THRESHOLD <- 30
+
+# Tighter RT threshold for different adducts of the same lipid within a mode
+ADDUCT_RT_THRESHOLD <- 4
 
 # Whether IS participate in downstream plots, metrics, and PCA.
 # When FALSE, IS are dropped from res_combined *after* the Save section,
@@ -133,68 +136,207 @@ res_neg <- res_neg[, match(pos_samples, neg_samples)]
 stopifnot(all(colData(res_pos)$sample_name == colData(res_neg)$sample_name))
 ```
 
+# Resolve Duplicate Adducts Within Each Mode
+
+Only pairs with the same exact lipid name, different adducts, and RT within
+ADDUCT_RT_THRESHOLD are collapsed. The feature with higher mean normalized
+abundance is retained, consistent with the cross-mode criterion.
+
+```{r}
+#| label: resolve-within-mode-adducts
+collapse_adduct_pairs <- function(x, rt_limit = ADDUCT_RT_THRESHOLD) {
+    rd <- as.data.frame(rowData(x))
+    lipid <- as.character(rd$target_lipid_name_unique)
+    adduct <- as.character(rd$target_Adduct)
+    rt <- as.numeric(rd$rtmed)
+    mean_abundance <- rowMeans(
+        as.matrix(assay(x, "ISnorm_filled_imputed")), na.rm = TRUE
+    )
+    mean_abundance[!is.finite(mean_abundance)] <- -Inf
+
+    valid <- !is.na(lipid) & nzchar(lipid)
+    groups <- split(which(valid), lipid[valid])
+    remove <- integer()
+
+    for (idx in groups) {
+        if (length(idx) != 2L ||
+            any(!is.finite(rt[idx])) ||
+            abs(diff(rt[idx])) > rt_limit ||
+            anyNA(adduct[idx]) ||
+            adduct[idx[1]] == adduct[idx[2]]) next
+
+        winner <- idx[order(-mean_abundance[idx], idx)][1]
+        remove <- c(remove, idx[idx != winner])
+    }
+
+    cat("Removed", length(remove), "duplicate adducts within",
+        unique(as.character(rd$ionization_mode)), "mode\n")
+    x[base::setdiff(seq_len(nrow(x)), remove), , drop = FALSE]
+}
+
+res_pos <- collapse_adduct_pairs(res_pos)
+res_neg <- collapse_adduct_pairs(res_neg)
+```
+
+# Prefer Resolved Annotations Across Modes
+
+A single semicolon in target_lipid_name_unique is treated as two unresolved
+options. Remove that row when either exact option occurs in the other mode
+within RT_DIFF_THRESHOLD seconds. Compute removals in both directions before
+changing either dataset.
+
+```{r}
+#| label: prefer-resolved-sn-position
+two_annotation_options <- function(name) {
+    if (is.na(name) || !nzchar(name)) return(character())
+
+    semicolons <- gregexpr(";", name, fixed = TRUE)[[1]]
+    if (length(semicolons) != 1L || semicolons[1] < 0L)
+        return(character())
+
+    options <- trimws(strsplit(name, ";", fixed = TRUE)[[1]])
+    if (length(options) != 2L || any(!nzchar(options)))
+        return(character())
+    options
+}
+
+find_unresolved_rows <- function(ambiguous, other_mode, rt_limit) {
+    ambiguous_name <- as.character(rowData(ambiguous)$target_lipid_name_unique)
+    other_name <- as.character(rowData(other_mode)$target_lipid_name_unique)
+    ambiguous_rt <- as.numeric(rowData(ambiguous)$rtmed)
+    other_rt <- as.numeric(rowData(other_mode)$rtmed)
+
+    which(vapply(seq_along(ambiguous_name), function(i) {
+        options <- two_annotation_options(ambiguous_name[i])
+        if (length(options) != 2L || !is.finite(ambiguous_rt[i]))
+            return(FALSE)
+
+        any(other_name %in% options & is.finite(other_rt) &
+            abs(other_rt - ambiguous_rt[i]) <= rt_limit)
+    }, logical(1)))
+}
+
+pos_unresolved <- find_unresolved_rows(res_pos, res_neg, RT_DIFF_THRESHOLD)
+neg_unresolved <- find_unresolved_rows(res_neg, res_pos, RT_DIFF_THRESHOLD)
+
+cat("Removing", length(pos_unresolved), "unresolved positive and",
+    length(neg_unresolved), "unresolved negative annotations\n")
+res_pos <- res_pos[
+    base::setdiff(seq_len(nrow(res_pos)), pos_unresolved), , drop = FALSE
+]
+res_neg <- res_neg[
+    base::setdiff(seq_len(nrow(res_neg)), neg_unresolved), , drop = FALSE
+]
+```
+
 # Resolve Duplicate Annotations
 
-For duplicated lipid names between ionization modes, keep the entry with higher
-mean abundance when retention times are similar (within `RT_DIFF_THRESHOLD`
-seconds).
+For exact lipid names shared between modes, repeatedly compare the closest-RT
+positive/negative pair within RT_DIFF_THRESHOLD seconds. Remove the feature
+with lower mean normalized abundance and repeat until no eligible cross-mode
+pair remains. This considers every feature, rather than only the first match.
 
 ```{r}
 #| label: find-duplicates
+pos_name <- as.character(rowData(res_pos)$target_lipid_name_unique)
+neg_name <- as.character(rowData(res_neg)$target_lipid_name_unique)
+pos_rt <- as.numeric(rowData(res_pos)$rtmed)
+neg_rt <- as.numeric(rowData(res_neg)$rtmed)
+pos_mean <- rowMeans(as.matrix(assay(res_pos, "ISnorm_filled_imputed")),
+                     na.rm = TRUE)
+neg_mean <- rowMeans(as.matrix(assay(res_neg, "ISnorm_filled_imputed")),
+                     na.rm = TRUE)
+pos_mean[!is.finite(pos_mean)] <- -Inf
+neg_mean[!is.finite(neg_mean)] <- -Inf
+
 common_lipids <- intersect(
-    rowData(res_pos)$target_lipid_name_unique,
-    rowData(res_neg)$target_lipid_name_unique
+    unique(pos_name[!is.na(pos_name) & nzchar(pos_name)]),
+    unique(neg_name[!is.na(neg_name) & nzchar(neg_name)])
 )
 
 cat("Number of common lipids:", length(common_lipids), "\n")
 
-comparison_df <- data.frame(
-    lipid_name_unique = common_lipids,
-    pos_idx = match(common_lipids, rowData(res_pos)$target_lipid_name_unique),
-    neg_idx = match(common_lipids, rowData(res_neg)$target_lipid_name_unique)
-)
+comparison_rows <- list()
+pos_remove_idx <- integer()
+neg_remove_idx <- integer()
 
-comparison_df$pos_mean_abundance <- sapply(comparison_df$pos_idx, function(i) {
-    mean(assay(res_pos, "ISnorm_filled_imputed")[i, ], na.rm = TRUE)
-})
-comparison_df$neg_mean_abundance <- sapply(comparison_df$neg_idx, function(i) {
-    mean(assay(res_neg, "ISnorm_filled_imputed")[i, ], na.rm = TRUE)
-})
+for (lipid in common_lipids) {
+    pos_idx <- which(pos_name == lipid)
+    neg_idx <- which(neg_name == lipid)
 
-comparison_df$pos_rt <- rowData(res_pos)$rtmed[comparison_df$pos_idx]
-comparison_df$neg_rt <- rowData(res_neg)$rtmed[comparison_df$neg_idx]
-comparison_df$rt_diff <- abs(comparison_df$pos_rt - comparison_df$neg_rt)
-comparison_df$rt_similar <- comparison_df$rt_diff < RT_DIFF_THRESHOLD
+    while (length(pos_idx) && length(neg_idx)) {
+        pairs <- expand.grid(pos_idx = pos_idx, neg_idx = neg_idx,
+                             KEEP.OUT.ATTRS = FALSE)
+        pairs$rt_diff <- abs(pos_rt[pairs$pos_idx] - neg_rt[pairs$neg_idx])
+        pairs <- pairs[is.finite(pairs$rt_diff) &
+                       pairs$rt_diff <= RT_DIFF_THRESHOLD, , drop = FALSE]
+        if (!nrow(pairs)) break
 
-comparison_df$keep_mode <- ifelse(
-    comparison_df$pos_mean_abundance >= comparison_df$neg_mean_abundance,
-    "positive", "negative"
-)
+        pair <- pairs[order(pairs$rt_diff, pairs$pos_idx,
+                            pairs$neg_idx)[1], , drop = FALSE]
+        p <- pair$pos_idx
+        n <- pair$neg_idx
+        keep_mode <- if (pos_mean[p] >= neg_mean[n]) "positive" else "negative"
 
-cat("\nRetention time differences summary:\n")
-summary(comparison_df$rt_diff)
+        comparison_rows[[length(comparison_rows) + 1L]] <- data.frame(
+            lipid_name_unique = lipid,
+            pos_idx = p,
+            neg_idx = n,
+            pos_feature_id = rownames(res_pos)[p],
+            neg_feature_id = rownames(res_neg)[n],
+            pos_mean_abundance = pos_mean[p],
+            neg_mean_abundance = neg_mean[n],
+            pos_rt = pos_rt[p],
+            neg_rt = neg_rt[n],
+            rt_diff = pair$rt_diff,
+            keep_mode = keep_mode
+        )
 
-cat("\nLipids with dissimilar RT (kept in both modes):\n")
-comparison_df[!comparison_df$rt_similar,
-              c("lipid_name_unique", "pos_rt", "neg_rt", "rt_diff")]
+        if (keep_mode == "positive") {
+            neg_remove_idx <- c(neg_remove_idx, n)
+            neg_idx <- neg_idx[neg_idx != n]
+        } else {
+            pos_remove_idx <- c(pos_remove_idx, p)
+            pos_idx <- pos_idx[pos_idx != p]
+        }
+    }
+}
+
+comparison_df <- if (length(comparison_rows)) {
+    do.call(rbind, comparison_rows)
+} else {
+    data.frame(lipid_name_unique = character(), pos_idx = integer(),
+               neg_idx = integer(), pos_feature_id = character(),
+               neg_feature_id = character(), pos_mean_abundance = numeric(),
+               neg_mean_abundance = numeric(), pos_rt = numeric(),
+               neg_rt = numeric(), rt_diff = numeric(), keep_mode = character())
+}
+
+cat("Cross-mode comparisons resolved:", nrow(comparison_df), "\n")
+cat("Retention time differences of resolved comparisons:\n")
+print(summary(comparison_df$rt_diff))
 ```
 
 ```{r}
 #| label: remove-duplicates
-pos_remove_idx <- comparison_df$pos_idx[
-    comparison_df$keep_mode == "negative" & comparison_df$rt_similar
-]
-neg_remove_idx <- comparison_df$neg_idx[
-    comparison_df$keep_mode == "positive" & comparison_df$rt_similar
-]
-
 cat("Removing", length(pos_remove_idx),
     "duplicates from positive ionization mode\n")
 cat("Removing", length(neg_remove_idx),
     "duplicates from negative ionization mode\n")
 
-res_pos_filtered <- res_pos[-pos_remove_idx, ]
-res_neg_filtered <- res_neg[-neg_remove_idx, ]
+res_pos_filtered <- res_pos[
+    base::setdiff(seq_len(nrow(res_pos)), pos_remove_idx), , drop = FALSE
+]
+res_neg_filtered <- res_neg[
+    base::setdiff(seq_len(nrow(res_neg)), neg_remove_idx), , drop = FALSE
+]
+
+remaining_common <- intersect(
+    as.character(rowData(res_pos_filtered)$target_lipid_name_unique),
+    as.character(rowData(res_neg_filtered)$target_lipid_name_unique)
+)
+cat("Shared lipid names retained in both modes (no pair within",
+    RT_DIFF_THRESHOLD, "seconds):", length(remaining_common), "\n")
 ```
 
 # Combine Lipid Annotations
@@ -337,20 +479,19 @@ ggplot(coverage_df, aes(x = category, y = Freq, fill = mode)) +
 
 ```{r}
 #| label: duplicate-summary
-dup_summary <- comparison_df |>
-    dplyr::mutate(
-        decision = dplyr::case_when(
-            !rt_similar ~ "Kept both (different RT)",
-            keep_mode == "positive" ~ "Kept positive (higher abundance)",
-            keep_mode == "negative" ~ "Kept negative (higher abundance)"
-        )
-    )
+dup_summary <- comparison_df
+dup_summary$decision <- ifelse(
+    dup_summary$keep_mode == "positive",
+    "Removed negative (lower mean abundance)",
+    "Removed positive (lower mean abundance)"
+)
 
-cat("Duplicate resolution summary:\n")
+cat("Sequential cross-mode duplicate resolution summary:\n")
 table(dup_summary$decision)
 
-dup_summary[, c("lipid_name_unique", "decision",
-                "pos_mean_abundance", "neg_mean_abundance")]
+dup_summary[, c("lipid_name_unique", "pos_feature_id", "neg_feature_id",
+                "rt_diff", "decision", "pos_mean_abundance",
+                "neg_mean_abundance")]
 ```
 
 # PCA Analysis
