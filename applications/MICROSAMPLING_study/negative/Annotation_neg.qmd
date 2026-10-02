@@ -150,6 +150,11 @@ res_save_path <- file.path(folders$objects,
                            paste0(STUDY_ID, "_preprocessed_res_", POLARITY))
 
 mse <- readMsObject(XcmsExperiment(), AlabasterParam(path = mse_save_path))
+mse <- restore_sqlite_spectra(
+  mse,
+  db_path = file.path(folders$data, paste0(STUDY_ID, "_", POLARITY, ".sqlite")),
+  rt_range = c(10, 950)
+)
 res <- readObject(res_save_path)
 
 # Reload lipid reference set and EICs
@@ -704,9 +709,8 @@ res_final <- annotated_res[, annotated_res$sample_type != "QC"]
 rowData(res_final)$qc_cv <- assay(res_qc, "ISnorm_filled") |> rowRsd()
 
 # save objects
-saveObject(res_final, file.path(folders$objects,
-                                paste0(STUDY_ID, "_final_res_", POLARITY)))
-
+res_final_path <- file.path(folders$objects, paste0(STUDY_ID, "_final_res_", POLARITY))
+replace_saved_directory(res_final_path, function(path) saveObject(res_final, path))
 ```
 
 ## Export Annotated Abundances

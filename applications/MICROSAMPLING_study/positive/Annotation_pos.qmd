@@ -704,14 +704,35 @@ res_final <- annotated_res[, annotated_res$sample_type != "QC"]
 rowData(res_final)$qc_cv <- assay(res_qc, "ISnorm_filled") |> rowRsd()
 
 # save objects
-<<<<<<< HEAD
 res_final_path <- file.path(folders$objects, paste0(STUDY_ID, "_final_res_", POLARITY))
 replace_saved_directory(res_final_path, function(path) saveObject(res_final, path))
-=======
-saveObject(res_final, file.path(folders$objects,
-                                paste0(STUDY_ID, "_final_res_", POLARITY)))
->>>>>>> 7af689fc9e419bad73a624b90d706d34a8c1c0a0
 ```
+
+## Export Annotated Abundances
+
+```{r export-annotated-xlsx}
+#| label: export-annotated-xlsx
+
+annot_cols <- intersect(
+  c("target_lipid.name", "target_lipid_name_unique",
+    "target_LIPID.CATEGORY..ABBREV.", "target_LIPID.SUBCLASS..ABBREV.",
+    "target_Adduct", "target_IS_norm", "mzmed", "rtmed", "qc_cv"),
+  colnames(rowData(res_final))
+)
+export_df <- cbind(
+  data.frame(feature_id = rownames(res_final),
+             as.data.frame(rowData(res_final)[, annot_cols, drop = FALSE]),
+             check.names = FALSE),
+  as.data.frame(assay(res_final, "ISnorm_filled_imputed"),
+                check.names = FALSE)
+)
+xlsx_path <- file.path(folders$objects,
+                       paste0(STUDY_ID, "_annotated_compounds_abundances_",
+                              POLARITY, ".xlsx"))
+writexl::write_xlsx(export_df, path = xlsx_path)
+cat("Saved annotated abundances to:", xlsx_path, "\n")
+```
+
 
 ## Session Info
 
