@@ -1509,10 +1509,77 @@ match_features_to_database <- function(res,
 #' @param polarity "pos" or "neg"
 #' @param isopeak_threshold Minimum number of isotope peaks (default: 2)
 #' @param similarity_threshold Minimum similarity score (default: 0.78)
+#' @param batch_size Maximum number of features per sequential batch (default:
+#'   100). All samples and candidate annotations for a feature stay together.
+#'   Use Inf to calculate all features in one call.
 #' @return Updated mtched_data with isopeak_count and isopeak_sim columns
 calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
                                          isopeak_threshold = 2,
-                                         similarity_threshold = 0.78) {
+                                         similarity_threshold = 0.78,
+                                         batch_size = 100L) {
+  if (!is.numeric(batch_size) || length(batch_size) != 1L ||
+      is.na(batch_size) || batch_size <= 0 ||
+      (is.finite(batch_size) && batch_size != floor(batch_size))) {
+    stop("batch_size must be a positive integer or Inf.")
+  }
+  features <- unique(mtched_data$feature_id)
+  if (!length(features)) {
+    mtched_data$isopeak_count <- integer()
+    mtched_data$isopeak_sim <- numeric()
+    return(list(mtched_data = mtched_data, iso_spectra = Spectra(),
+                theoretical_spectra = Spectra()))
+  }
+  if (length(features) <= batch_size) {
+    return(.calculate_isotope_similarity_batch(
+      mse, mtched_data, polarity, isopeak_threshold, similarity_threshold
+    ))
+  }
+
+  # Avoid parallel workers retaining copies of each batch's full MS1 spectra.
+  previous_param <- BiocParallel::bpparam()
+  BiocParallel::register(BiocParallel::SerialParam())
+  on.exit(BiocParallel::register(previous_param), add = TRUE)
+
+  batches <- split(features, ceiling(seq_along(features) / batch_size))
+  results <- vector("list", length(batches))
+  retained_rows <- vector("list", length(batches))
+  for (i in seq_along(batches)) {
+    rows <- which(mtched_data$feature_id %in% batches[[i]])
+    message("Isotope validation batch ", i, "/", length(batches),
+            ": ", length(batches[[i]]), " features, ", length(rows), " candidates")
+    results[[i]] <- .calculate_isotope_similarity_batch(
+      mse, mtched_data[rows, , drop = FALSE], polarity,
+      isopeak_threshold, similarity_threshold
+    )
+    # scalePeaks queues normalization. Spectra requires that processing be
+    # applied before objects from separate batches can be concatenated.
+    results[[i]]$iso_spectra <- applyProcessing(results[[i]]$iso_spectra)
+    results[[i]]$theoretical_spectra <- applyProcessing(results[[i]]$theoretical_spectra)
+    retained_rows[[i]] <- rows[match(
+      rownames(results[[i]]$mtched_data), rownames(mtched_data)[rows]
+    )]
+    # Only the small filtered isotope spectra survive into the next batch.
+    gc(verbose = FALSE)
+  }
+
+  # Feature batches can interleave candidate rows; restore the original order
+  # in both the annotation table and its corresponding mirror-plot spectra.
+  rows <- unlist(retained_rows, use.names = FALSE)
+  original_order <- order(rows)
+  matched <- do.call(rbind, lapply(results, `[[`, "mtched_data"))
+  rownames(matched) <- rownames(mtched_data)[rows]
+  list(
+    mtched_data = matched[original_order, , drop = FALSE],
+    iso_spectra = concatenateSpectra(lapply(results, `[[`, "iso_spectra"))[original_order],
+    theoretical_spectra = concatenateSpectra(lapply(results, `[[`, "theoretical_spectra"))[original_order]
+  )
+}
+
+# Scientific calculation for one complete feature batch. Keep all spectra for
+# each feature together; batching samples would change the combined spectrum.
+.calculate_isotope_similarity_batch <- function(mse, mtched_data, polarity,
+                                                isopeak_threshold,
+                                                similarity_threshold) {
   data(isotopes, package = "enviPat", envir = environment())
 
   # Set charge based on polarity
@@ -2288,4 +2355,3 @@ export_ambiguity_tables <- function(mtched_data,
     feature_ambiguities = table_amb
   ))
 }
-
