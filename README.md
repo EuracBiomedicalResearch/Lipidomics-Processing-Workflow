@@ -136,7 +136,7 @@ so parameter choices are fully traceable.
 4. Render `applications/MICROSAMPLING_study/negative/Annotation_neg.qmd`
 5. Render `applications/MICROSAMPLING_study/POS_NEG_merge.qmd`
 
-#### Publication annotation metrics
+#### Annotation metrics
 
 Both studies capture annotation-stage snapshots and export
 `objects/<STUDY_ID>_annotation_metrics.xlsx` at the end of the merge.

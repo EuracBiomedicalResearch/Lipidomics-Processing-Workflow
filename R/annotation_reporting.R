@@ -67,6 +67,62 @@ save_annotation_report <- function(report, path) {
   saveRDS(report, path)
 }
 
+insert_rank1_mz_phase <- function(report, matches) {
+  if ("rank1_mz" %in% names(report$phases)) stop("rank1_mz snapshot already exists.")
+  if (!all(c("preprocessed_features", "rank1_mz_rt") %in% names(report$phases)))
+    stop("Missing preprocessing or m/z-RT snapshot.")
+  snapshot <- annotation_report_frame(matches, report$polarity)
+  mz_pairs <- annotation_report_pairs(snapshot)$pair_key
+  rt_pairs <- annotation_report_pairs(report$phases$rank1_mz_rt$data)$pair_key
+  if (!all(rt_pairs %in% mz_pairs))
+    stop("m/z-only candidates do not contain the saved m/z-RT candidates; check inputs and ppm.")
+  if (!all(snapshot$feature_id %in% report$phases$preprocessed_features$data$feature_id))
+    stop("m/z-only candidates include features absent from preprocessing.")
+  report$phases <- c(report$phases["preprocessed_features"],
+                     list(rank1_mz = list(data = snapshot, annotations = TRUE)),
+                     report$phases[setdiff(names(report$phases), "preprocessed_features")])
+  report
+}
+
+# Reporting-only refresh for older snapshots. It recalculates only
+# mass candidates from saved preprocessing features and the study database;
+# all original RT, isotope, curation, abundance and merge snapshots survive.
+add_rank1_mz_reporting <- function(study_dir, study_id) {
+  if (!requireNamespace("alabaster.se", quietly = TRUE))
+    stop("Reading saved preprocessing features requires alabaster.se.")
+  helpers <- new.env(parent = globalenv())
+  sys.source(file.path(study_dir, "../../R/lipid_helpers.R"), envir = helpers)
+  for (suffix in c("pos", "neg")) {
+    polarity <- if (suffix == "pos") "positive" else "negative"
+    directory <- file.path(study_dir, polarity)
+    report_path <- file.path(directory, "objects",
+                             paste0(study_id, "_annotation_report_", suffix, ".rds"))
+    report <- readRDS(report_path)
+    if ("rank1_mz" %in% names(report$phases)) next
+    # Read the actual workflow's mass tolerance, rather than assuming a default.
+    lines <- readLines(file.path(directory, paste0("Annotation_", suffix, ".qmd")))
+    ppm_line <- lines[grepl("^MATCH_PPM\\s*<-", lines)]
+    if (length(ppm_line) != 1L) stop("Cannot determine MATCH_PPM for ", directory)
+    ppm <- eval(parse(text = ppm_line)[[1L]][[3L]], envir = baseenv())
+    if (!is.numeric(ppm) || length(ppm) != 1L || !is.finite(ppm) || ppm < 0)
+      stop("Invalid MATCH_PPM for ", directory)
+    res <- alabaster.base::readObject(file.path(directory, "objects",
+      paste0(study_id, "_preprocessed_res_", suffix)))
+    if (!identical(rownames(res), report$phases$preprocessed_features$data$feature_id))
+      stop("Saved preprocessing features do not match the annotation snapshot.")
+    database <- helpers$prepare_lipid_database(
+      file.path(study_dir, "LipidDatabase_R.xlsx"),
+      sheet = if (suffix == "pos") 4L else 5L, polarity = suffix,
+      rt_col = if (suffix == "pos") "RT ESI(+) (min)" else "RT ESI(\u2013) (min)"
+    )
+    matches <- helpers$match_features_mz_only(res, database, ppm = ppm)
+    report <- insert_rank1_mz_phase(report, matches)
+    save_annotation_report(report, report_path)
+    message(study_id, " ", polarity, ": added rank1_mz reporting snapshot")
+  }
+  invisible(NULL)
+}
+
 annotation_report_summary <- function(report) {
   previous <- NULL
   rows <- lapply(names(report$phases), function(phase) {
@@ -92,7 +148,7 @@ annotation_reference_comparison <- function(report) {
   truth <- truth[!truth$.is_standard, , drop = FALSE]
   truth_pairs <- annotation_report_pairs(truth)
   truth_features <- unique(truth_pairs$feature_key)
-  phases <- intersect(c("rank1_mz_rt", "isotope_filter", "adduct_scored",
+  phases <- intersect(c("rank1_mz", "rank1_mz_rt", "isotope_filter", "adduct_scored",
                         "ambiguity_auto", "manual_curation"), names(report$phases))
   ratio <- function(n, d) if (d) n / d else NA_real_
   do.call(rbind, lapply(phases, function(phase) {
@@ -127,7 +183,7 @@ annotation_metrics_tables <- function(positive, negative, merged) {
                  Curated_reference_comparison = rbind(
                    annotation_reference_comparison(positive),
                    annotation_reference_comparison(negative)))
-  detail_phases <- c("rank1_mz_rt", "isotope_filter", "adduct_scored",
+  detail_phases <- c("rank1_mz", "rank1_mz_rt", "isotope_filter", "adduct_scored",
                      "ambiguity_auto", "manual_curation", "qc_rsd_filtered",
                      "duplicate_resolution", "internal_standard_removal")
   for (phase in detail_phases) {
@@ -273,13 +329,14 @@ write_annotation_metrics_workbook <- function(positive, negative, merged, path) 
 }
 
 regenerate_annotation_metrics <- function(study_dir, study_id) {
+  add_rank1_mz_reporting(study_dir, study_id)
   read_report <- function(polarity, suffix) {
     path <- file.path(study_dir, polarity, "objects",
                       paste0(study_id, "_annotation_report_", suffix, ".rds"))
     if (!file.exists(path)) stop("Missing workflow snapshot: ", path,
                                 ". Rerun the corresponding annotation workflow.")
     report <- readRDS(path)
-    required <- c("preprocessed_features", "rank1_mz_rt", "isotope_filter", "adduct_scored",
+    required <- c("preprocessed_features", "rank1_mz", "rank1_mz_rt", "isotope_filter", "adduct_scored",
                   "ambiguity_auto", "manual_curation", "normalization", "qc_rsd_filtered",
                   "qc_samples_removed")
     if (!identical(report$version, 1L) || !identical(report$study_id, study_id) ||

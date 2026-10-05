@@ -14,7 +14,9 @@ make_report <- function(mode) {
   truth <- make_input(c("FT1", "FT2", "IS1"), c("A_1", "C_1; E_1", "IS_1"),
                       c(FALSE, FALSE, TRUE))
   report <- capture_annotation_phase(report, "preprocessed_features",
-    make_input(c("FT1", "FT2", "FT3", "IS1"), rep(NA_character_, 4)), annotations = FALSE)
+    make_input(c("FT1", "FT2", "FT3", "IS1", "FT4"), rep(NA_character_, 5)), annotations = FALSE)
+  mz_candidates <- rbind(candidates, make_input("FT4", "F_1"))
+  report <- capture_annotation_phase(report, "rank1_mz", mz_candidates)
   for (phase in c("rank1_mz_rt", "isotope_filter", "adduct_scored", "ambiguity_auto"))
     report <- capture_annotation_phase(report, phase, candidates)
   report <- capture_annotation_phase(report, "manual_curation", truth)
@@ -43,8 +45,11 @@ stopifnot(identical(names(s), c("polarity", "phase", "features", "annotation_pai
           tail(s$removed_features, 1) == 1L,
           !any(c("README", "Merge_metrics", "ISTD_filter") %in% names(tables)),
           nrow(tables$final_annotations) == 2L)
+stopifnot(identical(s$phase[1:3], c("preprocessed_features", "rank1_mz", "rank1_mz_rt")),
+          s$features[2] == 5L, s$features[3] == 4L, s$removed_features[3] == 1L,
+          "rank1_mz" %in% names(tables))
 comparison <- tables$Curated_reference_comparison
-first <- comparison[1, ]
+first <- comparison[comparison$phase == "rank1_mz_rt", ][1, ]
 stopifnot(first$curated_matches == 2L, first$alternative_assignments == 1L,
           first$uncurated_assignments == 1L, first$missed_curated_pairs == 1L,
           abs(first$precision - 2/3) < 1e-12,
@@ -58,7 +63,7 @@ empty_report <- capture_annotation_phase(empty_report, "manual_curation", empty)
 stopifnot(all(annotation_report_summary(empty_report)$features == 0L),
           all(is.na(annotation_reference_comparison(empty_report)$precision)))
 payload <- annotation_metrics_payload(tables)
-stopifnot(length(payload$sheets) == 10L,
+stopifnot(length(payload$sheets) == 11L,
           all(vapply(payload$sheets, function(x) length(x$columns) == length(x$descriptions), logical(1))))
 if (requireNamespace("jsonlite", quietly = TRUE) && length(commandArgs(TRUE)))
   jsonlite::write_json(payload, commandArgs(TRUE)[1], auto_unbox = TRUE, na = "null", null = "null")

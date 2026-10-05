@@ -1,5 +1,5 @@
 #!/usr/bin/env Rscript
-# Refresh publication metrics from captured workflow snapshots; no recomputation.
+# Refresh metrics from workflow snapshots, including the mass-only reporting phase.
 file_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
 if (length(file_arg) != 1L) stop("Run this file using Rscript.")
 study_dir <- dirname(normalizePath(sub("^--file=", "", file_arg)))

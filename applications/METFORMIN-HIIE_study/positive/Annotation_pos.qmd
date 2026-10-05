@@ -293,6 +293,11 @@ tolerance) constraints.
 ```{r rank1-matching}
 #| label: rank1-matching
 
+# Capture mass candidates before applying the RT constraint.
+mz_only_matches <- match_features_mz_only(res, lipid_database, ppm = MATCH_PPM)
+annotation_report <- capture_annotation_phase(annotation_report, "rank1_mz", mz_only_matches)
+rm(mz_only_matches)
+
 match_result <- match_features_to_database(
   res,
   lipid_database,

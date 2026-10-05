@@ -1415,6 +1415,25 @@ collapse_isopattern_nominal <- function(x) {
 # FEATURE MATCHING
 # =============================================================================
 
+#' Match rank-1 candidates by m/z alone for reporting before the RT filter
+#'
+#' Uses the same absolute tolerance and ppm as the combined m/z/RT matching.
+#' RT values do not participate in candidate selection.
+match_features_mz_only <- function(res, lipid_database, ppm = 20) {
+  query <- as.data.frame(SummarizedExperiment::rowData(res))
+  query$feature_id <- rownames(query)
+  target <- as.data.frame(lipid_database[lipid_database$rank == 1, ])
+  matched <- MetaboAnnotation::matchValues(
+    query, target,
+    param = MetaboAnnotation::MzParam(tolerance = 0.001, ppm = ppm),
+    mzColname = c("mzmed", "mz")
+  )
+  matched <- matched[MetaboAnnotation::whichQuery(matched)]
+  out <- as.data.frame(MetaboAnnotation::matchedData(matched))
+  out$feature_id <- sub("\\..*$", "", rownames(out))
+  out
+}
+
 #' Match features to lipid database (Rank 1 matching)
 #'
 #' Performs m/z and RT matching between experimental features and the lipid
@@ -2013,7 +2032,8 @@ apply_rt_adjustment <- function(lipid_database, fit, rt_col = "rt_sd",
 #' @param sheet Sheet number (4 for POS, 5 for NEG)
 #' @param polarity "pos" or "neg"
 #' @param rt_col Column name for retention time
-#' @param rt_fit Fitted RT adjustment model (from fit_rt_adjustment)
+#' @param rt_fit Fitted RT adjustment model (from fit_rt_adjustment). NULL skips
+#'   RT calibration when preparing the database for m/z-only reporting.
 #' @param extrapolate Extrapolation policy for database entries outside
 #'   the calibration range; forwarded to `apply_rt_adjustment()`. One of
 #'   `"auto"` (default; model-aware), `TRUE`, or `FALSE`. See
@@ -2040,7 +2060,7 @@ prepare_lipid_database <- function(db_path,
                                     sheet,
                                     polarity,
                                     rt_col,
-                                    rt_fit,
+                                    rt_fit = NULL,
                                     extrapolate = "auto",
                                     verbose = TRUE) {
 
@@ -2101,9 +2121,11 @@ prepare_lipid_database <- function(db_path,
   lipid_database$adduct_formula <- unname(gsub("^\\[|\\].*$", "", form))
 
   # Step 8: Apply RT adjustment from reference lipids
-  if (verbose) message("  - Applying RT adjustment...")
-  lipid_database <- apply_rt_adjustment(lipid_database, rt_fit$fit, "rt_sd",
-                                        extrapolate = extrapolate)
+  if (!is.null(rt_fit)) {
+    if (verbose) message("  - Applying RT adjustment...")
+    lipid_database <- apply_rt_adjustment(lipid_database, rt_fit$fit, "rt_sd",
+                                          extrapolate = extrapolate)
+  }
   lipid_database$mz <- as.numeric(lipid_database$mz)
 
   if (verbose) message("✓ Database prepared: ", nrow(lipid_database),
