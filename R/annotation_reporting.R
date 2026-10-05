@@ -183,6 +183,8 @@ annotation_metrics_tables <- function(positive, negative, merged) {
                  Curated_reference_comparison = rbind(
                    annotation_reference_comparison(positive),
                    annotation_reference_comparison(negative)))
+  tables$Summary <- tables$Summary[, c("polarity", "phase", "features", "removed_features")]
+  tables$Curated_reference_comparison$alternative_assignments <- NULL
   detail_phases <- c("rank1_mz", "rank1_mz_rt", "isotope_filter", "adduct_scored",
                      "ambiguity_auto", "manual_curation", "qc_rsd_filtered",
                      "within_mode_adduct_resolution", "resolved_annotation_preference",
@@ -209,11 +211,8 @@ annotation_metrics_descriptions <- c(
   polarity = "Positive, negative, or merged. Feature IDs are qualified by polarity.",
   phase = "Actual workflow stage, in execution order; no alternative-method experiments.",
   features = "Distinct detected features remaining, including standards until their removal phase.",
-  annotation_pairs = "Distinct feature-lipid assignments; semicolon alternatives count separately. Blank before matching.",
   removed_features = "Features from the preceding stage absent here. Blank for the first row of each polarity.",
-  ambiguous_features = "Features with more than one lipid assignment. Blank before matching.",
   curated_matches = "Candidate feature-lipid pairs matching the manually curated reference.",
-  alternative_assignments = "Different lipid assignments on curated features; not independent proof of an incorrect identity.",
   uncurated_assignments = "Assignments on features outside the curated reference; excluded from precision.",
   missed_curated_pairs = "Curated reference pairs not recovered by this stage.",
   precision = "Matches / (matches + alternative assignments), on curated features only.",
@@ -310,7 +309,7 @@ write_annotation_metrics_workbook <- function(positive, negative, merged, path) 
     openxlsx::addStyle(wb, name, header, rows = start, cols = seq_len(ncol(d)), gridExpand = TRUE)
     openxlsx::addStyle(wb, name, description, rows = start + 1L,
                        cols = seq_len(ncol(d)), gridExpand = TRUE)
-    widths <- if (name == "Summary") c(14, 30, 20, 24, 24, 24) else
+    widths <- if (name == "Summary") c(14, 30, 20, 24) else
       if (name == "Curated_reference_comparison") c(14, 30, rep(22, ncol(d) - 2L)) else
         c(16, 14, 44, rep(20, ncol(d) - 3L))
     openxlsx::setColWidths(wb, name, seq_len(ncol(d)), widths)

@@ -38,21 +38,24 @@ merged$phases$internal_standard_removal <- list(
   data = merged$phases$duplicate_resolution$data[c(1, 3), ], annotations = TRUE)
 tables <- annotation_metrics_tables(positive, negative, merged)
 s <- tables$Summary
-stopifnot(identical(names(s), c("polarity", "phase", "features", "annotation_pairs",
-                               "removed_features", "ambiguous_features")),
+stopifnot(identical(names(s), c("polarity", "phase", "features", "removed_features")),
           s$features[s$phase == "manual_curation"][1] == 3L,
-          s$annotation_pairs[s$phase == "manual_curation"][1] == 4L,
-          s$ambiguous_features[s$phase == "manual_curation"][1] == 1L,
           tail(s$features, 1) == 2L, # Identical IDs in different polarities are distinct.
           tail(s$removed_features, 1) == 1L,
           !any(c("README", "Merge_metrics", "ISTD_filter") %in% names(tables)),
           nrow(tables$final_annotations) == 2L)
+# Internal counts remain available; only the workbook presentation is reduced.
+internal_summary <- annotation_report_summary(positive)
+stopifnot(internal_summary$annotation_pairs[internal_summary$phase == "manual_curation"] == 4L,
+          internal_summary$ambiguous_features[internal_summary$phase == "manual_curation"] == 1L)
 stopifnot(identical(s$phase[1:3], c("preprocessed_features", "rank1_mz", "rank1_mz_rt")),
           s$features[2] == 5L, s$features[3] == 4L, s$removed_features[3] == 1L,
           "rank1_mz" %in% names(tables))
 comparison <- tables$Curated_reference_comparison
 first <- comparison[comparison$phase == "rank1_mz_rt", ][1, ]
-stopifnot(first$curated_matches == 2L, first$alternative_assignments == 1L,
+stopifnot(identical(names(comparison), c("polarity", "phase", "curated_matches",
+          "uncurated_assignments", "missed_curated_pairs", "precision", "recall", "f1")),
+          first$curated_matches == 2L,
           first$uncurated_assignments == 1L, first$missed_curated_pairs == 1L,
           abs(first$precision - 2/3) < 1e-12,
           abs(first$recall - 2/3) < 1e-12,
@@ -76,7 +79,19 @@ if (requireNamespace("openxlsx", quietly = TRUE)) {
   write_annotation_metrics_workbook(positive, negative, merged, path)
   stopifnot(identical(openxlsx::getSheetNames(path), names(tables)))
   summary <- openxlsx::read.xlsx(path, sheet = "Summary", startRow = 3, colNames = FALSE)
-  stopifnot(is.numeric(summary[[3]]),
+  summary_headers <- openxlsx::read.xlsx(path, sheet = "Summary", rows = 1, colNames = FALSE)
+  comparison_headers <- openxlsx::read.xlsx(path, sheet = "Curated_reference_comparison",
+                                            rows = 3, colNames = FALSE)
+  exported_comparison <- openxlsx::read.xlsx(path, sheet = "Curated_reference_comparison",
+                                             startRow = 5, colNames = FALSE)
+  stopifnot(identical(unname(unlist(summary_headers)), names(tables$Summary)),
+            identical(unname(unlist(comparison_headers)), names(comparison)),
+            ncol(summary) == 4L, ncol(exported_comparison) == 8L,
+            is.numeric(summary[[3]]),
+            identical(as.integer(summary[[4]]), tables$Summary$removed_features),
+            isTRUE(all.equal(exported_comparison[[6]], comparison$precision)),
+            isTRUE(all.equal(exported_comparison[[7]], comparison$recall)),
+            isTRUE(all.equal(exported_comparison[[8]], comparison$f1)),
             identical(as.integer(summary[[3]]), tables$Summary$features))
   final <- openxlsx::read.xlsx(path, sheet = "final_annotations", startRow = 3, colNames = FALSE)
   stopifnot(nrow(final) == 2L)

@@ -156,8 +156,8 @@ and the merge once to capture the new snapshots. Missing or incompatible snapsho
 produce an error instead of reconstructing annotations with separate settings.
 
 The workbook starts with `Summary`: actual workflow phases, positive then negative
-then merged, with feature counts, distinct feature–lipid pairs, removed features,
-and ambiguous features. Standards remain in intermediate counts and details until
+then merged, with feature counts and removed features.
+Standards remain in intermediate counts and details until
 the explicit final removal phase. The final detail sheet matches the feature rows
 in the annotated-abundances workbook. Column definitions appear beneath headers.
 `Curated_reference_comparison` reports agreement with manually curated assignments,
