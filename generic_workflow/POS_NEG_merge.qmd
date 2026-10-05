@@ -34,8 +34,8 @@ into a single `SummarizedExperiment`. It handles:
 
 1. Adding ionization mode metadata
 2. Aligning samples between ionization modes
-3. Resolving duplicate adducts within each mode, then duplicate lipids across
-   modes by retaining the higher-mean-abundance feature when RT is similar
+3. Resolving duplicate lipids across modes by retaining the feature with
+   higher mean normalized abundance
 4. Visualizing lipid distribution
 5. Performing PCA on of the combined dataset
 
@@ -61,9 +61,6 @@ RES_NEG_PATH <- file.path("negative", "objects",
 
 # Output path for combined result
 RES_COMBINED_PATH <- file.path("objects", paste0(STUDY_ID, "_res_combined"))
-
-# Tighter RT threshold for different adducts of the same lipid within a mode
-ADDUCT_RT_THRESHOLD <- 4
 
 # Whether IS participate in downstream plots, metrics, and PCA.
 # When FALSE, IS are dropped from res_combined *after* the Save section,
@@ -126,47 +123,8 @@ res_neg <- res_neg[, match(pos_samples, neg_samples)]
 stopifnot(all(colData(res_pos)$sample_name == colData(res_neg)$sample_name))
 ```
 
-# Resolve Duplicate Adducts Within Each Mode
-
-Only pairs with the same exact lipid name, different adducts, and RT within
-ADDUCT_RT_THRESHOLD are collapsed. The feature with higher mean normalized
-abundance is retained, consistent with the cross-mode criterion.
-
-```{r}
-#| label: resolve-within-mode-adducts
-collapse_adduct_pairs <- function(x, rt_limit = ADDUCT_RT_THRESHOLD) {
-    rd <- as.data.frame(rowData(x))
-    lipid <- as.character(rd$target_lipid_name_unique)
-    adduct <- as.character(rd$target_Adduct)
-    rt <- as.numeric(rd$rtmed)
-    mean_abundance <- rowMeans(
-        as.matrix(assay(x, "ISnorm_filled_imputed")), na.rm = TRUE
-    )
-    mean_abundance[!is.finite(mean_abundance)] <- -Inf
-
-    valid <- !is.na(lipid) & nzchar(lipid)
-    groups <- split(which(valid), lipid[valid])
-    remove <- integer()
-
-    for (idx in groups) {
-        if (length(idx) != 2L ||
-            any(!is.finite(rt[idx])) ||
-            abs(diff(rt[idx])) > rt_limit ||
-            anyNA(adduct[idx]) ||
-            adduct[idx[1]] == adduct[idx[2]]) next
-
-        winner <- idx[order(-mean_abundance[idx], idx)][1]
-        remove <- c(remove, idx[idx != winner])
-    }
-
-    cat("Removed", length(remove), "duplicate adducts within",
-        unique(as.character(rd$ionization_mode)), "mode\n")
-    x[base::setdiff(seq_len(nrow(x)), remove), , drop = FALSE]
-}
-
-res_pos <- collapse_adduct_pairs(res_pos)
-res_neg <- collapse_adduct_pairs(res_neg)
-```
+Within-mode adduct duplicates are resolved in `Annotation_pos.qmd` and
+`Annotation_neg.qmd` before these result objects are saved.
 
 # Prefer Resolved Annotations Across Modes
 
