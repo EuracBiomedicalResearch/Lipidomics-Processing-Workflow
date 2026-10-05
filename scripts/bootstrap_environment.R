@@ -14,12 +14,22 @@ msbackend_source_url <- paste0(
     msbackend_revision,
     ".tar.gz"
 )
-msio_revision <- "54e1d54cf3614658a35be6af59f8c761974e82d6"
-msio_source_url <- paste0(
-    "https://github.com/RforMassSpectrometry/MsIO/archive/",
-    msio_revision,
-    ".tar.gz"
-)
+msstash_revision <- "3eb51d7d274798919c9baf815d115112505796e8"
+msstash_source_url <- paste0(
+    "https://github.com/RforMassSpectrometry/MsStash/archive/",
+    msstash_revision, ".tar.gz")
+spectrastash_revision <- "a31acfc39ad0ec5a107d709b17445751dbfed6d2"
+spectrastash_source_url <- paste0(
+    "https://github.com/RforMassSpectrometry/SpectraStash/archive/",
+    spectrastash_revision, ".tar.gz")
+msexperimentstash_revision <- "a7378673bd5b053f7ba5f2ef3a736d98d43ad9fa"
+msexperimentstash_source_url <- paste0(
+    "https://github.com/RforMassSpectrometry/MsExperiment/archive/",
+    msexperimentstash_revision, ".tar.gz")
+xcmsstash_revision <- "f7151d13d978c65087555d67e531326665d89f26"
+xcmsstash_source_url <- paste0(
+    "https://github.com/RforMassSpectrometry/xcmsStash/archive/",
+    xcmsstash_revision, ".tar.gz")
 
 if (!file.exists("environment.yml") || !file.exists("DESCRIPTION")) {
     stop(
@@ -136,7 +146,10 @@ bioconductor_packages <- c(
 renv::install(cran_packages, repos = bioconductor_repos)
 renv::install(bioconductor_packages, repos = bioconductor_repos)
 renv::install(msbackend_source_url)
-renv::install(msio_source_url)
+renv::install(msstash_source_url)
+renv::install(spectrastash_source_url)
+renv::install(msexperimentstash_source_url)
+renv::install(xcmsstash_source_url)
 renv::snapshot(prompt = FALSE)
 
 message(

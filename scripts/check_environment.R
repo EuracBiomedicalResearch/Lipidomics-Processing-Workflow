@@ -4,17 +4,21 @@ expected_conda_env <- "cembio_eurac"
 expected_r <- "4.6.0"
 expected_bioconductor <- "3.23"
 expected_quarto <- "1.9.38"
-expected_msio <- "0.0.15"
+expected_msstash <- "0.99.0"
+expected_spectrastash <- "0.99.2"
+expected_msexperimentstash <- "0.99.0"
+expected_xcmsstash <- "0.97.2"
 
 required_packages <- c(
     "alabaster.se", "AnnotationHub", "BiocFileCache", "BiocManager",
     "BiocParallel", "CompoundDb", "dbplyr", "dplyr", "enviPat",
     "ggfortify", "ggplot2", "ggVennDiagram", "gridExtra", "knitr", "limma",
     "matrixStats", "MetaboAnnotation", "MetaboCoreUtils",
-    "MsBackendMetaboLights", "MsBackendSql", "MsExperiment", "MsIO",
-    "pander", "pheatmap", "RColorBrewer", "Rcpp", "readxl", "rmarkdown",
-    "RSQLite", "scam", "Spectra", "SummarizedExperiment", "tictoc",
-    "UpSetR", "vioplot", "writexl", "xcms"
+    "MsBackendMetaboLights", "MsBackendSql", "MsExperiment",
+    "MsExperimentStash", "MsStash", "pander", "pheatmap", "RColorBrewer",
+    "Rcpp", "readxl", "rmarkdown", "RSQLite", "scam", "Spectra", "SpectraStash",
+    "SummarizedExperiment", "tictoc", "UpSetR", "vioplot", "writexl", "xcms",
+    "xcmsStash"
 )
 
 failures <- character()
