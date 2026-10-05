@@ -103,7 +103,7 @@ STUDY_ID <- "MICROSAMPLING"
 POLARITY <- "neg"
 
 # Input data source: "local", "sqlite", or "metaboLights"
-DATA_SOURCE <- "sqlite"
+DATA_SOURCE <- "metaboLights"
 
 # MetaboLights study ID (only used if DATA_SOURCE = "metaboLights")
 MTBLS_ID <- "MTBLS10722"
@@ -133,14 +133,19 @@ MTBLS_ASSAY_NEG <-
   "a_MTBLS10722_LC-MS_negative_reverse-phase_metabolite_profiling.txt"
 
 MTBLS_COLUMN_MAPPING <- list(
-  sample_name     = "Sample Name",
-  file_name       = "Raw Spectral Data File",
-  sample_type     = "Factor Value[Sample type]",
-  injection_index = "Comment[injection_index]"
+  sample_name     = "Extract Name",
+  file_name       = "Derived Spectral Data File",
+  sample_type     = "Factor Value[Blood microsampling device]",
+  injection_index = "Factor Value[Injection order]"
 )
 
 MTBLS_FILTER_COLUMN <- "Factor Value[Cohort]"
 MTBLS_FILTER_VALUE  <- "Cohort_study"
+MTBLS_SAMPLE_TYPE_FALLBACK <- "Characteristics[Sample type]"
+MTBLS_SAMPLE_TYPE_RECODE <- c(
+  "pooled quality control sample" = "QC",
+  "solvent blank" = "Blank"
+)
 MTBLS_EXCLUDE_TYPES <- c("Blank")
 
 # Retention time filter range (seconds) - adjust based on your BPC
@@ -278,6 +283,8 @@ if (DATA_SOURCE == "local") {
     column_mapping = MTBLS_COLUMN_MAPPING,
     filter_column = MTBLS_FILTER_COLUMN,
     filter_value = MTBLS_FILTER_VALUE,
+    sample_type_fallback = MTBLS_SAMPLE_TYPE_FALLBACK,
+    sample_type_recode = MTBLS_SAMPLE_TYPE_RECODE,
     exclude_sample_types = MTBLS_EXCLUDE_TYPES,
     polarity = POLARITY
   )
@@ -577,10 +584,13 @@ mse_save_path <- file.path(folders$objects,
 res_save_path <- file.path(folders$objects,
                            paste0(STUDY_ID, "_preprocessed_res_", POLARITY))
 
-saveMsObject(mse, AlabasterParam(path = mse_save_path))
+replace_saved_directory(
+  mse_save_path,
+  function(path) saveMsObject(mse, AlabasterParam(path = path))
+)
 
 res@metadata <- list()
-saveObject(res, res_save_path)
+replace_saved_directory(res_save_path, function(path) saveObject(res, path))
 
 message("✓ Preprocessed objects saved to: ", folders$objects)
 message("  - MsExperiment: ", basename(mse_save_path))

@@ -185,6 +185,7 @@ annotation_metrics_tables <- function(positive, negative, merged) {
                    annotation_reference_comparison(negative)))
   detail_phases <- c("rank1_mz", "rank1_mz_rt", "isotope_filter", "adduct_scored",
                      "ambiguity_auto", "manual_curation", "qc_rsd_filtered",
+                     "within_mode_adduct_resolution", "resolved_annotation_preference",
                      "duplicate_resolution", "internal_standard_removal")
   for (phase in detail_phases) {
     frames <- lapply(reports, function(report) report$phases[[phase]]$data)
@@ -338,7 +339,7 @@ regenerate_annotation_metrics <- function(study_dir, study_id) {
     report <- readRDS(path)
     required <- c("preprocessed_features", "rank1_mz", "rank1_mz_rt", "isotope_filter", "adduct_scored",
                   "ambiguity_auto", "manual_curation", "normalization", "qc_rsd_filtered",
-                  "qc_samples_removed")
+                  "within_mode_adduct_resolution", "qc_samples_removed")
     if (!identical(report$version, 1L) || !identical(report$study_id, study_id) ||
         !identical(report$polarity, polarity) || !identical(names(report$phases), required))
       stop("Incomplete or incompatible annotation snapshot: ", path)
@@ -350,7 +351,8 @@ regenerate_annotation_metrics <- function(study_dir, study_id) {
   if (!file.exists(merged_path)) stop("Missing merge snapshot; rerun POS_NEG_merge.qmd.")
   merged <- readRDS(merged_path)
   if (!identical(merged$version, 1L) ||
-      !identical(names(merged$phases), c("merge_input", "duplicate_resolution", "internal_standard_removal")))
+      !identical(names(merged$phases), c("merge_input", "resolved_annotation_preference",
+                                       "duplicate_resolution", "internal_standard_removal")))
     stop("Incomplete or incompatible merge snapshot: ", merged_path)
   expected <- rbind(positive$phases$qc_samples_removed$data,
                     negative$phases$qc_samples_removed$data)

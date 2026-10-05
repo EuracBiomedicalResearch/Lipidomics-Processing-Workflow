@@ -22,6 +22,7 @@ make_report <- function(mode) {
   report <- capture_annotation_phase(report, "manual_curation", truth)
   report <- capture_annotation_phase(report, "normalization", truth)
   report <- capture_annotation_phase(report, "qc_rsd_filtered", truth[c(1, 3), ])
+  report <- capture_annotation_phase(report, "within_mode_adduct_resolution", truth[c(1, 3), ])
   report <- capture_annotation_phase(report, "qc_samples_removed", truth[c(1, 3), ])
   report
 }
@@ -30,6 +31,7 @@ negative <- make_report("negative")
 merged <- new_annotation_report("TEST", "merged")
 merged$phases$merge_input <- list(data = rbind(positive$phases$qc_samples_removed$data,
   negative$phases$qc_samples_removed$data), annotations = TRUE)
+merged$phases$resolved_annotation_preference <- merged$phases$merge_input
 merged$phases$duplicate_resolution <- list(data = merged$phases$merge_input$data[c(1, 2, 3), ],
                                            annotations = TRUE)
 merged$phases$internal_standard_removal <- list(
@@ -63,7 +65,7 @@ empty_report <- capture_annotation_phase(empty_report, "manual_curation", empty)
 stopifnot(all(annotation_report_summary(empty_report)$features == 0L),
           all(is.na(annotation_reference_comparison(empty_report)$precision)))
 payload <- annotation_metrics_payload(tables)
-stopifnot(length(payload$sheets) == 11L,
+stopifnot(length(payload$sheets) == 13L,
           all(vapply(payload$sheets, function(x) length(x$columns) == length(x$descriptions), logical(1))))
 if (requireNamespace("jsonlite", quietly = TRUE) && length(commandArgs(TRUE)))
   jsonlite::write_json(payload, commandArgs(TRUE)[1], auto_unbox = TRUE, na = "null", null = "null")

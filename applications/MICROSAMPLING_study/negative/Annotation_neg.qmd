@@ -84,6 +84,9 @@ ISOPEAK_SIM_THRESHOLD <- 0.78
 # QC filtering
 RSD_THRESHOLD <- 0.3
 
+# Maximum RT difference for duplicate adducts of one lipid (seconds)
+ADDUCT_RT_THRESHOLD <- 4
+
 # Expected sample types (for validation and CV summary)
 EXPECTED_SAMPLE_TYPES <- c("QC", "M-VAMS", "W-DBS", "C-qDBS", "Plasma")
 
@@ -151,6 +154,11 @@ res_save_path <- file.path(folders$objects,
                            paste0(STUDY_ID, "_preprocessed_res_", POLARITY))
 
 mse <- readMsObject(XcmsExperiment(), AlabasterParam(path = mse_save_path))
+mse <- restore_sqlite_spectra(
+  mse,
+  db_path = file.path(folders$data, paste0(STUDY_ID, "_", POLARITY, ".sqlite")),
+  rt_range = c(10, 800)
+)
 res <- readObject(res_save_path)
 annotation_report <- new_annotation_report(
   STUDY_ID, if (POLARITY == "pos") "positive" else "negative"
@@ -624,6 +632,63 @@ annotated_res <- filter_by_qc_rsd(annotated_res, threshold = RSD_THRESHOLD)
 annotation_report <- capture_annotation_phase(annotation_report, "qc_rsd_filtered", annotated_res)
 ```
 
+## Resolve Duplicate Adducts Within Negative Mode
+
+```{r resolve-within-mode-adducts}
+#| label: resolve-within-mode-adducts
+
+# Match the mean-intensity criterion previously used by the merge workflow:
+# compare only study samples, because QC samples are absent from res_final.
+study_samples <- !is.na(annotated_res$sample_type) &
+    annotated_res$sample_type != "QC"
+stopifnot(any(study_samples))
+
+rd <- as.data.frame(rowData(annotated_res))
+lipid <- as.character(rd$target_lipid_name_unique)
+adduct <- as.character(rd$target_Adduct)
+rt <- as.numeric(rd$rtmed)
+mean_abundance <- rowMeans(
+    as.matrix(assay(annotated_res, "ISnorm_filled_imputed")[, study_samples,
+             drop = FALSE]), na.rm = TRUE
+)
+mean_abundance[!is.finite(mean_abundance)] <- -Inf
+
+valid <- !is.na(lipid) & nzchar(lipid)
+groups <- split(which(valid), lipid[valid])
+remove <- integer()
+removal_log <- list()
+
+for (idx in groups) {
+    if (length(idx) != 2L || any(!is.finite(rt[idx])) ||
+        abs(diff(rt[idx])) > ADDUCT_RT_THRESHOLD ||
+        anyNA(adduct[idx]) || adduct[idx[1]] == adduct[idx[2]]) next
+
+    winner <- idx[order(-mean_abundance[idx], idx)][1]
+    loser <- idx[idx != winner]
+    remove <- c(remove, loser)
+    removal_log[[length(removal_log) + 1L]] <- data.frame(
+        lipid_name_unique = lipid[winner],
+        removed_feature = rownames(annotated_res)[loser],
+        removed_adduct = adduct[loser],
+        retained_feature = rownames(annotated_res)[winner],
+        retained_adduct = adduct[winner],
+        rt_difference = abs(rt[loser] - rt[winner]),
+        removed_mean = mean_abundance[loser],
+        retained_mean = mean_abundance[winner]
+    )
+}
+
+cat("Removed", length(remove), "duplicate-adduct features from", POLARITY,
+    "mode\n")
+if (length(removal_log)) print(do.call(rbind, removal_log), row.names = FALSE)
+annotated_res <- annotated_res[
+    base::setdiff(seq_len(nrow(annotated_res)), remove), , drop = FALSE
+]
+annotation_report <- capture_annotation_phase(
+  annotation_report, "within_mode_adduct_resolution", annotated_res
+)
+```
+
 ## Quality Assessment Plots
 
 ```{r pca-plot}
@@ -724,11 +789,36 @@ rowData(res_final)$qc_cv <- assay(res_qc, "ISnorm_filled") |> rowRsd()
 annotation_report <- capture_annotation_phase(annotation_report, "qc_samples_removed", res_final)
 
 # save objects
-saveObject(res_final, file.path(folders$objects,
-                                paste0(STUDY_ID, "_final_res_", POLARITY)))
+res_final_path <- file.path(folders$objects, paste0(STUDY_ID, "_final_res_", POLARITY))
+replace_saved_directory(res_final_path, function(path) saveObject(res_final, path))
 save_annotation_report(annotation_report, file.path(
   folders$objects, paste0(STUDY_ID, "_annotation_report_", POLARITY, ".rds")
 ))
+```
+
+## Export Annotated Abundances
+
+```{r export-annotated-xlsx}
+#| label: export-annotated-xlsx
+
+annot_cols <- intersect(
+  c("target_lipid.name", "target_lipid_name_unique",
+    "target_LIPID.CATEGORY..ABBREV.", "target_LIPID.SUBCLASS..ABBREV.",
+    "target_Adduct", "target_IS_norm", "mzmed", "rtmed", "qc_cv"),
+  colnames(rowData(res_final))
+)
+export_df <- cbind(
+  data.frame(feature_id = rownames(res_final),
+             as.data.frame(rowData(res_final)[, annot_cols, drop = FALSE]),
+             check.names = FALSE),
+  as.data.frame(assay(res_final, "ISnorm_filled_imputed"),
+                check.names = FALSE)
+)
+xlsx_path <- file.path(folders$objects,
+                       paste0(STUDY_ID, "_annotated_compounds_abundances_",
+                              POLARITY, ".xlsx"))
+writexl::write_xlsx(export_df, path = xlsx_path)
+cat("Saved annotated abundances to:", xlsx_path, "\n")
 ```
 
 ## Session Info

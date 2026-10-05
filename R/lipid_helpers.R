@@ -630,9 +630,11 @@ load_lipid_packages <- function(verbose = TRUE) {
   # Verify MsIO version
   msio_ver <- as.character(packageVersion("MsIO"))
   if (msio_ver != "0.0.15") {
-    warning("MsIO version ", msio_ver, " is loaded, but 0.0.15 is required. ",
-            "Run: install.packages('MsIO', repos = c('https://rformassspectrometry.r-universe.dev', 'https://cloud.r-project.org'))
-")
+    warning(
+      "MsIO version ", msio_ver, " is loaded, but 0.0.15 is required. ",
+      "From the repository root, run: Rscript scripts/bootstrap_environment.R",
+      call. = FALSE
+    )
   }
 
   if (verbose) message("\n✓ All packages loaded successfully!")
@@ -675,6 +677,59 @@ setup_folders <- function(polarity = c("pos", "neg"), base_path = ".") {
 
   message("✓ Folder structure created for ", toupper(polarity), " ionization mode")
   return(folders)
+}
+
+#' Save an object into an objects/ directory, replacing a previous save
+#'
+#' The existing result stays in place until the new one is fully written.
+#' Only a direct child directory of objects/ can be replaced.
+#' @param path Destination directory
+#' @param save_fun Function accepting the destination path and writing a directory
+replace_saved_directory <- function(path, save_fun) {
+  if (!is.character(path) || length(path) != 1L || is.na(path) ||
+      !nzchar(path) || !is.function(save_fun)) {
+    stop("Provide a single output path and a save function.")
+  }
+
+  name <- basename(path)
+  parent <- normalizePath(dirname(path), mustWork = TRUE)
+  if (basename(parent) != "objects" || name %in% c("", ".", "..")) {
+    stop("Refusing to replace a path outside an objects/ output directory: ", path)
+  }
+  path <- file.path(parent, name)
+  link_target <- Sys.readlink(path)
+  if ((!is.na(link_target) && nzchar(link_target)) ||
+      (file.exists(path) && !dir.exists(path))) {
+    stop("Refusing to replace a file or symbolic link: ", path)
+  }
+
+  staged_path <- tempfile(pattern = paste0(".", name, "-new-"), tmpdir = parent)
+  backup_path <- tempfile(pattern = paste0(".", name, "-old-"), tmpdir = parent)
+  on.exit(if (dir.exists(staged_path)) unlink(staged_path, recursive = TRUE),
+          add = TRUE)
+
+  save_fun(staged_path)
+  if (!dir.exists(staged_path)) {
+    stop("Save function did not create an output directory: ", staged_path)
+  }
+
+  if (dir.exists(path) && !file.rename(path, backup_path)) {
+    stop("Could not move the previous output aside: ", path)
+  }
+  if (!file.rename(staged_path, path)) {
+    if (dir.exists(backup_path) && !file.rename(backup_path, path)) {
+      stop("Could not install the new output; previous output remains at: ",
+           backup_path)
+    }
+    stop("Could not install the new output at: ", path)
+  }
+  if (dir.exists(backup_path)) {
+    unlink(backup_path, recursive = TRUE)
+    if (dir.exists(backup_path)) {
+      warning("Previous output could not be removed: ", backup_path)
+    }
+  }
+  invisible(path)
 }
 
 # =============================================================================
@@ -747,6 +802,11 @@ load_from_sqlite <- function(db_path, sample_data) {
 #'   sample_type. You can add any additional columns you need.
 #' @param filter_column Optional column name for filtering samples
 #' @param filter_value Optional value to filter by (keeps matching rows)
+#' @param sample_type_fallback Optional metadata column used when the mapped
+#'   sample_type column is empty. This is useful when experimental groups and
+#'   controls are described in separate MetaboLights columns.
+#' @param sample_type_recode Optional named character vector used to recode
+#'   sample_type values. Names are original values and values are replacements.
 #' @param exclude_sample_types Character vector of sample_type values to exclude
 #'   (e.g., c("Blank", "blank"))
 #' @param polarity Polarity to add to sample data ("pos" or "neg")
@@ -779,13 +839,18 @@ load_from_sqlite <- function(db_path, sample_data) {
 #'   mtbls_id = "MTBLS10722",
 #'   assay_name = "a_MTBLS10722_LC-MS_positive_reverse-phase_metabolite_profiling.txt",
 #'   column_mapping = list(
-#'     sample_name = "Sample Name",
-#'     file_name = "Raw Spectral Data File",
-#'     sample_type = "Factor Value[Sample type]",
-#'     injection_index = "Comment[injection_index]"
+#'     sample_name = "Extract Name",
+#'     file_name = "Derived Spectral Data File",
+#'     sample_type = "Factor Value[Blood microsampling device]",
+#'     injection_index = "Factor Value[Injection order]"
 #'   ),
 #'   filter_column = "Factor Value[Cohort]",
 #'   filter_value = "Cohort_study",
+#'   sample_type_fallback = "Characteristics[Sample type]",
+#'   sample_type_recode = c(
+#'     "pooled quality control sample" = "QC",
+#'     "solvent blank" = "Blank"
+#'   ),
 #'   exclude_sample_types = "Blank",
 #'   polarity = "pos"
 #' )
@@ -794,6 +859,8 @@ load_from_metaboLights <- function(mtbls_id,
                                     column_mapping,
                                     filter_column = NULL,
                                     filter_value = NULL,
+                                    sample_type_fallback = NULL,
+                                    sample_type_recode = NULL,
                                     exclude_sample_types = NULL,
                                     polarity = NULL) {
   # Validate column_mapping
@@ -812,78 +879,170 @@ load_from_metaboLights <- function(mtbls_id,
   message("Loading data from MetaboLights: ", mtbls_id)
   message("  Assay: ", assay_name)
 
-  # Create MetaboLights parameter
-  param <- MsBackendMetaboLights::MetaboLightsParam(
-    mtblsId = mtbls_id,
-    assayName = assay_name,
-    filePattern = ".mzML"
+  # Read the metadata tables separately. In some studies (including
+  # MTBLS10722), assay Sample Name is not the key used by the sample table;
+  # Extract Name is. Joining explicitly avoids silently losing sample metadata.
+  assay_data <- as.data.frame(
+    MsBackendMetaboLights::mtbls_assay_data(mtbls_id, assay_name),
+    check.names = FALSE
+  )
+  sample_info <- as.data.frame(
+    MsBackendMetaboLights::mtbls_sample_data(mtbls_id),
+    check.names = FALSE
   )
 
-  # Load data
-  mse <- readMsObject(
-    MsExperiment(),
-    param,
-    keepOntology = FALSE,
-    keepProtocol = FALSE,
-    simplify = TRUE
+  sample_key <- "Sample Name"
+  if (!sample_key %in% colnames(sample_info)) {
+    stop("The MetaboLights sample table has no 'Sample Name' column.")
+  }
+  if (anyDuplicated(sample_info[[sample_key]])) {
+    stop("The MetaboLights sample table contains duplicate Sample Name values; ",
+         "the assay metadata cannot be joined unambiguously.")
+  }
+
+  join_candidates <- intersect(c("Extract Name", "Sample Name"),
+                               colnames(assay_data))
+  join_coverage <- vapply(join_candidates, function(candidate) {
+    values <- assay_data[[candidate]]
+    all(!is.na(values) & nzchar(values) & values %in% sample_info[[sample_key]])
+  }, logical(1))
+  if (!any(join_coverage)) {
+    stop("Could not link the MetaboLights assay and sample tables. Tried: ",
+         paste(join_candidates, collapse = ", "), ".")
+  }
+  join_column <- join_candidates[which(join_coverage)[1]]
+  sample_index <- match(assay_data[[join_column]], sample_info[[sample_key]])
+
+  # Append each uniquely named sample-table column that is absent from the
+  # assay table. Repeated ISA-Tab columns such as Term Source REF are ignored.
+  append_index <- which(
+    !duplicated(colnames(sample_info)) &
+      !colnames(sample_info) %in% colnames(assay_data)
   )
+  metadata <- cbind(
+    assay_data,
+    sample_info[sample_index, append_index, drop = FALSE]
+  )
+  rownames(metadata) <- NULL
+  message("  Joined assay '", join_column, "' to sample '", sample_key, "'")
 
   # Apply filter if specified
-  if (!is.null(filter_column) && !is.null(filter_value)) {
-    if (!filter_column %in% colnames(sampleData(mse))) {
+  if (xor(is.null(filter_column), is.null(filter_value))) {
+    stop("filter_column and filter_value must be supplied together.")
+  }
+  if (!is.null(filter_column)) {
+    if (!filter_column %in% colnames(metadata)) {
       stop("Filter column '", filter_column, "' not found in sample data.\n",
            "Available columns:\n  ",
-           paste(colnames(sampleData(mse)), collapse = "\n  "))
+           paste(colnames(metadata), collapse = "\n  "))
     }
-    mse <- mse[sampleData(mse)[[filter_column]] == filter_value]
-    message("  Filtered to ", length(mse), " samples where ",
+    keep <- !is.na(metadata[[filter_column]]) &
+      metadata[[filter_column]] == filter_value
+    metadata <- metadata[keep, , drop = FALSE]
+    message("  Filtered to ", nrow(metadata), " samples where ",
             filter_column, " == '", filter_value, "'")
   }
 
   # Map column names
-  sad <- sampleData(mse)
-
-  # Check all mapping columns exist
-  all_cols <- unlist(column_mapping)
-  missing_cols <- setdiff(all_cols, colnames(sad))
+  all_cols <- c(unlist(column_mapping), sample_type_fallback)
+  missing_cols <- setdiff(all_cols, colnames(metadata))
   if (length(missing_cols) > 0) {
     stop("Column(s) not found in MetaboLights data: ",
          paste(missing_cols, collapse = ", "),
          "\n\nAvailable columns:\n  ",
-         paste(colnames(sad), collapse = "\n  "))
+         paste(colnames(metadata), collapse = "\n  "))
   }
 
   # Create new data frame with mapped columns
-  new_sad <- data.frame(stringsAsFactors = FALSE)
-  for (new_name in names(column_mapping)) {
-    old_name <- column_mapping[[new_name]]
-    new_sad[[new_name]] <- sad[[old_name]]
+  new_sad <- as.data.frame(
+    lapply(column_mapping, function(old_name) metadata[[old_name]]),
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+
+  if (!is.null(sample_type_fallback)) {
+    empty_type <- is.na(new_sad$sample_type) |
+      !nzchar(trimws(new_sad$sample_type))
+    new_sad$sample_type[empty_type] <-
+      metadata[[sample_type_fallback]][empty_type]
+  }
+  if (!is.null(sample_type_recode)) {
+    if (is.null(names(sample_type_recode)) ||
+        any(!nzchar(names(sample_type_recode)))) {
+      stop("sample_type_recode must be a named character vector.")
+    }
+    recode_index <- match(new_sad$sample_type, names(sample_type_recode))
+    recode_rows <- !is.na(recode_index)
+    new_sad$sample_type[recode_rows] <-
+      unname(sample_type_recode[recode_index[recode_rows]])
   }
 
   # Convert injection_index to numeric if present
   if ("injection_index" %in% names(new_sad)) {
-    new_sad$injection_index <- as.numeric(new_sad$injection_index)
+    original_index <- new_sad$injection_index
+    new_sad$injection_index <- suppressWarnings(as.numeric(original_index))
+    invalid_index <- is.na(new_sad$injection_index) &
+      !is.na(original_index) & nzchar(as.character(original_index))
+    if (any(invalid_index)) {
+      stop("Some injection_index values are not numeric: ",
+           paste(unique(original_index[invalid_index]), collapse = ", "))
+    }
   }
 
-  # Add polarity if provided
-  if (!is.null(polarity)) {
-    new_sad$polarity <- polarity
-  }
-
-  sampleData(mse) <- DataFrame(new_sad)
-
-  # Exclude sample types if specified
+  # Exclude unwanted samples before downloading their spectral files.
   if (!is.null(exclude_sample_types)) {
-    keep <- !sampleData(mse)$sample_type %in% exclude_sample_types
-    mse <- mse[keep]
+    keep <- !new_sad$sample_type %in% exclude_sample_types
+    metadata <- metadata[keep, , drop = FALSE]
+    new_sad <- new_sad[keep, , drop = FALSE]
     message("  Excluded ", sum(!keep), " samples of type: ",
             paste(exclude_sample_types, collapse = ", "))
   }
-
-  # Sort by injection index if available
-  if ("injection_index" %in% colnames(sampleData(mse))) {
-    mse <- mse[order(sampleData(mse)$injection_index), ]
+  if (!nrow(new_sad)) {
+    stop("No samples remain after filtering.")
   }
+
+  # Keep sample metadata and spectra in the same acquisition order.
+  if ("injection_index" %in% colnames(new_sad)) {
+    acquisition_order <- order(new_sad$injection_index, na.last = TRUE)
+    metadata <- metadata[acquisition_order, , drop = FALSE]
+    new_sad <- new_sad[acquisition_order, , drop = FALSE]
+  }
+
+  remote_files <- metadata[[column_mapping$file_name]]
+  if (any(is.na(remote_files) | !nzchar(remote_files))) {
+    stop("Some selected samples have no spectral data filename.")
+  }
+  file_names <- basename(remote_files)
+  if (anyDuplicated(file_names)) {
+    stop("Selected spectral data filenames are not unique.")
+  }
+
+  message("  Synchronizing ", length(file_names), " selected mzML files...")
+  cached_files <- MsBackendMetaboLights::mtbls_sync_data_files(
+    mtblsId = mtbls_id,
+    assayName = assay_name,
+    pattern = "mzML$",
+    fileName = file_names
+  )
+  file_index <- match(remote_files, cached_files$derived_spectral_data_file)
+  if (anyNA(file_index)) {
+    stop("Could not locate all selected mzML files in the MetaboLights cache: ",
+         paste(file_names[is.na(file_index)], collapse = ", "))
+  }
+  spectra_files <- cached_files$rpath[file_index]
+  if (any(!file.exists(spectra_files))) {
+    stop("Some synchronized mzML files are missing from the local cache.")
+  }
+
+  new_sad$file_name <- file_names
+  if (!is.null(polarity)) {
+    new_sad$polarity <- polarity
+  }
+  rownames(new_sad) <- file_names
+  mse <- MsExperiment::readMsExperiment(
+    spectraFiles = spectra_files,
+    sampleData = new_sad
+  )
 
   message("✓ Loaded ", length(mse), " samples from MetaboLights")
   return(mse)
@@ -2376,4 +2535,53 @@ export_ambiguity_tables <- function(mtched_data,
     lipid_ambiguities = amblip,
     feature_ambiguities = table_amb
   ))
+}
+
+
+#' Reconnect raw SQLite spectra after loading a preprocessed experiment
+#'
+#' Alabaster can reload an MsBackendOfflineSql as a generic MsBackendCached,
+#' which retains metadata but cannot provide peaksData(). Rebuild the backend
+#' from the original SQLite file while keeping the saved, adjusted RT values.
+#' The RT range must match the filter used during preprocessing.
+restore_sqlite_spectra <- function(mse, db_path, rt_range) {
+  saved <- spectra(mse)
+  if (class(saved@backend)[1L] != "MsBackendCached") return(mse)
+
+  if (!file.exists(db_path)) stop("SQLite database not found: ", db_path)
+  if (!is.numeric(rt_range) || length(rt_range) != 2L ||
+      anyNA(rt_range) || rt_range[1L] >= rt_range[2L]) {
+    stop("rt_range must contain the preprocessing minimum and maximum RT.")
+  }
+
+  raw <- Spectra(
+    dbname = normalizePath(db_path),
+    source = MsBackendSql::MsBackendOfflineSql(),
+    drv = RSQLite::SQLite()
+  )
+  raw <- filterRt(raw, rt_range)
+  if (length(raw) != length(saved)) {
+    stop("SQLite spectra count does not match the saved experiment (",
+         length(raw), " vs ", length(saved),
+         "). Check the database and preprocessing RT filter.")
+  }
+
+  raw$rtime <- saved$rtime
+  raw$base_file <- sub(".*[\\\\/]", "", raw$dataOrigin)
+  spectra(mse) <- raw
+
+  if (!"file_name" %in% colnames(sampleData(mse))) {
+    stop("Saved sample data has no file_name column for alignment check.")
+  }
+  sample_idx <- spectraSampleIndex(mse)
+  expected_files <- as.character(sampleData(mse)$file_name[sample_idx])
+  if (length(sample_idx) != length(raw) ||
+      length(expected_files) != length(raw) || anyNA(sample_idx) ||
+      anyNA(expected_files) || anyNA(raw$base_file) ||
+      !all(expected_files == raw$base_file)) {
+    stop("SQLite spectra are not aligned with the saved sample data.")
+  }
+  Spectra::peaksData(spectra(mse)[1L])
+  message("Reconnected ", length(raw), " SQLite spectra to the saved experiment")
+  mse
 }
