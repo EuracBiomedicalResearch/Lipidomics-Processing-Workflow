@@ -68,9 +68,6 @@ RES_NEG_PATH <- file.path("negative", "objects",
 # Output path for combined result
 RES_COMBINED_PATH <- file.path("objects", paste0(STUDY_ID, "_res_combined"))
 
-# RT difference threshold for duplicate resolution (seconds)
-RT_DIFF_THRESHOLD <- 30
-
 # Tighter RT threshold for different adducts of the same lipid within a mode
 ADDUCT_RT_THRESHOLD <- 4
 
@@ -180,9 +177,9 @@ res_neg <- collapse_adduct_pairs(res_neg)
 # Prefer Resolved Annotations Across Modes
 
 A single semicolon in target_lipid_name_unique is treated as two unresolved
-options. Remove that row when either exact option occurs in the other mode
-within RT_DIFF_THRESHOLD seconds. Compute removals in both directions before
-changing either dataset.
+options. Remove that row when either exact option occurs in the other mode,
+regardless of RT. Compute removals in both directions before changing either
+dataset.
 
 ```{r}
 #| label: prefer-resolved-sn-position
@@ -199,24 +196,21 @@ two_annotation_options <- function(name) {
     options
 }
 
-find_unresolved_rows <- function(ambiguous, other_mode, rt_limit) {
+find_unresolved_rows <- function(ambiguous, other_mode) {
     ambiguous_name <- as.character(rowData(ambiguous)$target_lipid_name_unique)
     other_name <- as.character(rowData(other_mode)$target_lipid_name_unique)
-    ambiguous_rt <- as.numeric(rowData(ambiguous)$rtmed)
-    other_rt <- as.numeric(rowData(other_mode)$rtmed)
 
     which(vapply(seq_along(ambiguous_name), function(i) {
         options <- two_annotation_options(ambiguous_name[i])
-        if (length(options) != 2L || !is.finite(ambiguous_rt[i]))
+        if (length(options) != 2L)
             return(FALSE)
 
-        any(other_name %in% options & is.finite(other_rt) &
-            abs(other_rt - ambiguous_rt[i]) <= rt_limit)
+        any(other_name %in% options)
     }, logical(1)))
 }
 
-pos_unresolved <- find_unresolved_rows(res_pos, res_neg, RT_DIFF_THRESHOLD)
-neg_unresolved <- find_unresolved_rows(res_neg, res_pos, RT_DIFF_THRESHOLD)
+pos_unresolved <- find_unresolved_rows(res_pos, res_neg)
+neg_unresolved <- find_unresolved_rows(res_neg, res_pos)
 
 cat("Removing", length(pos_unresolved), "unresolved positive and",
     length(neg_unresolved), "unresolved negative annotations\n")
@@ -230,10 +224,10 @@ res_neg <- res_neg[
 
 # Resolve Duplicate Annotations
 
-For exact lipid names shared between modes, repeatedly compare the closest-RT
-positive/negative pair within RT_DIFF_THRESHOLD seconds. Remove the feature
-with lower mean normalized abundance and repeat until no eligible cross-mode
-pair remains. This considers every feature, rather than only the first match.
+For exact lipid names shared between modes, repeatedly compare a
+positive/negative pair regardless of RT. Pairs are ordered by RT difference,
+but RT does not determine eligibility. Remove the feature with lower mean
+normalized abundance and repeat until no cross-mode pair remains.
 
 ```{r}
 #| label: find-duplicates
@@ -267,12 +261,9 @@ for (lipid in common_lipids) {
         pairs <- expand.grid(pos_idx = pos_idx, neg_idx = neg_idx,
                              KEEP.OUT.ATTRS = FALSE)
         pairs$rt_diff <- abs(pos_rt[pairs$pos_idx] - neg_rt[pairs$neg_idx])
-        pairs <- pairs[is.finite(pairs$rt_diff) &
-                       pairs$rt_diff <= RT_DIFF_THRESHOLD, , drop = FALSE]
-        if (!nrow(pairs)) break
 
         pair <- pairs[order(pairs$rt_diff, pairs$pos_idx,
-                            pairs$neg_idx)[1], , drop = FALSE]
+                            pairs$neg_idx, na.last = TRUE)[1], , drop = FALSE]
         p <- pair$pos_idx
         n <- pair$neg_idx
         keep_mode <- if (pos_mean[p] >= neg_mean[n]) "positive" else "negative"
@@ -334,8 +325,8 @@ remaining_common <- intersect(
     as.character(rowData(res_pos_filtered)$target_lipid_name_unique),
     as.character(rowData(res_neg_filtered)$target_lipid_name_unique)
 )
-cat("Shared lipid names retained in both modes (no pair within",
-    RT_DIFF_THRESHOLD, "seconds):", length(remaining_common), "\n")
+cat("Shared lipid names retained in both modes:",
+    length(remaining_common), "\n")
 ```
 
 # Combine Lipid Annotations
