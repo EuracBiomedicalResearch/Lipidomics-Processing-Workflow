@@ -161,11 +161,13 @@ annotation_reference_comparison <- function(report) {
     d <- d[!d$.is_standard & !keys %in% standard_keys, , drop = FALSE]
     pairs <- annotation_report_pairs(d)
     on_curated <- pairs$feature_key %in% truth_features
-    matched <- sum(pairs$pair_key %in% truth_pairs$pair_key)
+    matching_pairs <- pairs$pair_key %in% truth_pairs$pair_key
+    matched <- sum(matching_pairs)
+    matched_features <- length(unique(pairs$feature_key[matching_pairs]))
     alternative <- sum(on_curated & !pairs$pair_key %in% truth_pairs$pair_key)
     missed <- sum(!truth_pairs$pair_key %in% pairs$pair_key)
     data.frame(polarity = report$polarity, phase = phase,
-               curated_matches = matched, alternative_assignments = alternative,
+               curated_matches = matched_features, alternative_assignments = alternative,
                uncurated_assignments = sum(!on_curated), missed_curated_pairs = missed,
                precision = ratio(matched, matched + alternative),
                recall = ratio(matched, nrow(truth_pairs)),
@@ -212,11 +214,11 @@ annotation_metrics_descriptions <- c(
   phase = "Actual workflow stage, in execution order; no alternative-method experiments.",
   features = "Distinct detected features remaining, including standards until their removal phase.",
   removed_features = "Features from the preceding stage absent here. Blank for the first row of each polarity.",
-  curated_matches = "Candidate feature-lipid pairs matching the manually curated reference.",
+  curated_matches = "Distinct features with at least one lipid assignment matching the curated reference. Ambiguous features count once.",
   uncurated_assignments = "Assignments on features outside the curated reference; excluded from precision.",
   missed_curated_pairs = "Curated reference pairs not recovered by this stage.",
-  precision = "Matches / (matches + alternative assignments), on curated features only.",
-  recall = "Matches / all curated reference pairs.",
+  precision = "Matching feature-lipid pairs / (matching + alternative pairs), on curated features only.",
+  recall = "Matching feature-lipid pairs / all curated reference pairs.",
   f1 = "Harmonic mean of precision and recall.",
   feature_id = "Detected feature identifier; use polarity with this ID to identify a feature.",
   annotation = "Lipid annotation name, including RT-specific suffixes; unresolved alternatives separated by semicolons.",

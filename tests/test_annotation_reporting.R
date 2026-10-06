@@ -59,8 +59,21 @@ stopifnot(identical(names(comparison), c("polarity", "phase", "curated_matches",
           first$uncurated_assignments == 1L, first$missed_curated_pairs == 1L,
           abs(first$precision - 2/3) < 1e-12,
           abs(first$recall - 2/3) < 1e-12,
+          all(comparison$curated_matches[comparison$phase == "manual_curation"] == 2L),
           all(comparison$precision[comparison$phase == "manual_curation"] == 1),
           all(comparison$recall[comparison$phase == "manual_curation"] == 1))
+# Multiple matching semicolon assignments and duplicate rows count as one
+# feature. A feature with only a nonmatching assignment does not count.
+ambiguous_report <- new_annotation_report("TEST", "positive")
+ambiguous_report <- capture_annotation_phase(ambiguous_report, "rank1_mz_rt",
+  make_input(c("FT1", "FT1", "FT2", "FT3"), c("A_1; B_1; Z_1", "A_1", "D_1", "E_1")))
+ambiguous_report <- capture_annotation_phase(ambiguous_report, "manual_curation",
+  make_input(c("FT1", "FT2"), c("A_1; B_1", "C_1")))
+ambiguous_comparison <- annotation_reference_comparison(ambiguous_report)
+stopifnot(identical(ambiguous_comparison$curated_matches, c(1L, 2L)),
+          ambiguous_comparison$precision[1] == 0.5,
+          abs(ambiguous_comparison$recall[1] - 2/3) < 1e-12,
+          abs(ambiguous_comparison$f1[1] - 4/7) < 1e-12)
 empty <- make_input(character(), character())
 empty_report <- new_annotation_report("TEST", "positive")
 empty_report <- capture_annotation_phase(empty_report, "rank1_mz_rt", empty)
