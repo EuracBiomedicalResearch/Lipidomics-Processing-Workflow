@@ -606,8 +606,9 @@ load_lipid_packages <- function(verbose = TRUE) {
     # Core data handling
     "knitr", "readxl", "writexl",
     # MS data handling
-    "MsExperiment", "MsIO", "alabaster.se", "MsBackendMetaboLights",
+    "MsExperiment", "alabaster.se", "MsBackendMetaboLights",
     "SummarizedExperiment", "xcms", "Spectra", "MetaboCoreUtils",
+    "MsIO",
     # SQL backend (for SQLite data loading)
     "MsBackendSql", "RSQLite",
     # Statistics
@@ -627,11 +628,11 @@ load_lipid_packages <- function(verbose = TRUE) {
     suppressPackageStartupMessages(library(pkg, character.only = TRUE))
   }
 
-  # Verify MsIO version
+  ## Verify MsIO version
   msio_ver <- as.character(packageVersion("MsIO"))
-  if (msio_ver != "0.0.15") {
+  if (msio_ver != "0.0.17") {
     warning(
-      "MsIO version ", msio_ver, " is loaded, but 0.0.15 is required. ",
+      "MsIO version ", msio_ver, " is loaded, but 0.0.17 is required. ",
       "From the repository root, run: Rscript scripts/bootstrap_environment.R",
       call. = FALSE
     )
@@ -1690,11 +1691,13 @@ match_features_to_database <- function(res,
 #' @param batch_size Maximum number of features per sequential batch (default:
 #'   100). All samples and candidate annotations for a feature stay together.
 #'   Use Inf to calculate all features in one call.
+#' @param BPPARAM parallel processing setup. Uses by default serial processing.
 #' @return Updated mtched_data with isopeak_count and isopeak_sim columns
 calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
                                          isopeak_threshold = 2,
                                          similarity_threshold = 0.78,
-                                         batch_size = 100L) {
+                                         batch_size = 100L,
+                                         BPPARAM = BiocParallel::SerialParam()) {
   if (!is.numeric(batch_size) || length(batch_size) != 1L ||
       is.na(batch_size) || batch_size <= 0 ||
       (is.finite(batch_size) && batch_size != floor(batch_size))) {
@@ -1709,7 +1712,7 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
   }
   if (length(features) <= batch_size) {
     return(.calculate_isotope_similarity_batch(
-      mse, mtched_data, polarity, isopeak_threshold, similarity_threshold
+      mse, mtched_data, polarity, isopeak_threshold, similarity_threshold, BPPARAM
     ))
   }
 
@@ -1727,7 +1730,7 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
             ": ", length(batches[[i]]), " features, ", length(rows), " candidates")
     results[[i]] <- .calculate_isotope_similarity_batch(
       mse, mtched_data[rows, , drop = FALSE], polarity,
-      isopeak_threshold, similarity_threshold
+      isopeak_threshold, similarity_threshold, BPPARAM
     )
     # scalePeaks queues normalization. Spectra requires that processing be
     # applied before objects from separate batches can be concatenated.
@@ -1757,7 +1760,7 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
 # each feature together; batching samples would change the combined spectrum.
 .calculate_isotope_similarity_batch <- function(mse, mtched_data, polarity,
                                                 isopeak_threshold,
-                                                similarity_threshold) {
+                                                similarity_threshold, BPPARAM) {
   data(isotopes, package = "enviPat", envir = environment())
 
   # Set charge based on polarity
@@ -1767,11 +1770,11 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
                        features = unique(mtched_data$feature_id),
                        method = "closest_rt")
   # Convert subset to in-memory backend (needed for combineSpectra)
-  sp <- setBackend(sp, MsBackendMemory())
+  sp <- setBackend(sp, MsBackendMemory(), BPPARAM = BPPARAM)
 
   # Combine spectra per feature
   csp <- combineSpectra(sp, f = sp$feature_id, p = sp$feature_id,
-                        peaks = "intersect", ppm = 2)
+                        peaks = "intersect", ppm = 2, BPPARAM = BPPARAM)
 
   # Filter for isotope patterns
   iso_spectra <- spectrapply(csp, function(z) {
@@ -1783,7 +1786,7 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
       filterMzValues(z, mz = z$feature_mzmed, ppm = 10, tolerance = 0) |>
         applyProcessing()
     }
-  }) |>
+  }, BPPARAM = BPPARAM) |>
     concatenateSpectra() |>
     scalePeaks(by = max)
 
@@ -1804,7 +1807,8 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
   match_indices <- match(mtched_data$feature_id, iso_spectra$feature_id)
   mtched_data$isopeak_count <- lengths(iso_spectra)[match_indices]
   mtched_data$isopeak_sim <- diag(
-    compareSpectra(iso_spectra[match_indices], theoretical_spectra, ppm = 20)
+      compareSpectra(iso_spectra[match_indices], theoretical_spectra, ppm = 20,
+                     BPPARAM = BPPARAM)
   )
 
   # Filter

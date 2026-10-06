@@ -14,12 +14,10 @@ msbackend_source_url <- paste0(
     msbackend_revision,
     ".tar.gz"
 )
-msio_revision <- "54e1d54cf3614658a35be6af59f8c761974e82d6"
+msio_revision <- "a669fa1303a023161581b7a16caed3ed20a43299"
 msio_source_url <- paste0(
     "https://github.com/RforMassSpectrometry/MsIO/archive/",
-    msio_revision,
-    ".tar.gz"
-)
+    msio_revision, ".tar.gz")
 
 if (!file.exists("environment.yml") || !file.exists("DESCRIPTION")) {
     stop(
@@ -47,6 +45,7 @@ if (!identical(as.character(getRversion()), expected_r)) {
     )
 }
 
+Sys.setenv(DOWNLOAD_STATIC_LIBV8=1)
 options(
     repos = c(CRAN = "https://cloud.r-project.org"),
     Ncpus = max(1L, min(4L, parallel::detectCores(logical = FALSE)))
@@ -124,7 +123,7 @@ cran_packages <- c(
     "dbplyr", "dplyr", "enviPat", "ggfortify", "ggplot2", "ggVennDiagram",
     "gridExtra", "knitr", "matrixStats", "pander", "pheatmap", "RColorBrewer",
     "Rcpp", "readxl", "rmarkdown", "RSQLite", "scam", "tictoc", "UpSetR",
-    "vioplot", "writexl", "openxlsx"
+    "vioplot", "writexl", "openxlsx", "quarto"
 )
 
 bioconductor_packages <- c(

@@ -4,7 +4,7 @@ expected_conda_env <- "cembio_eurac"
 expected_r <- "4.6.0"
 expected_bioconductor <- "3.23"
 expected_quarto <- "1.9.38"
-expected_msio <- "0.0.15"
+expected_msio <- "0.0.17"
 
 required_packages <- c(
     "alabaster.se", "AnnotationHub", "BiocFileCache", "BiocManager",
@@ -14,7 +14,7 @@ required_packages <- c(
     "MsBackendMetaboLights", "MsBackendSql", "MsExperiment", "MsIO",
     "pander", "pheatmap", "RColorBrewer", "Rcpp", "readxl", "rmarkdown",
     "RSQLite", "scam", "Spectra", "SummarizedExperiment", "tictoc",
-    "UpSetR", "vioplot", "writexl", "xcms", "openxlsx"
+    "UpSetR", "vioplot", "writexl", "xcms", "openxlsx", "quarto"
 )
 
 failures <- character()

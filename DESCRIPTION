@@ -6,7 +6,7 @@ Authors@R: person("CEMBIO-EURAC", "Team", role = c("aut", "cre"),
     email = "noreply@example.org")
 Description: Dependency manifest for the untargeted LC-MS lipidomics
     preprocessing, annotation, and cross-ionization-mode integration workflow.
-License: GPL-3
+License: CC BY 4.0
 Encoding: UTF-8
 Depends:
     R (== 4.6.0)
@@ -32,8 +32,9 @@ Imports:
     MsBackendMetaboLights (== 1.5.2),
     MsBackendSql,
     MsExperiment,
-    MsIO (== 0.0.15),
+    MsIO (== 0.0.17),
     openxlsx,
+    quarto,
     pander,
     pheatmap,
     RColorBrewer,
