@@ -40,6 +40,7 @@ tables <- annotation_metrics_tables(positive, negative, merged)
 s <- tables$Summary
 stopifnot(identical(names(s), c("polarity", "phase", "features", "removed_features")),
           s$features[s$phase == "manual_curation"][1] == 3L,
+          !any(s$phase %in% c("qc_samples_removed", "adduct_scored")),
           tail(s$features, 1) == 2L, # Identical IDs in different polarities are distinct.
           tail(s$removed_features, 1) == 1L,
           !any(c("README", "Merge_metrics", "ISTD_filter") %in% names(tables)),
@@ -47,11 +48,13 @@ stopifnot(identical(names(s), c("polarity", "phase", "features", "removed_featur
 # Internal counts remain available; only the workbook presentation is reduced.
 internal_summary <- annotation_report_summary(positive)
 stopifnot(internal_summary$annotation_pairs[internal_summary$phase == "manual_curation"] == 4L,
-          internal_summary$ambiguous_features[internal_summary$phase == "manual_curation"] == 1L)
+          internal_summary$ambiguous_features[internal_summary$phase == "manual_curation"] == 1L,
+          all(c("qc_samples_removed", "adduct_scored") %in% internal_summary$phase))
 stopifnot(identical(s$phase[1:3], c("preprocessed_features", "rank1_mz", "rank1_mz_rt")),
           s$features[2] == 5L, s$features[3] == 4L, s$removed_features[3] == 1L,
           "rank1_mz" %in% names(tables))
 comparison <- tables$Curated_reference_comparison
+stopifnot("adduct_scored" %in% comparison$phase, "adduct_scored" %in% names(tables))
 first <- comparison[comparison$phase == "rank1_mz_rt", ][1, ]
 stopifnot(identical(names(comparison), c("polarity", "phase", "curated_matches",
           "uncurated_assignments", "missed_curated_pairs", "precision", "recall", "f1")),

@@ -186,6 +186,8 @@ annotation_metrics_tables <- function(positive, negative, merged) {
                    annotation_reference_comparison(positive),
                    annotation_reference_comparison(negative)))
   tables$Summary <- tables$Summary[, c("polarity", "phase", "features", "removed_features")]
+  tables$Summary <- tables$Summary[!tables$Summary$phase %in%
+    c("qc_samples_removed", "adduct_scored"), , drop = FALSE]
   tables$Curated_reference_comparison$alternative_assignments <- NULL
   detail_phases <- c("rank1_mz", "rank1_mz_rt", "isotope_filter", "adduct_scored",
                      "ambiguity_auto", "manual_curation", "qc_rsd_filtered",
