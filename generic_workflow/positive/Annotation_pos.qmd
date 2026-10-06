@@ -151,7 +151,7 @@ res <- readObject(res_save_path)
 intern_standard <- prepare_reference_lipids(
   IS_FILE,
   rt_window_left = eic_rt_window_left,
-  rt_window_right = eic_rt_window_right 
+  rt_window_right = eic_rt_window_right
 )
 eic_is <- extract_is_eics(mse, intern_standard)
 fdata <- fData(eic_is)
@@ -173,7 +173,7 @@ message("  - SummarizedExperiment: ", nrow(res), " features x ",
 
 # SRM 1950 Database RT adjustment
 
-By default, the code fits a SCAM model to the lipid reference set and uses the 
+By default, the code fits a SCAM model to the lipid reference set and uses the
 observed retention time shifts to adjust the SRM 1950 database RT.
 
 ```{r rt-adjustment-fit}
@@ -303,8 +303,6 @@ validate_matches(mtched_data, min_matches = 10, max_ppm_error = 15)
 #| label: isotope-validation
 
 # Calculate isotope pattern similarity
-# Please uncomment this only if memory issues when calculating isotopes
-# BiocParallel::register(BiocParallel::SerialParam(), default = TRUE) 
 iso_result <- calculate_isotope_similarity(
   mse, mtched_data, polarity = POLARITY,
   isopeak_threshold = 2,

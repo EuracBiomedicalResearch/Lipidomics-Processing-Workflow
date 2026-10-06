@@ -311,8 +311,6 @@ validate_matches(mtched_data, min_matches = 10, max_ppm_error = 15)
 #| label: isotope-validation
 
 # Calculate isotope pattern similarity
-# Please uncomment this only if memory issues when calculating isotopes
-# BiocParallel::register(BiocParallel::SerialParam(), default = TRUE)
 iso_result <- calculate_isotope_similarity(
   mse, mtched_data, polarity = POLARITY,
   isopeak_threshold = 2,

@@ -123,7 +123,7 @@ cran_packages <- c(
     "dbplyr", "dplyr", "enviPat", "ggfortify", "ggplot2", "ggVennDiagram",
     "gridExtra", "knitr", "matrixStats", "pander", "pheatmap", "RColorBrewer",
     "Rcpp", "readxl", "rmarkdown", "RSQLite", "scam", "tictoc", "UpSetR",
-    "vioplot", "writexl"
+    "vioplot", "writexl", "quarto"
 )
 
 bioconductor_packages <- c(
