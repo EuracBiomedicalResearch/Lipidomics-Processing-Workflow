@@ -75,7 +75,7 @@ CEMBIO-EURAC/
 
 ## Quick Start
 
-### 1. Create the Reproducible Environment
+### 1. The Reproducible Environment
 
 The project uses two complementary environment layers:
 
@@ -84,24 +84,32 @@ The project uses two complementary environment layers:
 - `renv` supplies the exact CRAN, Bioconductor 3.23, and GitHub package
   versions recorded in `renv.lock`.
 
-From the repository root, create and activate the Conda environment:
+From the repository root, create the Conda environment:
 
 ```bash
 mamba env create --file environment.yml
+```
+
+If Mamba is unavailable, use `conda env create --file environment.yml`
+instead. This step is only required **once**.
+
+Activate the Conda environment. This steps should be done each time **before**
+running R or Quarto. Eventually deactivate the conda environment after running
+the workflows to restore the default system setup (using `conda deactivate`).
+
+```bash
 conda activate cembio_eurac
 ```
 
-`conda env create` can be used instead if Mamba is unavailable. Restore the R
-package library and verify the complete installation:
+Setup or restore the R package library and verify the complete installation:
 
 ```bash
 Rscript scripts/bootstrap_environment.R
 Rscript scripts/check_environment.R
 ```
 
-The bootstrap script creates `renv.lock` on the initial maintainer run. On a
-fresh clone containing that lockfile, the same command restores its exact
-package versions. Always activate `cembio_eurac` before running R or Quarto.
+The first time these commands are executed, all required R packages are
+installed. Any subsequent call with restore the cached libraries.
 
 ### 2. Prepare Input Files
 

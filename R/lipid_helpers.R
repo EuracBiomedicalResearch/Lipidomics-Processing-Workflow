@@ -606,8 +606,9 @@ load_lipid_packages <- function(verbose = TRUE) {
     # Core data handling
     "knitr", "readxl", "writexl",
     # MS data handling
-    "MsExperiment", "MsIO", "alabaster.se", "MsBackendMetaboLights",
+    "MsExperiment", "alabaster.se", "MsBackendMetaboLights",
     "SummarizedExperiment", "xcms", "Spectra", "MetaboCoreUtils",
+    "MsIO",
     # SQL backend (for SQLite data loading)
     "MsBackendSql", "RSQLite",
     # Statistics
@@ -628,14 +629,14 @@ load_lipid_packages <- function(verbose = TRUE) {
   }
 
   # Verify MsIO version
-  msio_ver <- as.character(packageVersion("MsIO"))
-  if (msio_ver != "0.0.15") {
-    warning(
-      "MsIO version ", msio_ver, " is loaded, but 0.0.15 is required. ",
-      "From the repository root, run: Rscript scripts/bootstrap_environment.R",
-      call. = FALSE
-    )
-  }
+  ## msio_ver <- as.character(packageVersion("MsIO"))
+  ## if (msio_ver != "0.0.15") {
+  ##   warning(
+  ##     "MsIO version ", msio_ver, " is loaded, but 0.0.15 is required. ",
+  ##     "From the repository root, run: Rscript scripts/bootstrap_environment.R",
+  ##     call. = FALSE
+  ##   )
+  ## }
 
   if (verbose) message("\n✓ All packages loaded successfully!")
   invisible(NULL)

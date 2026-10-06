@@ -153,11 +153,6 @@ res_save_path <- file.path(folders$objects,
                            paste0(STUDY_ID, "_preprocessed_res_", POLARITY))
 
 mse <- readMsObject(XcmsExperiment(), AlabasterParam(path = mse_save_path))
-mse <- restore_sqlite_spectra(
-  mse,
-  db_path = file.path(folders$data, paste0(STUDY_ID, "_", POLARITY, ".sqlite")),
-  rt_range = c(10, 950)
-)
 res <- readObject(res_save_path)
 
 # Reload lipid reference set and EIC
@@ -317,7 +312,7 @@ validate_matches(mtched_data, min_matches = 10, max_ppm_error = 15)
 
 # Calculate isotope pattern similarity
 # Please uncomment this only if memory issues when calculating isotopes
-# BiocParallel::register(BiocParallel::SerialParam(), default = TRUE) 
+# BiocParallel::register(BiocParallel::SerialParam(), default = TRUE)
 iso_result <- calculate_isotope_similarity(
   mse, mtched_data, polarity = POLARITY,
   isopeak_threshold = 2,

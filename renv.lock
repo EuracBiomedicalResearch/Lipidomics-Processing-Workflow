@@ -1689,7 +1689,7 @@
     },
     "MsIO": {
       "Package": "MsIO",
-      "Version": "0.0.15",
+      "Version": "0.0.17",
       "Source": "URL",
       "Title": "Serializing and restoring/importing mass spectrometry data objects",
       "Authors@R": "c(person(given = \"Johannes\", family = \"Rainer\", email = \"Johannes.Rainer@eurac.edu\", role = c(\"aut\", \"cre\"), comment = c(ORCID = \"0000-0002-6977-7147\")), person(given = \"Philippine\", family = \"Louail\", email = \"philippine.louail@eurac.edu\", role = \"aut\", comment = c(ORCID = \"0009-0007-5429-6846\")), person(given = \"Laurent\", family = \"Gatto\", email = \"laurent.gatto@uclouvain.be\", role = \"ctb\", comment = c(ORCID = \"0000-0002-1520-2268\")))",
@@ -1702,7 +1702,8 @@
         "methods",
         "S4Vectors",
         "ProtGenerics",
-        "alabaster.base"
+        "alabaster.base",
+        "MsCoreUtils (>= 1.23.8)"
       ],
       "Suggests": [
         "BiocStyle (>= 2.5.19)",
@@ -1734,7 +1735,7 @@
       "Author": "Johannes Rainer [aut, cre] (ORCID: <https://orcid.org/0000-0002-6977-7147>), Philippine Louail [aut] (ORCID: <https://orcid.org/0009-0007-5429-6846>), Laurent Gatto [ctb] (ORCID: <https://orcid.org/0000-0002-1520-2268>)",
       "Maintainer": "Johannes Rainer <Johannes.Rainer@eurac.edu>",
       "RemoteType": "url",
-      "RemoteUrl": "https://github.com/RforMassSpectrometry/MsIO/archive/54e1d54cf3614658a35be6af59f8c761974e82d6.tar.gz"
+      "RemoteUrl": "https://github.com/RforMassSpectrometry/MsIO/archive/a669fa1303a023161581b7a16caed3ed20a43299.tar.gz"
     },
     "MultiAssayExperiment": {
       "Package": "MultiAssayExperiment",
@@ -2605,7 +2606,7 @@
     },
     "XML": {
       "Package": "XML",
-      "Version": "3.99-0.24",
+      "Version": "3.99-0.25",
       "Source": "Repository",
       "Authors@R": "c(person(\"CRAN Team\", role = \"ctb\", email = \"CRAN@r-project.org\", comment = \"de facto maintainer in 2013-2026\"), person(\"Duncan\", \"Temple Lang\", role = \"aut\", email = \"duncan@r-project.org\", comment = c(ORCID = \"0000-0003-0159-1546\")), person(\"Tomas\", \"Kalibera\", role = \"ctb\"), person(\"Ivan\", \"Krylov\", email = \"ikrylov@disroot.org\", role = \"cre\"))",
       "Title": "Tools for Parsing and Generating XML Within R and S-Plus",
@@ -4374,11 +4375,11 @@
     },
     "ggfortify": {
       "Package": "ggfortify",
-      "Version": "0.4.23",
+      "Version": "0.4.24",
       "Source": "Repository",
       "Type": "Package",
       "Title": "Data Visualization Tools for Statistical Analysis Results",
-      "Date": "2026-09-03",
+      "Date": "2026-09-30",
       "Authors@R": "c( person(\"Masaaki\", \"Horikoshi\", role = c(\"aut\"), email = \"sinhrks@gmail.com\"), person(\"Yuan\", \"Tang\", role = c(\"aut\", \"cre\"), email = \"terrytangyuan@gmail.com\", comment = c(ORCID = \"0000-0001-5243-233X\")), person(\"Austin\", \"Dickey\", role = c(\"ctb\")), person(\"Matthias\", \"Grenié\", role = c(\"ctb\")), person(\"Ryan\", \"Thompson\", role = c(\"ctb\")), person(\"Luciano\", \"Selzer\", role = c(\"ctb\")), person(\"Dario\", \"Strbenac\", role = c(\"ctb\")), person(\"Kirill\", \"Voronin\", role = c(\"ctb\")), person(\"Damir\", \"Pulatov\", role = c(\"ctb\")), person(\"Emik\", \"Lin\", role = c(\"ctb\")) )",
       "Maintainer": "Yuan Tang <terrytangyuan@gmail.com>",
       "URL": "https://github.com/sinhrks/ggfortify",
@@ -4398,7 +4399,8 @@
         "scales",
         "stats",
         "stringr",
-        "tibble"
+        "tibble",
+        "utils"
       ],
       "Suggests": [
         "testthat",
@@ -4424,7 +4426,6 @@
         "survival",
         "timeSeries",
         "tseries",
-        "utils",
         "vars",
         "xts",
         "zoo",
@@ -5025,7 +5026,7 @@
     },
     "igraph": {
       "Package": "igraph",
-      "Version": "2.3.3",
+      "Version": "2.3.4",
       "Source": "Repository",
       "Title": "Network Analysis and Visualization",
       "Authors@R": "c( person(\"Gábor\", \"Csárdi\", , \"csardi.gabor@gmail.com\", role = \"aut\", comment = c(ORCID = \"0000-0001-7098-9676\")), person(\"Tamás\", \"Nepusz\", , \"ntamas@gmail.com\", role = \"aut\", comment = c(ORCID = \"0000-0002-1451-338X\")), person(\"Vincent\", \"Traag\", role = \"aut\", comment = c(ORCID = \"0000-0003-3170-3879\")), person(\"Szabolcs\", \"Horvát\", , \"szhorvat@gmail.com\", role = \"aut\", comment = c(ORCID = \"0000-0002-3100-523X\")), person(\"Fabio\", \"Zanini\", , \"fabio.zanini@unsw.edu.au\", role = \"aut\", comment = c(ORCID = \"0000-0001-7097-8539\")), person(\"Daniel\", \"Noom\", role = \"aut\"), person(\"Kirill\", \"Müller\", , \"kirill@cynkra.com\", role = c(\"aut\", \"cre\"), comment = c(ORCID = \"0000-0002-1416-3412\")), person(\"Michael\", \"Antonov\", role = \"ctb\"), person(\"Chan Zuckerberg Initiative\", role = \"fnd\", comment = c(ROR = \"02qenvm24\")), person(\"David\", \"Schoch\", , \"david.schoch@cynkra.com\", role = \"aut\", comment = c(ORCID = \"0000-0003-2952-4812\")), person(\"Maëlle\", \"Salmon\", , \"maelle@cynkra.com\", role = \"aut\", comment = c(ORCID = \"0000-0002-2815-0399\")), person(\"R Consortium\", role = \"fnd\", comment = c(ROR = \"01z833950\")) )",
@@ -5076,6 +5077,8 @@
       "Config/build/compilation-database": "false",
       "Config/build/never-clean": "true",
       "Config/comment/compilation-database": "Generate manually with pkgload:::generate_db() for faster pkgload::load_all()",
+      "Config/gha/extra-packages": "graph=?ignore-before-r=4.4.0",
+      "Config/comment/gha/extra-packages": "graph is an optional Enhances dependency published only on Bioconductor. The Bioconductor releases matching R 4.2 and R 4.3 (graph 3.16 / 3.18) are archived and return HTTP 404, which aborts pak dependency resolution on those jobs. The ?ignore-before-r pak parameter makes pak ignore graph on R older than 4.4.0, where a published release still exists.",
       "Config/Needs/build": "devtools, irlba, pkgconfig",
       "Config/Needs/coverage": "covr",
       "Config/Needs/roxygen2": "r-lib/roxygen2, igraph/igraph.r2cdocs, moodymudskipper/devtag",
@@ -5084,8 +5087,8 @@
       "Config/testthat/parallel": "true",
       "Config/testthat/start-first": "aaa-auto, vs-es, scan, vs-operators, weakref, watts.strogatz.game",
       "Encoding": "UTF-8",
-      "RoxygenNote": "7.3.3.9000",
       "SystemRequirements": "libxml2 (optional), glpk (>= 4.57, optional)",
+      "Config/roxygen2/version": "8.1.0.9000",
       "NeedsCompilation": "yes",
       "Author": "Gábor Csárdi [aut] (ORCID: <https://orcid.org/0000-0001-7098-9676>), Tamás Nepusz [aut] (ORCID: <https://orcid.org/0000-0002-1451-338X>), Vincent Traag [aut] (ORCID: <https://orcid.org/0000-0003-3170-3879>), Szabolcs Horvát [aut] (ORCID: <https://orcid.org/0000-0002-3100-523X>), Fabio Zanini [aut] (ORCID: <https://orcid.org/0000-0001-7097-8539>), Daniel Noom [aut], Kirill Müller [aut, cre] (ORCID: <https://orcid.org/0000-0002-1416-3412>), Michael Antonov [ctb], Chan Zuckerberg Initiative [fnd] (ROR: <https://ror.org/02qenvm24>), David Schoch [aut] (ORCID: <https://orcid.org/0000-0003-2952-4812>), Maëlle Salmon [aut] (ORCID: <https://orcid.org/0000-0002-2815-0399>), R Consortium [fnd] (ROR: <https://ror.org/01z833950>)",
       "Maintainer": "Kirill Müller <kirill@cynkra.com>",
