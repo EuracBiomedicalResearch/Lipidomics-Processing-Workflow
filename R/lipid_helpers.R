@@ -628,15 +628,15 @@ load_lipid_packages <- function(verbose = TRUE) {
     suppressPackageStartupMessages(library(pkg, character.only = TRUE))
   }
 
-  # Verify MsIO version
-  ## msio_ver <- as.character(packageVersion("MsIO"))
-  ## if (msio_ver != "0.0.15") {
-  ##   warning(
-  ##     "MsIO version ", msio_ver, " is loaded, but 0.0.15 is required. ",
-  ##     "From the repository root, run: Rscript scripts/bootstrap_environment.R",
-  ##     call. = FALSE
-  ##   )
-  ## }
+  Verify MsIO version
+  msio_ver <- as.character(packageVersion("MsIO"))
+  if (msio_ver != "0.0.17") {
+    warning(
+      "MsIO version ", msio_ver, " is loaded, but 0.0.17 is required. ",
+      "From the repository root, run: Rscript scripts/bootstrap_environment.R",
+      call. = FALSE
+    )
+  }
 
   if (verbose) message("\n✓ All packages loaded successfully!")
   invisible(NULL)
