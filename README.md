@@ -160,7 +160,8 @@ then merged, with feature counts and removed features.
 Standards remain in intermediate counts and details until
 the explicit final removal phase. The final detail sheet matches the feature rows
 in the annotated-abundances workbook. Column definitions appear beneath headers.
-`Curated_reference_comparison` reports agreement with manually curated assignments,
+`Curated_reference_comparison` reports agreement with manually curated assignments
+retained after QC RSD filtering (`qc_rsd_filtered`), excluding internal standards,
 not accuracy against independently established chemical identities.
 
 After snapshots exist, refresh reporting without rerunning annotation:

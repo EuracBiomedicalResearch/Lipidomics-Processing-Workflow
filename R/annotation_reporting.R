@@ -144,19 +144,25 @@ annotation_report_summary <- function(report) {
 }
 
 annotation_reference_comparison <- function(report) {
-  truth <- report$phases$manual_curation$data
+  all_truth <- report$phases$qc_rsd_filtered$data
+  if (is.null(all_truth)) stop("Missing post-QC reference snapshot: qc_rsd_filtered.")
+  truth <- all_truth
   truth <- truth[!truth$.is_standard, , drop = FALSE]
   truth_pairs <- annotation_report_pairs(truth)
   truth_features <- unique(truth_pairs$feature_key)
+  curated <- report$phases$manual_curation$data
+  # Keep known standard feature IDs excluded even if the standard failed QC.
+  standard_keys <- unique(c(
+    paste(all_truth$polarity[all_truth$.is_standard],
+          all_truth$feature_id[all_truth$.is_standard], sep = "::"),
+    paste(curated$polarity[curated$.is_standard],
+          curated$feature_id[curated$.is_standard], sep = "::")))
   phases <- intersect(c("rank1_mz", "rank1_mz_rt", "isotope_filter", "adduct_scored",
                         "ambiguity_auto", "manual_curation"), names(report$phases))
   ratio <- function(n, d) if (d) n / d else NA_real_
   do.call(rbind, lapply(phases, function(phase) {
     d <- report$phases[[phase]]$data
-    # Also exclude alternative candidates on curated standard features.
-    all_truth <- report$phases$manual_curation$data
-    standard_keys <- paste(all_truth$polarity[all_truth$.is_standard],
-                           all_truth$feature_id[all_truth$.is_standard], sep = "::")
+    # Also exclude alternative candidates on known standard features.
     keys <- paste(d$polarity, d$feature_id, sep = "::")
     d <- d[!d$.is_standard & !keys %in% standard_keys, , drop = FALSE]
     pairs <- annotation_report_pairs(d)
@@ -216,11 +222,11 @@ annotation_metrics_descriptions <- c(
   phase = "Actual workflow stage, in execution order; no alternative-method experiments.",
   features = "Distinct detected features remaining, including standards until their removal phase.",
   removed_features = "Features from the preceding stage absent here. Blank for the first row of each polarity.",
-  curated_matches = "Distinct features with at least one lipid assignment matching the curated reference. Ambiguous features count once.",
-  uncurated_assignments = "Assignments on features outside the curated reference; excluded from precision.",
-  missed_curated_pairs = "Curated reference pairs not recovered by this stage.",
+  curated_matches = "Distinct features with at least one lipid assignment matching the post-QC curated reference. Ambiguous features count once.",
+  uncurated_assignments = "Assignments on features outside the post-QC reference; excluded from precision.",
+  missed_curated_pairs = "Post-QC curated reference pairs not recovered by this stage.",
   precision = "Matching feature-lipid pairs / (matching + alternative pairs), on curated features only.",
-  recall = "Matching feature-lipid pairs / all curated reference pairs.",
+  recall = "Matching feature-lipid pairs / all post-QC curated reference pairs.",
   f1 = "Harmonic mean of precision and recall.",
   feature_id = "Detected feature identifier; use polarity with this ID to identify a feature.",
   annotation = "Lipid annotation name, including RT-specific suffixes; unresolved alternatives separated by semicolons.",
@@ -239,10 +245,10 @@ annotation_metrics_payload <- function(tables) {
     descriptions[is.na(descriptions)] <- ""
     list(name = name, columns = names(d), descriptions = descriptions,
          note = if (name == "Curated_reference_comparison")
-           paste("Agreement with manually curated feature-lipid assignments on curated features,",
+           paste("Agreement with manually curated feature-lipid assignments retained after QC RSD filtering,",
                  "not independent chemical ground truth or database accuracy.",
-                 "Internal standards excluded. Uncurated assignments are not treated as wrong.",
-                 "Manual curation agrees perfectly by construction.") else NULL,
+                 "Reference snapshot: qc_rsd_filtered. Internal standards excluded.",
+                 "Assignments outside this reference are not treated as wrong.") else NULL,
          rows = unname(lapply(seq_len(nrow(d)), function(i) unname(as.list(d[i, ])))))
   })
   list(sheets = sheets)

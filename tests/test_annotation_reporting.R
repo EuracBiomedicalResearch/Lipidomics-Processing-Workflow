@@ -11,6 +11,7 @@ make_report <- function(mode) {
   candidates <- make_input(c("FT1", "FT1", "FT2", "FT3", "IS1"),
                            c("A_1", "B_1", "C_1", "D_1", "IS_1"),
                            c(FALSE, FALSE, FALSE, FALSE, TRUE))
+  candidates <- rbind(candidates, make_input("IS1", "endogenous_candidate_1"))
   truth <- make_input(c("FT1", "FT2", "IS1"), c("A_1", "C_1; E_1", "IS_1"),
                       c(FALSE, FALSE, TRUE))
   report <- capture_annotation_phase(report, "preprocessed_features",
@@ -58,13 +59,18 @@ stopifnot("adduct_scored" %in% comparison$phase, "adduct_scored" %in% names(tabl
 first <- comparison[comparison$phase == "rank1_mz_rt", ][1, ]
 stopifnot(identical(names(comparison), c("polarity", "phase", "curated_matches",
           "uncurated_assignments", "missed_curated_pairs", "precision", "recall", "f1")),
-          first$curated_matches == 2L,
-          first$uncurated_assignments == 1L, first$missed_curated_pairs == 1L,
-          abs(first$precision - 2/3) < 1e-12,
-          abs(first$recall - 2/3) < 1e-12,
-          all(comparison$curated_matches[comparison$phase == "manual_curation"] == 2L),
+          first$curated_matches == 1L,
+          first$uncurated_assignments == 2L, first$missed_curated_pairs == 0L,
+          first$precision == 0.5, first$recall == 1,
+          abs(first$f1 - 2/3) < 1e-12,
+          all(comparison$curated_matches[comparison$phase == "manual_curation"] == 1L),
           all(comparison$precision[comparison$phase == "manual_curation"] == 1),
           all(comparison$recall[comparison$phase == "manual_curation"] == 1))
+qc_without_standards <- positive
+qc_without_standards$phases$qc_rsd_filtered$data <-
+  qc_without_standards$phases$qc_rsd_filtered$data[!positive$phases$qc_rsd_filtered$data$.is_standard, ]
+stopifnot(identical(annotation_reference_comparison(qc_without_standards),
+                    annotation_reference_comparison(positive)))
 # Multiple matching semicolon assignments and duplicate rows count as one
 # feature. A feature with only a nonmatching assignment does not count.
 ambiguous_report <- new_annotation_report("TEST", "positive")
@@ -72,6 +78,10 @@ ambiguous_report <- capture_annotation_phase(ambiguous_report, "rank1_mz_rt",
   make_input(c("FT1", "FT1", "FT2", "FT3"), c("A_1; B_1; Z_1", "A_1", "D_1", "E_1")))
 ambiguous_report <- capture_annotation_phase(ambiguous_report, "manual_curation",
   make_input(c("FT1", "FT2"), c("A_1; B_1", "C_1")))
+ambiguous_report <- capture_annotation_phase(ambiguous_report, "qc_rsd_filtered",
+  make_input(c("FT1", "FT2"), c("A_1; B_1", "C_1")))
+ambiguous_report <- capture_annotation_phase(ambiguous_report, "within_mode_adduct_resolution",
+  make_input("FT1", "A_1; B_1"))
 ambiguous_comparison <- annotation_reference_comparison(ambiguous_report)
 stopifnot(identical(ambiguous_comparison$curated_matches, c(1L, 2L)),
           ambiguous_comparison$precision[1] == 0.5,
@@ -81,10 +91,15 @@ empty <- make_input(character(), character())
 empty_report <- new_annotation_report("TEST", "positive")
 empty_report <- capture_annotation_phase(empty_report, "rank1_mz_rt", empty)
 empty_report <- capture_annotation_phase(empty_report, "manual_curation", empty)
+empty_report <- capture_annotation_phase(empty_report, "qc_rsd_filtered", empty)
 stopifnot(all(annotation_report_summary(empty_report)$features == 0L),
           all(is.na(annotation_reference_comparison(empty_report)$precision)))
+missing_qc <- positive
+missing_qc$phases$qc_rsd_filtered <- NULL
+stopifnot(inherits(try(annotation_reference_comparison(missing_qc), silent = TRUE), "try-error"))
 payload <- annotation_metrics_payload(tables)
 stopifnot(length(payload$sheets) == 13L,
+          grepl("Reference snapshot: qc_rsd_filtered", payload$sheets[[2]]$note, fixed = TRUE),
           all(vapply(payload$sheets, function(x) length(x$columns) == length(x$descriptions), logical(1))))
 if (requireNamespace("jsonlite", quietly = TRUE) && length(commandArgs(TRUE)))
   jsonlite::write_json(payload, commandArgs(TRUE)[1], auto_unbox = TRUE, na = "null", null = "null")
