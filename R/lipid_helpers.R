@@ -1674,7 +1674,7 @@ match_features_to_database <- function(res,
 calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
                                          isopeak_threshold = 2,
                                          similarity_threshold = 0.78,
-                                         BPPARAM =BiocParallel::SerialParam()) {
+                                         BPPARAM = BiocParallel::SerialParam()) {
   data(isotopes, package = "enviPat", envir = environment())
 
   # Set charge based on polarity
@@ -1740,6 +1740,27 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
               theoretical_spectra = theoretical_spectra_filtered))
 }
 
+# "(0:0/", "(O-0:0/", "(P-0:0/": acyl chain at sn-2
+.sn2_pattern <- "\\((O-|P-)?0:0/"
+# "/0:0)" or "/0:0(d7)": acyl chain at sn-1
+.sn1_pattern <- "/0:0([)(])"
+.lyso_sn_base <- function(names) {
+  gsub(.sn1_pattern, "\\1", gsub(.sn2_pattern, "(\\1", names))
+}
+
+#' Split a merged "A; B" annotation into its two names if it is an unresolved
+#' sn-1/sn-2 pair of the same lysoglycerophospholipid
+#'
+#' @param name A single (possibly merged) target_lipid_name_unique
+#' @return The two names, or character() if not an sn-1/sn-2 pair
+sn_pair_options <- function(name) {
+  if (is.na(name)) return(character())
+  opts <- trimws(strsplit(name, ";", fixed = TRUE)[[1]])
+  if (length(opts) == 2L && sum(grepl(.sn1_pattern, opts)) == 1L &&
+      sum(grepl(.sn2_pattern, opts)) == 1L &&
+      .lyso_sn_base(opts[1]) == .lyso_sn_base(opts[2])) opts else character()
+}
+
 #' Resolve sn-1/sn-2 regioisomers of lysoglycerophospholipids
 #'
 #' Lysoglycerophospholipids annotated as both regioisomers, e.g. LPC(18:1/0:0)
@@ -1754,18 +1775,11 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
 #' @param mtched_data Matched data frame
 #' @return Filtered mtched_data with resolved isomers
 resolve_lyso_sn_isomers <- function(mtched_data) {
-  # "(0:0/", "(O-0:0/", "(P-0:0/": acyl chain at sn-2
-  sn2_pattern <- "\\((O-|P-)?0:0/"
-  # "/0:0)" or "/0:0(d7)": acyl chain at sn-1
-  sn1_pattern <- "/0:0([)(])"
-  is_sn2 <- function(name) grepl(sn2_pattern, name)
-  is_sn1 <- function(name) grepl(sn1_pattern, name)
-  get_lipid_base <- function(names) {
-    gsub(sn1_pattern, "\\1", gsub(sn2_pattern, "(\\1", names))
-  }
+  is_sn2 <- function(name) grepl(.sn2_pattern, name)
+  is_sn1 <- function(name) grepl(.sn1_pattern, name)
 
   nms <- mtched_data$target_lipid_name_unique
-  base <- get_lipid_base(nms)
+  base <- .lyso_sn_base(nms)
   rt <- round(mtched_data$rtmed, 2)
   keep_row <- rep(TRUE, nrow(mtched_data))
   n_unresolved <- 0L
@@ -2365,9 +2379,9 @@ match_adducts <- function(mtched_data,
 #'
 #' Creates two Excel files for manual review of ambiguous matches:
 #'
-#' 1. **Lipid ambiguities**: One lipid matches multiple features
-#'    - May indicate isomers or incorrect matches
-#'    - User should keep the most likely match based on RT, isotope score, etc.
+#' 1. **Lipid ambiguities**: One lipid matches multiple features (any adduct)
+#'    - May indicate isomers, redundant adducts or incorrect matches
+#'    - Pre-filled to keep the feature closest to the expected RT
 #'
 #' 2. **Feature ambiguities**: One feature matches multiple lipids
 #'    - Common for isobaric species
@@ -2396,14 +2410,11 @@ export_ambiguity_tables <- function(mtched_data,
                 "isopeak_count", "isopeak_sim", "adduct_ratio", "ntch_idx")
   cols_use <- cols_amb[cols_amb %in% colnames(mtched_data)]
 
-  # Lipid ambiguities: one lipid -> multiple features
-  key <- paste(mtched_data$target_lipid_name_unique,
-               mtched_data$target_adduct, sep = "_")
+  # Lipid ambiguities: one lipid -> multiple features (any adduct)
+  key <- mtched_data$target_lipid_name_unique
   is_duplicated <- key %in% key[duplicated(key)]
   amblip <- mtched_data[is_duplicated, cols_use]
-  # Auto-resolve (Type 1): keep the feature closest to the expected RT
-  # (smallest |score_rt|). Drops redundant features of the same lipid, never a
-  # lipid; keep_row is editable.
+  # Keep the feature closest to the expected RT; ties: higher isotope similarity
   amblip$keep_row <- FALSE
   rt_dev <- if ("score_rt" %in% names(amblip)) abs(amblip$score_rt) else
     rep(0, nrow(amblip))
@@ -2411,11 +2422,8 @@ export_ambiguity_tables <- function(mtched_data,
   tie <- if ("isopeak_sim" %in% names(amblip))
     ifelse(is.na(amblip$isopeak_sim), 0, amblip$isopeak_sim) else
     rep(0, nrow(amblip))
-  alip_key <- paste(amblip$target_lipid_name_unique, amblip$target_adduct,
-                    sep = "_")
-  for (kk in unique(alip_key)) {
-    grp <- which(alip_key == kk)
-    # closest RT wins; break exact RT ties by higher isotope similarity
+  for (kk in unique(amblip$target_lipid_name_unique)) {
+    grp <- which(amblip$target_lipid_name_unique == kk)
     amblip$keep_row[grp[order(rt_dev[grp], -tie[grp])][1]] <- TRUE
   }
 
@@ -2450,53 +2458,4 @@ export_ambiguity_tables <- function(mtched_data,
     lipid_ambiguities = amblip,
     feature_ambiguities = table_amb
   ))
-}
-
-
-#' Reconnect raw SQLite spectra after loading a preprocessed experiment
-#'
-#' Alabaster can reload an MsBackendOfflineSql as a generic MsBackendCached,
-#' which retains metadata but cannot provide peaksData(). Rebuild the backend
-#' from the original SQLite file while keeping the saved, adjusted RT values.
-#' The RT range must match the filter used during preprocessing.
-restore_sqlite_spectra <- function(mse, db_path, rt_range) {
-  saved <- spectra(mse)
-  if (class(saved@backend)[1L] != "MsBackendCached") return(mse)
-
-  if (!file.exists(db_path)) stop("SQLite database not found: ", db_path)
-  if (!is.numeric(rt_range) || length(rt_range) != 2L ||
-      anyNA(rt_range) || rt_range[1L] >= rt_range[2L]) {
-    stop("rt_range must contain the preprocessing minimum and maximum RT.")
-  }
-
-  raw <- Spectra(
-    dbname = normalizePath(db_path),
-    source = MsBackendSql::MsBackendOfflineSql(),
-    drv = RSQLite::SQLite()
-  )
-  raw <- filterRt(raw, rt_range)
-  if (length(raw) != length(saved)) {
-    stop("SQLite spectra count does not match the saved experiment (",
-         length(raw), " vs ", length(saved),
-         "). Check the database and preprocessing RT filter.")
-  }
-
-  raw$rtime <- saved$rtime
-  raw$base_file <- sub(".*[\\\\/]", "", raw$dataOrigin)
-  spectra(mse) <- raw
-
-  if (!"file_name" %in% colnames(sampleData(mse))) {
-    stop("Saved sample data has no file_name column for alignment check.")
-  }
-  sample_idx <- spectraSampleIndex(mse)
-  expected_files <- as.character(sampleData(mse)$file_name[sample_idx])
-  if (length(sample_idx) != length(raw) ||
-      length(expected_files) != length(raw) || anyNA(sample_idx) ||
-      anyNA(expected_files) || anyNA(raw$base_file) ||
-      !all(expected_files == raw$base_file)) {
-    stop("SQLite spectra are not aligned with the saved sample data.")
-  }
-  Spectra::peaksData(spectra(mse)[1L])
-  message("Reconnected ", length(raw), " SQLite spectra to the saved experiment")
-  mse
 }
