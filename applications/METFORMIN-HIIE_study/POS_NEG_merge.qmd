@@ -133,39 +133,21 @@ stopifnot(all(colData(res_pos)$sample_name == colData(res_neg)$sample_name))
 Within-mode duplicates are resolved in the lipid-ambiguity step of
 `Annotation_pos.qmd` and `Annotation_neg.qmd`.
 
-# Prefer Resolved Annotations Across Modes
+# Prefer Resolved sn-1/sn-2 Annotations Across Modes
 
-A single semicolon in target_lipid_name_unique is treated as two unresolved
-options. Remove that row when either exact option occurs in the other mode,
-regardless of RT. Compute removals in both directions before changing either
-dataset.
+An unresolved lysoglycerophospholipid sn-1/sn-2 pair (e.g.
+`LPC(0:0/18:1)_1; LPC(18:1/0:0)_1`) is removed when either isomer is
+annotated in the other mode. Other merged annotations are kept. Removals are
+computed in both directions before changing either dataset.
 
 ```{r}
 #| label: prefer-resolved-sn-position
-two_annotation_options <- function(name) {
-    if (is.na(name) || !nzchar(name)) return(character())
-
-    semicolons <- gregexpr(";", name, fixed = TRUE)[[1]]
-    if (length(semicolons) != 1L || semicolons[1] < 0L)
-        return(character())
-
-    options <- trimws(strsplit(name, ";", fixed = TRUE)[[1]])
-    if (length(options) != 2L || any(!nzchar(options)))
-        return(character())
-    options
-}
-
 find_unresolved_rows <- function(ambiguous, other_mode) {
     ambiguous_name <- as.character(rowData(ambiguous)$target_lipid_name_unique)
     other_name <- as.character(rowData(other_mode)$target_lipid_name_unique)
-
-    which(vapply(seq_along(ambiguous_name), function(i) {
-        options <- two_annotation_options(ambiguous_name[i])
-        if (length(options) != 2L)
-            return(FALSE)
-
-        any(other_name %in% options)
-    }, logical(1)))
+    which(vapply(ambiguous_name, function(nm)
+        any(other_name %in% sn_pair_options(nm)), logical(1),
+        USE.NAMES = FALSE))
 }
 
 pos_unresolved <- find_unresolved_rows(res_pos, res_neg)

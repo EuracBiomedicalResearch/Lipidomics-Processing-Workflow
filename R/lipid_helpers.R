@@ -1740,6 +1740,27 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
               theoretical_spectra = theoretical_spectra_filtered))
 }
 
+# "(0:0/", "(O-0:0/", "(P-0:0/": acyl chain at sn-2
+.sn2_pattern <- "\\((O-|P-)?0:0/"
+# "/0:0)" or "/0:0(d7)": acyl chain at sn-1
+.sn1_pattern <- "/0:0([)(])"
+.lyso_sn_base <- function(names) {
+  gsub(.sn1_pattern, "\\1", gsub(.sn2_pattern, "(\\1", names))
+}
+
+#' Split a merged "A; B" annotation into its two names if it is an unresolved
+#' sn-1/sn-2 pair of the same lysoglycerophospholipid
+#'
+#' @param name A single (possibly merged) target_lipid_name_unique
+#' @return The two names, or character() if not an sn-1/sn-2 pair
+sn_pair_options <- function(name) {
+  if (is.na(name)) return(character())
+  opts <- trimws(strsplit(name, ";", fixed = TRUE)[[1]])
+  if (length(opts) == 2L && sum(grepl(.sn1_pattern, opts)) == 1L &&
+      sum(grepl(.sn2_pattern, opts)) == 1L &&
+      .lyso_sn_base(opts[1]) == .lyso_sn_base(opts[2])) opts else character()
+}
+
 #' Resolve sn-1/sn-2 regioisomers of lysoglycerophospholipids
 #'
 #' Lysoglycerophospholipids annotated as both regioisomers, e.g. LPC(18:1/0:0)
@@ -1754,18 +1775,11 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
 #' @param mtched_data Matched data frame
 #' @return Filtered mtched_data with resolved isomers
 resolve_lyso_sn_isomers <- function(mtched_data) {
-  # "(0:0/", "(O-0:0/", "(P-0:0/": acyl chain at sn-2
-  sn2_pattern <- "\\((O-|P-)?0:0/"
-  # "/0:0)" or "/0:0(d7)": acyl chain at sn-1
-  sn1_pattern <- "/0:0([)(])"
-  is_sn2 <- function(name) grepl(sn2_pattern, name)
-  is_sn1 <- function(name) grepl(sn1_pattern, name)
-  get_lipid_base <- function(names) {
-    gsub(sn1_pattern, "\\1", gsub(sn2_pattern, "(\\1", names))
-  }
+  is_sn2 <- function(name) grepl(.sn2_pattern, name)
+  is_sn1 <- function(name) grepl(.sn1_pattern, name)
 
   nms <- mtched_data$target_lipid_name_unique
-  base <- get_lipid_base(nms)
+  base <- .lyso_sn_base(nms)
   rt <- round(mtched_data$rtmed, 2)
   keep_row <- rep(TRUE, nrow(mtched_data))
   n_unresolved <- 0L

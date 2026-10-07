@@ -471,8 +471,9 @@ fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
 for (i in unique(fids_ambiguous)) {
   idxs <- which(mtched_data$feature_id == i)
   if (length(idxs) > 1) {
-    combined_names <- paste(unique(mtched_data$target_lipid_name_unique[idxs]),
-                            collapse = "; ")
+    combined_names <- paste(
+      sort(unique(mtched_data$target_lipid_name_unique[idxs])),
+      collapse = "; ")
     combined_adducts <- paste(unique(mtched_data$target_adduct[idxs]),
                               collapse = "; ")
     mtched_data$target_lipid_name_unique[idxs[1]] <- combined_names
