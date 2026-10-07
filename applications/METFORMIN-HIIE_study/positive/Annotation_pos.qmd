@@ -85,9 +85,6 @@ ISOPEAK_SIM_THRESHOLD <- 0.78
 # QC filtering
 RSD_THRESHOLD <- 0.3
 
-# Maximum RT difference for duplicate adducts of one lipid (seconds)
-ADDUCT_RT_THRESHOLD <- 4
-
 
 # Expected sample types (for validation and CV summary)
 EXPECTED_SAMPLE_TYPES <- c("QC", "Exercise", "Resting")
@@ -459,9 +456,10 @@ ambiguities <- export_ambiguity_tables(mtched_data)
 Two Excel files are generated for manual review of ambiguous annotations:
 
 1. **`lipid_ambiguity_resolution.xlsx`**: Cases where a single lipid matches
-   multiple features. `keep_row` is pre-filled: for each lipid, the feature
-   closest to the expected RT is set to `TRUE` and the others to `FALSE`.
-   Please review these decisions and edit them if needed.
+   multiple features, with the same or with different adducts. `keep_row` is
+   pre-filled: for each lipid, the feature closest to the expected RT is set
+   to `TRUE` and the others to `FALSE`. Please review these decisions and
+   edit them if needed.
 2. **`feature_ambiguity_resolution.xlsx`**: Cases where a single feature matches
    multiple lipids. If these ambiguities are not resolved, the corresponding
    entries will be merged.
@@ -495,8 +493,9 @@ fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
 for (i in unique(fids_ambiguous)) {
   idxs <- which(mtched_data$feature_id == i)
   if (length(idxs) > 1) {
-    combined_names <- paste(unique(mtched_data$target_lipid_name_unique[idxs]),
-                            collapse = "; ")
+    combined_names <- paste(
+      sort(unique(mtched_data$target_lipid_name_unique[idxs])),
+      collapse = "; ")
     combined_adducts <- paste(unique(mtched_data$target_adduct[idxs]),
                               collapse = "; ")
     mtched_data$target_lipid_name_unique[idxs[1]] <- combined_names
@@ -601,63 +600,6 @@ res_unfilt <- annotated_res
 # Apply RSD filter
 annotated_res <- filter_by_qc_rsd(annotated_res, threshold = RSD_THRESHOLD)
 annotation_report <- capture_annotation_phase(annotation_report, "qc_rsd_filtered", annotated_res)
-```
-
-## Resolve Duplicate Adducts Within Positive Mode
-
-```{r resolve-within-mode-adducts}
-#| label: resolve-within-mode-adducts
-
-# Match the mean-intensity criterion previously used by the merge workflow:
-# compare only study samples, because QC samples are absent from res_final.
-study_samples <- !is.na(annotated_res$sample_type) &
-    annotated_res$sample_type != "QC"
-stopifnot(any(study_samples))
-
-rd <- as.data.frame(rowData(annotated_res))
-lipid <- as.character(rd$target_lipid_name_unique)
-adduct <- as.character(rd$target_Adduct)
-rt <- as.numeric(rd$rtmed)
-mean_abundance <- rowMeans(
-    as.matrix(assay(annotated_res, "ISnorm_filled_imputed")[, study_samples,
-             drop = FALSE]), na.rm = TRUE
-)
-mean_abundance[!is.finite(mean_abundance)] <- -Inf
-
-valid <- !is.na(lipid) & nzchar(lipid)
-groups <- split(which(valid), lipid[valid])
-remove <- integer()
-removal_log <- list()
-
-for (idx in groups) {
-    if (length(idx) != 2L || any(!is.finite(rt[idx])) ||
-        abs(diff(rt[idx])) > ADDUCT_RT_THRESHOLD ||
-        anyNA(adduct[idx]) || adduct[idx[1]] == adduct[idx[2]]) next
-
-    winner <- idx[order(-mean_abundance[idx], idx)][1]
-    loser <- idx[idx != winner]
-    remove <- c(remove, loser)
-    removal_log[[length(removal_log) + 1L]] <- data.frame(
-        lipid_name_unique = lipid[winner],
-        removed_feature = rownames(annotated_res)[loser],
-        removed_adduct = adduct[loser],
-        retained_feature = rownames(annotated_res)[winner],
-        retained_adduct = adduct[winner],
-        rt_difference = abs(rt[loser] - rt[winner]),
-        removed_mean = mean_abundance[loser],
-        retained_mean = mean_abundance[winner]
-    )
-}
-
-cat("Removed", length(remove), "duplicate-adduct features from", POLARITY,
-    "mode\n")
-if (length(removal_log)) print(do.call(rbind, removal_log), row.names = FALSE)
-annotated_res <- annotated_res[
-    base::setdiff(seq_len(nrow(annotated_res)), remove), , drop = FALSE
-]
-annotation_report <- capture_annotation_phase(
-  annotation_report, "within_mode_adduct_resolution", annotated_res
-)
 ```
 
 ## Quality Assessment Plots

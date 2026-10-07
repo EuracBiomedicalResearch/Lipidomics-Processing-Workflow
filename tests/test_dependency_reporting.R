@@ -16,24 +16,33 @@ fixture <- function(ids, lipid, adduct, rt, study, qc) {
   rownames(x) <- ids
   x
 }
-annotated_res <- fixture(c("P1", "P2", "P3", "P4"),
-  c("A", "A", "B; C", "D"), c("H", "Na", "H", "H"), c(10, 12, 20, 30),
-  c(10, 5, 10, 10), c(1, 1000, 1, 1))
-POLARITY <- "pos"; ADDUCT_RT_THRESHOLD <- 4
-annotation_report <- new_annotation_report("TEST", "positive")
-eval(parse(text = chunk_code("applications/MICROSAMPLING_study/positive/Annotation_pos.qmd",
-                             "resolve-within-mode-adducts")))
-stopifnot(identical(rownames(annotated_res), c("P1", "P3", "P4")),
-          annotation_report_summary(annotation_report)$features == 3L)
-res_pos <- annotated_res[, 1L, drop = FALSE]
-res_neg <- fixture(c("N1", "N2"), c("B", "D"), c("H", "H"), c(999, 1000),
-                   c(10, 100), c(1, 1))[, 1L, drop = FALSE]
+# Lipid ambiguities now span adducts and select closest RT, with isotope ties.
+candidates <- data.frame(feature_id = c("P1", "P2", "P3", "P4", "P5"),
+  target_lipid_name_unique = c("A", "A", "B", "B", "C"),
+  target_adduct = c("H", "Na", "H", "Na", "H"),
+  score_rt = c(2, 1, -1, 1, 0), isopeak_sim = c(1, .9, .8, .95, 1))
+folder <- tempfile(); dir.create(folder)
+ambiguities <- export_ambiguity_tables(candidates, output_dir = folder, verbose = FALSE)
+unlink(folder, recursive = TRUE)
+stopifnot(identical(ambiguities$lipid_ambiguities$feature_id, c("P1", "P2", "P3", "P4")),
+          identical(ambiguities$lipid_ambiguities$keep_row, c(FALSE, TRUE, FALSE, TRUE)))
+# Only genuine sn-1/sn-2 pairs are replaced across modes; other ambiguities survive.
+pair <- "LPC(0:0/18:1)_1; LPC(18:1/0:0)_1"
+stopifnot(length(sn_pair_options(pair)) == 2L,
+          length(sn_pair_options("A; B")) == 0L,
+          length(sn_pair_options("LPC(0:0/18:1)_1; LPC(18:2/0:0)_1")) == 0L,
+          length(sn_pair_options(NA_character_)) == 0L)
+res_pos <- fixture(c("P1", "P3", "P4", "P5"),
+  c("A", "B; C", "D", pair), rep("H", 4), c(10, 20, 30, 40),
+  rep(10, 4), rep(1, 4))[, 1L, drop = FALSE]
+res_neg <- fixture(c("N1", "N2", "N3"), c("B", "D", "LPC(18:1/0:0)_1"),
+  rep("H", 3), c(999, 1000, 1100), c(10, 100, 10), rep(1, 3))[, 1L, drop = FALSE]
 merge_report <- new_annotation_report("TEST", "merged")
 for (label in c("prefer-resolved-sn-position", "find-duplicates", "remove-duplicates")) {
   eval(parse(text = chunk_code("applications/MICROSAMPLING_study/POS_NEG_merge.qmd", label)))
 }
-stopifnot(identical(rownames(res_pos_filtered), "P1"),
-          identical(rownames(res_neg_filtered), c("N1", "N2")),
-          nrow(merge_report$phases$resolved_annotation_preference$data) == 4L,
+stopifnot(identical(rownames(res_pos_filtered), c("P1", "P3")),
+          identical(rownames(res_neg_filtered), c("N1", "N2", "N3")),
+          nrow(merge_report$phases$resolved_annotation_preference$data) == 6L,
           comparison_df$rt_diff == 970, comparison_df$keep_mode == "negative")
-cat("PASS: within-mode dedup excludes QC, resolved annotations replace ambiguous rows, and cross-mode dedup ignores RT eligibility\n")
+cat("PASS: ambiguity resolution spans adducts, only sn-isomer pairs are replaced, and cross-mode dedup ignores RT eligibility\n")

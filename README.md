@@ -93,7 +93,7 @@ mamba env create --file environment.yml
 If Mamba is unavailable, use `conda env create --file environment.yml`
 instead. This step is only required **once**.
 
-Activate the Conda environment. This steps should be done each time **before**
+Activate the Conda environment. This step must be done each time **before**
 running R or Quarto. Eventually deactivate the conda environment after running
 the workflows to restore the default system setup (using `conda deactivate`).
 
@@ -101,7 +101,7 @@ the workflows to restore the default system setup (using `conda deactivate`).
 conda activate cembio_eurac
 ```
 
-Setup or restore the R package library and verify the complete installation:
+Set up or restore the R package library and verify the complete installation:
 
 ```bash
 Rscript scripts/bootstrap_environment.R
@@ -109,9 +109,9 @@ Rscript scripts/check_environment.R
 ```
 
 The first time these commands are executed, all required R packages are
-installed. Any subsequent call with restore the cached libraries.
+installed. Any subsequent call will restore the cached libraries.
 
-Starting R in the base folder of the repository will automatically setup and
+Starting R in the base folder of the repository will automatically set up and
 load the environment (pre-configured by the *renv.lock* file).
 
 ### 2. Prepare Input Files
@@ -155,12 +155,16 @@ the base directory of the repository.
 **Example: run the MICROSAMPLING study**
 
 1. Activate the Conda environment set up in step 1: `conda activate cembio_eurac`.
-2. Start R in the base directory of the repository and run:
-3. `r quarto::quarto_render("applications/MICROSAMPLING_study/positive/Preprocessing_pos.qmd")`
-4. `r quarto::quarto_render("applications/MICROSAMPLING_study/positive/Annotation_pos.qmd")`
-5. `r quarto::quarto_render("applications/MICROSAMPLING_study/negative/Preprocessing_neg.qmd")`
-6. `r quarto::quarto_render("applications/MICROSAMPLING_study/negative/Annotation_neg.qmd")`
-7. `r quarto::quarto_render("applications/MICROSAMPLING_study/POS_NEG_merge.qmd")`
+2. Start R in the base directory of the repository and render the documents in
+   this order:
+
+   ```r
+   quarto::quarto_render("applications/MICROSAMPLING_study/positive/Preprocessing_pos.qmd")
+   quarto::quarto_render("applications/MICROSAMPLING_study/positive/Annotation_pos.qmd")
+   quarto::quarto_render("applications/MICROSAMPLING_study/negative/Preprocessing_neg.qmd")
+   quarto::quarto_render("applications/MICROSAMPLING_study/negative/Annotation_neg.qmd")
+   quarto::quarto_render("applications/MICROSAMPLING_study/POS_NEG_merge.qmd")
+   ```
 
 #### Annotation metrics
 

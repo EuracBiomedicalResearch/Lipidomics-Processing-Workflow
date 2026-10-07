@@ -1826,6 +1826,27 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
               theoretical_spectra = theoretical_spectra_filtered))
 }
 
+# "(0:0/", "(O-0:0/", "(P-0:0/": acyl chain at sn-2
+.sn2_pattern <- "\\((O-|P-)?0:0/"
+# "/0:0)" or "/0:0(d7)": acyl chain at sn-1
+.sn1_pattern <- "/0:0([)(])"
+.lyso_sn_base <- function(names) {
+  gsub(.sn1_pattern, "\\1", gsub(.sn2_pattern, "(\\1", names))
+}
+
+#' Split a merged "A; B" annotation into its two names if it is an unresolved
+#' sn-1/sn-2 pair of the same lysoglycerophospholipid
+#'
+#' @param name A single (possibly merged) target_lipid_name_unique
+#' @return The two names, or character() if not an sn-1/sn-2 pair
+sn_pair_options <- function(name) {
+  if (is.na(name)) return(character())
+  opts <- trimws(strsplit(name, ";", fixed = TRUE)[[1]])
+  if (length(opts) == 2L && sum(grepl(.sn1_pattern, opts)) == 1L &&
+      sum(grepl(.sn2_pattern, opts)) == 1L &&
+      .lyso_sn_base(opts[1]) == .lyso_sn_base(opts[2])) opts else character()
+}
+
 #' Resolve sn-1/sn-2 regioisomers of lysoglycerophospholipids
 #'
 #' Lysoglycerophospholipids annotated as both regioisomers, e.g. LPC(18:1/0:0)
@@ -1840,18 +1861,11 @@ calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
 #' @param mtched_data Matched data frame
 #' @return Filtered mtched_data with resolved isomers
 resolve_lyso_sn_isomers <- function(mtched_data) {
-  # "(0:0/", "(O-0:0/", "(P-0:0/": acyl chain at sn-2
-  sn2_pattern <- "\\((O-|P-)?0:0/"
-  # "/0:0)" or "/0:0(d7)": acyl chain at sn-1
-  sn1_pattern <- "/0:0([)(])"
-  is_sn2 <- function(name) grepl(sn2_pattern, name)
-  is_sn1 <- function(name) grepl(sn1_pattern, name)
-  get_lipid_base <- function(names) {
-    gsub(sn1_pattern, "\\1", gsub(sn2_pattern, "(\\1", names))
-  }
+  is_sn2 <- function(name) grepl(.sn2_pattern, name)
+  is_sn1 <- function(name) grepl(.sn1_pattern, name)
 
   nms <- mtched_data$target_lipid_name_unique
-  base <- get_lipid_base(nms)
+  base <- .lyso_sn_base(nms)
   rt <- round(mtched_data$rtmed, 2)
   keep_row <- rep(TRUE, nrow(mtched_data))
   n_unresolved <- 0L
@@ -2454,9 +2468,9 @@ match_adducts <- function(mtched_data,
 #'
 #' Creates two Excel files for manual review of ambiguous matches:
 #'
-#' 1. **Lipid ambiguities**: One lipid matches multiple features
-#'    - May indicate isomers or incorrect matches
-#'    - User should keep the most likely match based on RT, isotope score, etc.
+#' 1. **Lipid ambiguities**: One lipid matches multiple features (any adduct)
+#'    - May indicate isomers, redundant adducts or incorrect matches
+#'    - Pre-filled to keep the feature closest to the expected RT
 #'
 #' 2. **Feature ambiguities**: One feature matches multiple lipids
 #'    - Common for isobaric species
@@ -2485,26 +2499,20 @@ export_ambiguity_tables <- function(mtched_data,
                 "isopeak_count", "isopeak_sim", "adduct_ratio", "ntch_idx")
   cols_use <- cols_amb[cols_amb %in% colnames(mtched_data)]
 
-  # Lipid ambiguities: one lipid -> multiple features
-  key <- paste(mtched_data$target_lipid_name_unique,
-               mtched_data$target_adduct, sep = "_")
+  # Lipid ambiguities: one lipid -> multiple features (any adduct)
+  key <- mtched_data$target_lipid_name_unique
   is_duplicated <- key %in% key[duplicated(key)]
   amblip <- mtched_data[is_duplicated, cols_use]
-  # Auto-resolve (Type 1): keep the feature closest to the expected RT
-  # (smallest |score_rt|). Drops redundant features of the same lipid, never a
-  # lipid; keep_row is editable.
-  amblip$keep_row <- FALSE
+  # Keep the feature closest to the expected RT; ties: higher isotope similarity
+  amblip$keep_row <- rep(FALSE, nrow(amblip))
   rt_dev <- if ("score_rt" %in% names(amblip)) abs(amblip$score_rt) else
     rep(0, nrow(amblip))
   rt_dev[is.na(rt_dev)] <- Inf
   tie <- if ("isopeak_sim" %in% names(amblip))
     ifelse(is.na(amblip$isopeak_sim), 0, amblip$isopeak_sim) else
     rep(0, nrow(amblip))
-  alip_key <- paste(amblip$target_lipid_name_unique, amblip$target_adduct,
-                    sep = "_")
-  for (kk in unique(alip_key)) {
-    grp <- which(alip_key == kk)
-    # closest RT wins; break exact RT ties by higher isotope similarity
+  for (kk in unique(amblip$target_lipid_name_unique)) {
+    grp <- which(amblip$target_lipid_name_unique == kk)
     amblip$keep_row[grp[order(rt_dev[grp], -tie[grp])][1]] <- TRUE
   }
 
@@ -2513,7 +2521,7 @@ export_ambiguity_tables <- function(mtched_data,
   fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
   table_amb <- mtched_data[mtched_data$feature_id %in% fids_ambiguous, cols_use]
   table_amb <- table_amb[order(table_amb$feature_id), ]
-  table_amb$keep_row <- TRUE
+  table_amb$keep_row <- rep(TRUE, nrow(table_amb))
 
   # Export files
   if (nrow(amblip) > 0) {
