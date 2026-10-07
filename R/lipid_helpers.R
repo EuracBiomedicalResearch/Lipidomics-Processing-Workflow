@@ -1674,7 +1674,7 @@ match_features_to_database <- function(res,
 calculate_isotope_similarity <- function(mse, mtched_data, polarity = "pos",
                                          isopeak_threshold = 2,
                                          similarity_threshold = 0.78,
-                                         BPPARAM =BiocParallel::SerialParam()) {
+                                         BPPARAM = BiocParallel::SerialParam()) {
   data(isotopes, package = "enviPat", envir = environment())
 
   # Set charge based on polarity
@@ -2450,53 +2450,4 @@ export_ambiguity_tables <- function(mtched_data,
     lipid_ambiguities = amblip,
     feature_ambiguities = table_amb
   ))
-}
-
-
-#' Reconnect raw SQLite spectra after loading a preprocessed experiment
-#'
-#' Alabaster can reload an MsBackendOfflineSql as a generic MsBackendCached,
-#' which retains metadata but cannot provide peaksData(). Rebuild the backend
-#' from the original SQLite file while keeping the saved, adjusted RT values.
-#' The RT range must match the filter used during preprocessing.
-restore_sqlite_spectra <- function(mse, db_path, rt_range) {
-  saved <- spectra(mse)
-  if (class(saved@backend)[1L] != "MsBackendCached") return(mse)
-
-  if (!file.exists(db_path)) stop("SQLite database not found: ", db_path)
-  if (!is.numeric(rt_range) || length(rt_range) != 2L ||
-      anyNA(rt_range) || rt_range[1L] >= rt_range[2L]) {
-    stop("rt_range must contain the preprocessing minimum and maximum RT.")
-  }
-
-  raw <- Spectra(
-    dbname = normalizePath(db_path),
-    source = MsBackendSql::MsBackendOfflineSql(),
-    drv = RSQLite::SQLite()
-  )
-  raw <- filterRt(raw, rt_range)
-  if (length(raw) != length(saved)) {
-    stop("SQLite spectra count does not match the saved experiment (",
-         length(raw), " vs ", length(saved),
-         "). Check the database and preprocessing RT filter.")
-  }
-
-  raw$rtime <- saved$rtime
-  raw$base_file <- sub(".*[\\\\/]", "", raw$dataOrigin)
-  spectra(mse) <- raw
-
-  if (!"file_name" %in% colnames(sampleData(mse))) {
-    stop("Saved sample data has no file_name column for alignment check.")
-  }
-  sample_idx <- spectraSampleIndex(mse)
-  expected_files <- as.character(sampleData(mse)$file_name[sample_idx])
-  if (length(sample_idx) != length(raw) ||
-      length(expected_files) != length(raw) || anyNA(sample_idx) ||
-      anyNA(expected_files) || anyNA(raw$base_file) ||
-      !all(expected_files == raw$base_file)) {
-    stop("SQLite spectra are not aligned with the saved sample data.")
-  }
-  Spectra::peaksData(spectra(mse)[1L])
-  message("Reconnected ", length(raw), " SQLite spectra to the saved experiment")
-  mse
 }
