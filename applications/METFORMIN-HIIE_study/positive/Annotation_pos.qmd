@@ -85,6 +85,7 @@ ISOPEAK_SIM_THRESHOLD <- 0.78
 # QC filtering
 RSD_THRESHOLD <- 0.3
 
+
 # Expected sample types (for validation and CV summary)
 EXPECTED_SAMPLE_TYPES <- c("QC", "Exercise", "Resting")
 
@@ -433,9 +434,10 @@ ambiguities <- export_ambiguity_tables(mtched_data)
 Two Excel files are generated for manual review of ambiguous annotations:
 
 1. **`lipid_ambiguity_resolution.xlsx`**: Cases where a single lipid matches
-   multiple features. `keep_row` is pre-filled: for each lipid, the feature
-   closest to the expected RT is set to `TRUE` and the others to `FALSE`.
-   Please review these decisions and edit them if needed.
+   multiple features, with the same or with different adducts. `keep_row` is
+   pre-filled: for each lipid, the feature closest to the expected RT is set
+   to `TRUE` and the others to `FALSE`. Please review these decisions and
+   edit them if needed.
 2. **`feature_ambiguity_resolution.xlsx`**: Cases where a single feature matches
    multiple lipids. If these ambiguities are not resolved, the corresponding
    entries will be merged.
@@ -469,8 +471,9 @@ fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
 for (i in unique(fids_ambiguous)) {
   idxs <- which(mtched_data$feature_id == i)
   if (length(idxs) > 1) {
-    combined_names <- paste(unique(mtched_data$target_lipid_name_unique[idxs]),
-                            collapse = "; ")
+    combined_names <- paste(
+      sort(unique(mtched_data$target_lipid_name_unique[idxs])),
+      collapse = "; ")
     combined_adducts <- paste(unique(mtched_data$target_adduct[idxs]),
                               collapse = "; ")
     mtched_data$target_lipid_name_unique[idxs[1]] <- combined_names
@@ -673,8 +676,33 @@ res_final <- annotated_res[, annotated_res$sample_type != "QC"]
 rowData(res_final)$qc_cv <- assay(res_qc, "ISnorm_filled") |> rowRsd()
 
 # save objects
-saveObject(res_final, file.path(folders$objects,
-                                paste0(STUDY_ID, "_final_res_", POLARITY)))
+res_final_path <- file.path(folders$objects, paste0(STUDY_ID, "_final_res_", POLARITY))
+replace_saved_directory(res_final_path, function(path) saveObject(res_final, path))
+```
+
+## Export Annotated Abundances
+
+```{r export-annotated-xlsx}
+#| label: export-annotated-xlsx
+
+annot_cols <- intersect(
+  c("target_lipid.name", "target_lipid_name_unique",
+    "target_LIPID.CATEGORY..ABBREV.", "target_LIPID.SUBCLASS..ABBREV.",
+    "target_Adduct", "target_IS_norm", "mzmed", "rtmed", "qc_cv"),
+  colnames(rowData(res_final))
+)
+export_df <- cbind(
+  data.frame(feature_id = rownames(res_final),
+             as.data.frame(rowData(res_final)[, annot_cols, drop = FALSE]),
+             check.names = FALSE),
+  as.data.frame(assay(res_final, "ISnorm_filled_imputed"),
+                check.names = FALSE)
+)
+xlsx_path <- file.path(folders$objects,
+                       paste0(STUDY_ID, "_annotated_compounds_abundances_",
+                              POLARITY, ".xlsx"))
+writexl::write_xlsx(export_df, path = xlsx_path)
+cat("Saved annotated abundances to:", xlsx_path, "\n")
 ```
 
 ## Session Info

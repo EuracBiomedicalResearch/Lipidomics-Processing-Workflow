@@ -1,0 +1,51 @@
+Package: CEMBIOEURAC
+Type: Project
+Title: Reproducible Environment for the CEMBIO-EURAC Workflow
+Version: 0.0.0.9000
+Authors@R: person("CEMBIO-EURAC", "Team", role = c("aut", "cre"),
+    email = "noreply@example.org")
+Description: Dependency manifest for the untargeted LC-MS lipidomics
+    preprocessing, annotation, and cross-ionization-mode integration workflow.
+License: CC BY 4.0
+Encoding: UTF-8
+Depends:
+    R (== 4.6.0)
+Imports:
+    alabaster.se,
+    AnnotationHub,
+    BiocFileCache,
+    BiocManager,
+    BiocParallel,
+    CompoundDb,
+    dbplyr,
+    dplyr,
+    enviPat,
+    ggfortify,
+    ggplot2,
+    ggVennDiagram,
+    gridExtra,
+    knitr,
+    limma,
+    matrixStats,
+    MetaboAnnotation,
+    MetaboCoreUtils,
+    MsBackendMetaboLights (== 1.5.2),
+    MsBackendSql,
+    MsExperiment,
+    MsIO (== 0.0.17),
+    quarto,
+    pander,
+    pheatmap,
+    RColorBrewer,
+    Rcpp,
+    readxl,
+    rmarkdown,
+    RSQLite,
+    scam,
+    Spectra,
+    SummarizedExperiment,
+    tictoc,
+    UpSetR,
+    vioplot,
+    writexl,
+    xcms
