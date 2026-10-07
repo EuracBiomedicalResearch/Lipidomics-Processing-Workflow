@@ -1,0 +1,32 @@
+name: cembio_eurac
+
+channels:
+  - conda-forge
+
+# Conda owns the R/Quarto runtime and native build dependencies. R package
+# versions are owned by renv.lock; keeping them out of this file prevents the
+# two package managers from competing over the same libraries.
+#
+# This specification is tested on linux-64.
+dependencies:
+  - r-base=4.6.0
+  - quarto=1.9.38
+  - pandoc=3.8.3
+  - git=2.55.0
+  - make=4.4.1
+  - pkg-config=0.29.2
+  - expat=2.8.4
+  - glib=2.90.0
+  - freetype=2.14.3
+  - c-compiler=2.0.0
+  - cxx-compiler=2.0.0
+  - fortran-compiler=2.0.0
+  - libcurl=8.22.0
+  - harfbuzz=14.5.0
+  - libgit2=1.9.7
+  - libuv=1.52.1
+  - librsvg=2.62.4
+  - libnetcdf=4.10.1
+  - libxml2-devel=2.15.4
+  - openssl=3.6.4
+  - zlib=1.3.2

@@ -75,29 +75,44 @@ CEMBIO-EURAC/
 
 ## Quick Start
 
-### 1. Prerequisites
+### 1. The Reproducible Environment
 
-Install required R packages:
+The project uses two complementary environment layers:
 
-```r
-# Bioconductor packages
-BiocManager::install(c(
-  "MsExperiment", "alabaster.se", "MsBackendMetaboLights",
-  "SummarizedExperiment", "xcms", "Spectra", "MetaboCoreUtils",
-  "limma", "matrixStats", "BiocFileCache", "AnnotationHub",
-  "CompoundDb", "MetaboAnnotation"
-))
+- Conda supplies R 4.6.0, Quarto, compilers, and native libraries from
+  `environment.yml`.
+- `renv` supplies the exact CRAN, Bioconductor 3.23, and GitHub package
+  versions recorded in `renv.lock`.
 
-# MsIO — pin to version 0.0.15
-remotes::install_version("MsIO", version = "0.0.15")
+From the repository root, create the Conda environment:
 
-# CRAN packages
-install.packages(c(
-  "knitr", "readxl", "writexl", "pander", "RColorBrewer",
-  "pheatmap", "vioplot", "ggplot2", "ggfortify", "gridExtra",
-  "enviPat", "ggVennDiagram", "UpSetR", "dbplyr"
-))
+```bash
+mamba env create --file environment.yml
 ```
+
+If Mamba is unavailable, use `conda env create --file environment.yml`
+instead. This step is only required **once**.
+
+Activate the Conda environment. This step must be done each time **before**
+running R or Quarto. Eventually deactivate the conda environment after running
+the workflows to restore the default system setup (using `conda deactivate`).
+
+```bash
+conda activate cembio_eurac
+```
+
+Set up or restore the R package library and verify the complete installation:
+
+```bash
+Rscript scripts/bootstrap_environment.R
+Rscript scripts/check_environment.R
+```
+
+The first time these commands are executed, all required R packages are
+installed. Any subsequent call will restore the cached libraries.
+
+Starting R in the base folder of the repository will automatically set up and
+load the environment (pre-configured by the *renv.lock* file).
 
 ### 2. Prepare Input Files
 
@@ -128,13 +143,28 @@ so parameter choices are fully traceable.
 | 2 | `positive/Annotation_pos.qmd`, `negative/Annotation_neg.qmd` | SRM1950 Database RT adjustment, Multi-evidence annotation, normalization, QC |
 | 3 | `POS_NEG_merge.qmd` | Positive and negative ionization mode integration for coverage reporting and downstream analysis |
 
+The MICROSAMPLING preprocessing documents retrieve their mzML files from the
+public MetaboLights study `MTBLS10722`. The first positive and negative
+preprocessing runs download 48 files per polarity (approximately 2 GB total)
+into the user's BiocFileCache, normally `~/.cache/R/BiocFileCache`. Later runs
+reuse the cached files.
+
+To ensure the reproducible R environment setup from step 1 is used, start R in
+the base directory of the repository.
+
 **Example: run the MICROSAMPLING study**
 
-1. Render `applications/MICROSAMPLING_study/positive/Preprocessing_pos.qmd`
-2. Render `applications/MICROSAMPLING_study/positive/Annotation_pos.qmd`
-3. Render `applications/MICROSAMPLING_study/negative/Preprocessing_neg.qmd`
-4. Render `applications/MICROSAMPLING_study/negative/Annotation_neg.qmd`
-5. Render `applications/MICROSAMPLING_study/POS_NEG_merge.qmd`
+1. Activate the Conda environment set up in step 1: `conda activate cembio_eurac`.
+2. Start R in the base directory of the repository and render the documents in
+   this order:
+
+   ```r
+   quarto::quarto_render("applications/MICROSAMPLING_study/positive/Preprocessing_pos.qmd")
+   quarto::quarto_render("applications/MICROSAMPLING_study/positive/Annotation_pos.qmd")
+   quarto::quarto_render("applications/MICROSAMPLING_study/negative/Preprocessing_neg.qmd")
+   quarto::quarto_render("applications/MICROSAMPLING_study/negative/Annotation_neg.qmd")
+   quarto::quarto_render("applications/MICROSAMPLING_study/POS_NEG_merge.qmd")
+   ```
 
 ### 4. Start a New Study
 
@@ -186,6 +216,13 @@ RSD_THRESHOLD <- 0.3        # QC RSD filter (30%)
 ```
 
 ---
+
+## 🆘 Troubleshooting
+
+- The `quarto_render()` call does not run R from the configured environment
+  (*Quick start*, point 1.): check if an environment variable `QUARTO_R` is set
+  (e.g. using `Sys.getenv("QUARTO_R")` in R or `echo $QUARTO_R` in a shell) and
+  if so, *unset* it.
 
 ## References
 

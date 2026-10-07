@@ -80,6 +80,7 @@ ISOPEAK_SIM_THRESHOLD <- 0.78  # minimum isotope pattern similarity
 # QC filtering
 RSD_THRESHOLD <- 0.3   # 30% RSD threshold for QC filtering
 
+
 # Expected sample types (for validation and CV summary)
 EXPECTED_SAMPLE_TYPES <- c("QC")  # e.g., c("QC", "Treatment", "Control")
 
@@ -169,7 +170,7 @@ message("  - SummarizedExperiment: ", nrow(res), " features x ",
 
 # SRM 1950 Database RT adjustment
 
-By default, the code fits a SCAM model to the lipid reference set and uses the 
+By default, the code fits a SCAM model to the lipid reference set and uses the
 observed retention time shifts to adjust the SRM 1950 database RT.
 
 ```{r rt-adjustment-fit}
@@ -425,9 +426,10 @@ ambiguities <- export_ambiguity_tables(mtched_data)
 Two Excel files are generated for manual review of ambiguous annotations:
 
 1. **`lipid_ambiguity_resolution.xlsx`**: Cases where a single lipid matches
-   multiple features. `keep_row` is pre-filled: for each lipid, the feature
-   closest to the expected RT is set to `TRUE` and the others to `FALSE`.
-   Please review these decisions and edit them if needed.
+   multiple features, with the same or with different adducts. `keep_row` is
+   pre-filled: for each lipid, the feature closest to the expected RT is set
+   to `TRUE` and the others to `FALSE`. Please review these decisions and
+   edit them if needed.
 2. **`feature_ambiguity_resolution.xlsx`**: Cases where a single feature matches
    multiple lipids. If these ambiguities are not resolved, the corresponding
    entries will be merged.
@@ -461,8 +463,9 @@ fids_ambiguous <- mtched_data$feature_id[duplicated(mtched_data$feature_id)]
 for (i in unique(fids_ambiguous)) {
   idxs <- which(mtched_data$feature_id == i)
   if (length(idxs) > 1) {
-    combined_names <- paste(unique(mtched_data$target_lipid_name_unique[idxs]),
-                            collapse = "; ")
+    combined_names <- paste(
+      sort(unique(mtched_data$target_lipid_name_unique[idxs])),
+      collapse = "; ")
     combined_adducts <- paste(unique(mtched_data$target_adduct[idxs]),
                               collapse = "; ")
     mtched_data$target_lipid_name_unique[idxs[1]] <- combined_names
