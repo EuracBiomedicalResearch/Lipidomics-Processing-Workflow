@@ -171,13 +171,14 @@ annotation_reference_comparison <- function(report) {
     matched <- sum(matching_pairs)
     matched_features <- length(unique(pairs$feature_key[matching_pairs]))
     alternative <- sum(on_curated & !pairs$pair_key %in% truth_pairs$pair_key)
+    false_positive <- sum(!matching_pairs)
     missed <- sum(!truth_pairs$pair_key %in% pairs$pair_key)
     data.frame(polarity = report$polarity, phase = phase,
                curated_matches = matched_features, alternative_assignments = alternative,
                uncurated_assignments = sum(!on_curated), missed_curated_pairs = missed,
-               precision = ratio(matched, matched + alternative),
+               precision = ratio(matched, matched + false_positive),
                recall = ratio(matched, nrow(truth_pairs)),
-               f1 = ratio(2 * matched, 2 * matched + alternative + missed))
+               f1 = ratio(2 * matched, 2 * matched + false_positive + missed))
   }))
 }
 
@@ -223,11 +224,11 @@ annotation_metrics_descriptions <- c(
   features = "Distinct detected features remaining, including standards until their removal phase.",
   removed_features = "Features from the preceding stage absent here. Blank for the first row of each polarity.",
   curated_matches = "Distinct features with at least one lipid assignment matching the post-QC curated reference. Ambiguous features count once.",
-  uncurated_assignments = "Assignments on features outside the post-QC reference; excluded from precision.",
+  uncurated_assignments = "Feature-lipid pairs on features outside the post-QC reference; counted as false positives.",
   missed_curated_pairs = "Post-QC curated reference pairs not recovered by this stage.",
-  precision = "Matching feature-lipid pairs / (matching + alternative pairs), on curated features only.",
-  recall = "Matching feature-lipid pairs / all post-QC curated reference pairs.",
-  f1 = "Harmonic mean of precision and recall.",
+  precision = "TP / (TP + FP), using feature-lipid pairs. FP includes every predicted pair absent from the post-QC reference.",
+  recall = "TP / (TP + FN), using reference pairs. FN is missed reference pairs; false positives do not enter recall.",
+  f1 = "2 TP / (2 TP + FP + FN), using pairs. FP includes all non-reference predictions; FN is missed reference pairs.",
   feature_id = "Detected feature identifier; use polarity with this ID to identify a feature.",
   annotation = "Lipid annotation name, including RT-specific suffixes; unresolved alternatives separated by semicolons.",
   adduct = "Assigned adduct, or semicolon-separated alternatives.",
@@ -248,7 +249,7 @@ annotation_metrics_payload <- function(tables) {
            paste("Agreement with manually curated feature-lipid assignments retained after QC RSD filtering,",
                  "not independent chemical ground truth or database accuracy.",
                  "Reference snapshot: qc_rsd_filtered. Internal standards excluded.",
-                 "Assignments outside this reference are not treated as wrong.") else NULL,
+                 "All predicted pairs absent from this reference count as false positives for these metrics.") else NULL,
          rows = unname(lapply(seq_len(nrow(d)), function(i) unname(as.list(d[i, ])))))
   })
   list(sheets = sheets)

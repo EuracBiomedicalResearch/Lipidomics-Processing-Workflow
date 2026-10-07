@@ -61,10 +61,10 @@ stopifnot(identical(names(comparison), c("polarity", "phase", "curated_matches",
           "uncurated_assignments", "missed_curated_pairs", "precision", "recall", "f1")),
           first$curated_matches == 1L,
           first$uncurated_assignments == 2L, first$missed_curated_pairs == 0L,
-          first$precision == 0.5, first$recall == 1,
-          abs(first$f1 - 2/3) < 1e-12,
+          first$precision == 0.25, first$recall == 1,
+          abs(first$f1 - 0.4) < 1e-12,
           all(comparison$curated_matches[comparison$phase == "manual_curation"] == 1L),
-          all(comparison$precision[comparison$phase == "manual_curation"] == 1),
+          all(comparison$precision[comparison$phase == "manual_curation"] == 1/3),
           all(comparison$recall[comparison$phase == "manual_curation"] == 1))
 qc_without_standards <- positive
 qc_without_standards$phases$qc_rsd_filtered$data <-
@@ -84,9 +84,9 @@ ambiguous_report <- capture_annotation_phase(ambiguous_report, "within_mode_addu
   make_input("FT1", "A_1; B_1"))
 ambiguous_comparison <- annotation_reference_comparison(ambiguous_report)
 stopifnot(identical(ambiguous_comparison$curated_matches, c(1L, 2L)),
-          ambiguous_comparison$precision[1] == 0.5,
+          ambiguous_comparison$precision[1] == 0.4,
           abs(ambiguous_comparison$recall[1] - 2/3) < 1e-12,
-          abs(ambiguous_comparison$f1[1] - 4/7) < 1e-12)
+          abs(ambiguous_comparison$f1[1] - 0.5) < 1e-12)
 empty <- make_input(character(), character())
 empty_report <- new_annotation_report("TEST", "positive")
 empty_report <- capture_annotation_phase(empty_report, "rank1_mz_rt", empty)
