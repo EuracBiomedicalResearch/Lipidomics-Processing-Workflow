@@ -123,8 +123,8 @@ res_neg <- res_neg[, match(pos_samples, neg_samples)]
 stopifnot(all(colData(res_pos)$sample_name == colData(res_neg)$sample_name))
 ```
 
-Within-mode adduct duplicates are resolved in `Annotation_pos.qmd` and
-`Annotation_neg.qmd` before these result objects are saved.
+Within-mode duplicates are resolved in the lipid-ambiguity step of
+`Annotation_pos.qmd` and `Annotation_neg.qmd`.
 
 # Prefer Resolved Annotations Across Modes
 

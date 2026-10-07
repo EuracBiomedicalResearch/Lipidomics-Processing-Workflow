@@ -2365,9 +2365,9 @@ match_adducts <- function(mtched_data,
 #'
 #' Creates two Excel files for manual review of ambiguous matches:
 #'
-#' 1. **Lipid ambiguities**: One lipid matches multiple features
-#'    - May indicate isomers or incorrect matches
-#'    - User should keep the most likely match based on RT, isotope score, etc.
+#' 1. **Lipid ambiguities**: One lipid matches multiple features (any adduct)
+#'    - May indicate isomers, redundant adducts or incorrect matches
+#'    - Pre-filled to keep the feature closest to the expected RT
 #'
 #' 2. **Feature ambiguities**: One feature matches multiple lipids
 #'    - Common for isobaric species
@@ -2396,14 +2396,11 @@ export_ambiguity_tables <- function(mtched_data,
                 "isopeak_count", "isopeak_sim", "adduct_ratio", "ntch_idx")
   cols_use <- cols_amb[cols_amb %in% colnames(mtched_data)]
 
-  # Lipid ambiguities: one lipid -> multiple features
-  key <- paste(mtched_data$target_lipid_name_unique,
-               mtched_data$target_adduct, sep = "_")
+  # Lipid ambiguities: one lipid -> multiple features (any adduct)
+  key <- mtched_data$target_lipid_name_unique
   is_duplicated <- key %in% key[duplicated(key)]
   amblip <- mtched_data[is_duplicated, cols_use]
-  # Auto-resolve (Type 1): keep the feature closest to the expected RT
-  # (smallest |score_rt|). Drops redundant features of the same lipid, never a
-  # lipid; keep_row is editable.
+  # Keep the feature closest to the expected RT; ties: higher isotope similarity
   amblip$keep_row <- FALSE
   rt_dev <- if ("score_rt" %in% names(amblip)) abs(amblip$score_rt) else
     rep(0, nrow(amblip))
@@ -2411,11 +2408,8 @@ export_ambiguity_tables <- function(mtched_data,
   tie <- if ("isopeak_sim" %in% names(amblip))
     ifelse(is.na(amblip$isopeak_sim), 0, amblip$isopeak_sim) else
     rep(0, nrow(amblip))
-  alip_key <- paste(amblip$target_lipid_name_unique, amblip$target_adduct,
-                    sep = "_")
-  for (kk in unique(alip_key)) {
-    grp <- which(alip_key == kk)
-    # closest RT wins; break exact RT ties by higher isotope similarity
+  for (kk in unique(amblip$target_lipid_name_unique)) {
+    grp <- which(amblip$target_lipid_name_unique == kk)
     amblip$keep_row[grp[order(rt_dev[grp], -tie[grp])][1]] <- TRUE
   }
 
