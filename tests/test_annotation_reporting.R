@@ -129,3 +129,30 @@ if (requireNamespace("openxlsx", quietly = TRUE)) {
   unlink(path)
   cat("PASS: workflow XLSX export preserves numeric counts, sheet order and final rows.\n")
 }
+
+# Current annotations resolve adduct duplicates during ambiguity handling;
+# metrics regeneration must accept snapshots without the retired later stage.
+if (requireNamespace("openxlsx", quietly = TRUE)) {
+  temporary_root <- tempfile()
+  folder <- file.path(temporary_root, "applications", "TEST_study")
+  dir.create(folder, recursive = TRUE)
+  dir.create(file.path(temporary_root, "R"))
+  file.copy("R/lipid_helpers.R", file.path(temporary_root, "R", "lipid_helpers.R"))
+  for (mode in c("positive", "negative")) {
+    dir.create(file.path(folder, mode, "objects"), recursive = TRUE)
+    report <- if (mode == "positive") positive else negative
+    report$phases$within_mode_adduct_resolution <- NULL
+    suffix <- if (mode == "positive") "pos" else "neg"
+    saveRDS(report, file.path(folder, mode, "objects", paste0("TEST_annotation_report_", suffix, ".rds")))
+  }
+  dir.create(file.path(folder, "objects"))
+  saveRDS(merged, file.path(folder, "objects", "TEST_annotation_report_merged.rds"))
+  regenerate_annotation_metrics(folder, "TEST")
+  path <- file.path(folder, "objects", "TEST_annotation_metrics.xlsx")
+  stopifnot(file.exists(path), !"within_mode_adduct_resolution" %in% openxlsx::getSheetNames(path))
+  report$phases$qc_rsd_filtered <- NULL
+  saveRDS(report, file.path(folder, "negative", "objects", "TEST_annotation_report_neg.rds"))
+  stopifnot(inherits(try(regenerate_annotation_metrics(folder, "TEST"), silent = TRUE), "try-error"))
+  unlink(temporary_root, recursive = TRUE)
+  cat("PASS: metrics regeneration accepts current stages and rejects missing QC snapshots.\n")
+}

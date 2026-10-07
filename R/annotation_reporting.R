@@ -348,9 +348,10 @@ regenerate_annotation_metrics <- function(study_dir, study_id) {
     report <- readRDS(path)
     required <- c("preprocessed_features", "rank1_mz", "rank1_mz_rt", "isotope_filter", "adduct_scored",
                   "ambiguity_auto", "manual_curation", "normalization", "qc_rsd_filtered",
-                  "within_mode_adduct_resolution", "qc_samples_removed")
+                  "qc_samples_removed")
     if (!identical(report$version, 1L) || !identical(report$study_id, study_id) ||
-        !identical(report$polarity, polarity) || !identical(names(report$phases), required))
+        !identical(report$polarity, polarity) ||
+        !identical(setdiff(names(report$phases), "within_mode_adduct_resolution"), required))
       stop("Incomplete or incompatible annotation snapshot: ", path)
     report
   }
