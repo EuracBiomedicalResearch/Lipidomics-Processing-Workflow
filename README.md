@@ -1,6 +1,6 @@
 # Lipidomics-Processing_Workflow
 
-**Semi-automated workflow for High-confidence lipid annotation using a public SRM 1950-derived lipid database**
+**Semi-automated workflow for multi-evidence lipid annotation using a public SRM 1950-derived lipid database**
 
 A vendor-independent, open-source workflow for Untargeted LC-MS-based lipidomics, data processing and annotation.
 
@@ -190,6 +190,7 @@ The workflow includes several interactive checkpoints:
 
 | Checkpoint | Location | Action Required |
 |------------|----------|-----------------|
+| Input Validation | Preprocessing | Resolve reported issues in the input files |
 | RT Filter Range | Preprocessing | Adjust RT filter based on BPC |
 | Lipid Reference Set EIC | Preprocessing | Verify internal standard signals |
 | Peak Detection Results | Preprocessing | Check peak detection quality |
