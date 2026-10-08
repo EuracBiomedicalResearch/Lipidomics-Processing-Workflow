@@ -230,6 +230,7 @@ RSD_THRESHOLD <- 0.3        # QC RSD filter (30%)
 1. **SRM 1950-DERIVED Lipid Database**: <https://doi.org/10.1016/j.jlr.2024.100671>
 2. **Original study (MICROSAMPLING dataset)**: <https://doi.org/10.1016/j.microc.2025.113760>
 3. **Application study (METFORMIN-HIIE dataset)**: <https://pubs.acs.org/doi/10.1021/acs.jproteome.5c00480>
+4. **Metabonaut tutorial**: <https://doi.org/10.1007/s11306-026-02538-x>
 
 ---
 
