@@ -75,6 +75,101 @@ CEMBIO-EURAC/
 
 ## Quick Start
 
+### Docker (recommended for a new installation)
+
+Docker packages the Conda runtime, Quarto, native compilers, and locked R
+dependencies together. You only need Docker installed on your computer; you
+do not need to install R or Conda locally. Run these commands from the repository
+root:
+
+```bash
+docker build --platform linux/amd64 -t cembio-eurac:local .
+docker run --rm cembio-eurac:local check
+```
+
+The first build downloads and compiles the locked dependencies and can take a
+long time. Later runs reuse the image. The build also checks the environment,
+native compilation, reporting and isotope-batching regression tests, and a
+Quarto render that exercises native imputation. The environment currently
+targets Linux x86-64; Apple Silicon requires `--platform linux/amd64` when
+running as well as building, and emulation can be slower.
+
+Run either study with your checkout mounted at `/workspace` and a persistent
+download cache:
+
+```bash
+docker run --rm --init --platform linux/amd64 \
+  --mount "type=bind,source=$(pwd),target=/workspace" \
+  --mount type=volume,source=cembio-cache,target=/cache \
+  cembio-eurac:local MICROSAMPLING
+
+docker run --rm --init --platform linux/amd64 \
+  --mount "type=bind,source=$(pwd),target=/workspace" \
+  --mount type=volume,source=cembio-cache,target=/cache \
+  cembio-eurac:local METFORMIN
+```
+
+On Linux, add `--user "$(id -u):$(id -g)"` before the image name so generated
+files belong to your account. Docker Desktop users should ensure the checkout
+is shared with Docker. Commands above use Bash syntax (including WSL on Windows).
+Results, HTML reports, SQLite files, and annotation workbooks are written into
+your checkout, and remain after the container exits. Downloaded MICROSAMPLING
+data remain in the `cembio-cache` volume. Reuse that volume and the `/workspace`
+mount path across stages because saved objects can reference backing files there.
+Raw data, existing results, local R libraries, and `.reviewp` are excluded from
+the image.
+
+The default command runs positive preprocessing and annotation, then negative
+preprocessing and annotation, then the merge. For scientific review between
+stages, replace the arguments after the image name:
+
+| Arguments | Action |
+|-----------|--------|
+| `MICROSAMPLING preprocessing pos` | Positive preprocessing only |
+| `MICROSAMPLING preprocessing neg` | Negative preprocessing only |
+| `MICROSAMPLING annotation pos` | Positive annotation only |
+| `MICROSAMPLING annotation neg` | Negative annotation only |
+| `MICROSAMPLING merge` | Merge existing positive and negative annotations |
+| `MICROSAMPLING metrics` | Refresh metrics from existing annotation snapshots |
+| `METFORMIN preprocessing` | Preprocess both METFORMIN polarities |
+| `help` | Show the available commands |
+
+Both study names support the same stages. Annotation needs preprocessing outputs;
+merge and metrics need outputs from both polarities. Existing outputs are
+overwritten when their producing stage is rerun. Use the staged commands to
+review the [validation checkpoints](#user-validation-checkpoints). Manual
+checkpoints do not pause an unattended render. For manual curation, save reviewed
+Excel tables under separate filenames and update the annotation document's
+curation reads to use those copies before rerendering: its export chunk regenerates
+the default ambiguity workbooks on each render.
+
+MICROSAMPLING defaults to public MetaboLights downloads (approximately 2 GB).
+METFORMIN requires your own inputs: put `METFORMIN-HIIE_pos.sqlite` and
+`METFORMIN-HIIE_neg.sqlite` in its respective `positive/data/` and `negative/data/`
+folders, or provide the `.mzML` files named in the sequence workbooks there so
+the workflow can create those databases. You can instead set `SQLITE_DB` in
+each preprocessing document; use a container path under `/workspace`, not a
+host absolute path. Study parameters remain editable in the `.qmd` files.
+Set `CORES_NB` there to match the CPU and memory available to Docker; the current
+default is four workers. Full LC-MS runs need considerably more memory and disk
+than the download size, so allocate resources for your dataset.
+
+For custom studies or troubleshooting, the image also accepts ordinary commands:
+
+```bash
+docker run --rm --init --platform linux/amd64 \
+  --mount "type=bind,source=$(pwd),target=/workspace" \
+  --mount type=volume,source=cembio-cache,target=/cache \
+  cembio-eurac:local quarto render applications/my_study/positive/Preprocessing_pos.qmd
+```
+
+Rebuild the image after changing `environment.yml` or `renv.lock`. Mounted
+workflow edits take effect on the next run. The library stays inside the image,
+outside the mounted checkout, following the
+[renv Docker guidance](https://pkgs.rstudio.com/renv/articles/docker.html).
+
+### Native installation (alternative)
+
 ### 1. The Reproducible Environment
 
 The project uses two complementary environment layers:

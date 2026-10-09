@@ -51,6 +51,15 @@ options(
     Ncpus = max(1L, min(4L, parallel::detectCores(logical = FALSE)))
 )
 
+# V8 (via jsonvalidate and the alabaster packages) can use its upstream static
+# Linux library. This avoids requiring distro-specific libnode/libv8 headers
+# alongside the Conda toolchain. An explicitly supplied setting takes precedence.
+if (identical(Sys.info()[["sysname"]], "Linux")) {
+    Sys.setenv(DOWNLOAD_STATIC_LIBV8 = Sys.getenv(
+        "DOWNLOAD_STATIC_LIBV8", unset = "1"
+    ))
+}
+
 # Conda does not yet publish renv for R 4.6. Bootstrap the exact release from
 # CRAN, after which renv manages the project library in the usual way.
 has_expected_renv <- requireNamespace("renv", quietly = TRUE) &&
