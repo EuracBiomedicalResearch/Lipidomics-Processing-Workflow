@@ -75,6 +75,91 @@ CEMBIO-EURAC/
 
 ## Quick Start
 
+### Docker setup and usage
+
+Docker bundles R, Quarto, compilers and the locked R packages. With Docker
+installed and running, you can use this option instead of the native Conda/R
+setup below. Run the commands from the repository root.
+
+Build the image and check its environment:
+
+```bash
+docker build --platform linux/amd64 -t cembio-eurac:main-docker .
+docker run --rm --platform linux/amd64 cembio-eurac:main-docker check
+```
+
+The first build downloads and compiles the dependencies and can take a long
+time. It also checks native compilation and renders a Quarto smoke test.
+The image targets Linux x86-64; Apple Silicon uses emulation through the
+`--platform linux/amd64` option and can be slower.
+
+MICROSAMPLING is configured to download public MetaboLights data. For METFORMIN,
+provide `METFORMIN-HIIE_pos.sqlite` in
+`applications/METFORMIN-HIIE_study/positive/data/` and
+`METFORMIN-HIIE_neg.sqlite` in its `negative/data/` folder. If these databases
+are absent, the workflow tries to create them from the `.mzML` files named in
+the corresponding sequence workbook; place those files in each mode's `data/`
+folder. The other required inputs are described in **Prepare Input Files** below.
+
+Run a complete study with the checkout mounted at `/workspace` and a persistent
+download cache:
+
+```bash
+docker run --rm --init --platform linux/amd64 \
+  --mount "type=bind,source=$(pwd),target=/workspace" \
+  --mount type=volume,source=cembio-cache,target=/cache \
+  cembio-eurac:main-docker MICROSAMPLING
+
+docker run --rm --init --platform linux/amd64 \
+  --mount "type=bind,source=$(pwd),target=/workspace" \
+  --mount type=volume,source=cembio-cache,target=/cache \
+  cembio-eurac:main-docker METFORMIN
+```
+
+On Linux, add `--user "$(id -u):$(id -g)"` before the image name, starting with
+your first run, so generated files belong to your account. Keep the same user,
+cache volume and `/workspace` mount path across stages. Docker Desktop users
+should ensure the checkout is shared with Docker. These examples use Bash
+syntax, including WSL on Windows.
+
+Results, HTML reports, SQLite files and annotation workbooks are written into
+the mounted checkout and remain after the container exits. Downloaded data
+remain in the `cembio-cache` volume. Raw data, previous results and local R
+libraries are excluded from the image. Saved experiments can refer to backing
+files by their container paths, so create and reuse preprocessing outputs with
+the same mounts.
+
+To run individual stages, replace the study arguments at the end of the
+`docker run` command:
+
+| Arguments | Action |
+|-----------|--------|
+| `MICROSAMPLING preprocessing` | Preprocess both polarities |
+| `MICROSAMPLING preprocessing pos` | Positive preprocessing only |
+| `MICROSAMPLING preprocessing neg` | Negative preprocessing only |
+| `MICROSAMPLING annotation pos` | Annotate saved positive preprocessing |
+| `MICROSAMPLING annotation neg` | Annotate saved negative preprocessing |
+| `MICROSAMPLING merge` | Merge saved annotations from both polarities |
+| `help` | Show available commands |
+
+Both study names support the same stages. Without a stage argument, the runner
+executes positive preprocessing and annotation, then negative preprocessing
+and annotation, then the merge. Annotation requires preprocessing outputs;
+merge requires annotation outputs from both modes. Rerunning a stage overwrites
+its generated outputs.
+
+Edit scientific parameters, including `CORES_NB`, in the study's `.qmd` files
+before running. Use paths under `/workspace` for custom inputs. Allocate Docker
+enough CPU, memory and disk for the LC-MS dataset. Mounted workflow edits take
+effect on the next run; rebuild the image after changing `environment.yml` or
+`renv.lock`.
+
+The [validation checkpoints](#user-validation-checkpoints) need scientific
+review; an unattended render does not pause at them. For manual curation, save
+reviewed ambiguity workbooks under separate filenames and update the annotation
+document's curation reads to use those copies: its export chunk regenerates the
+default ambiguity workbooks on each render.
+
 ### 1. The Reproducible Environment
 
 The project uses two complementary environment layers:
