@@ -1,0 +1,55 @@
+# Allow only the source and shipped reference inputs into the image.
+**
+!Dockerfile
+!DESCRIPTION
+!environment.yml
+!renv.lock
+!.Rprofile
+!LICENSE
+!README.md
+!renv/
+!renv/activate.R
+!R/
+!R/**
+!scripts/
+!scripts/**
+!docker/
+!docker/**
+!applications/
+!applications/**/
+!applications/**/*.qmd
+!applications/**/LipidDatabase_R.xlsx
+!applications/**/seq_*.xlsx
+!applications/**/*lipid_reference_set.xlsx
+!generic_workflow/
+!generic_workflow/**/
+!generic_workflow/**/*.qmd
+!generic_workflow/LipidDatabase_R.xlsx
+
+# Docker treats trailing directory slashes as path patterns. Apply exclusions
+# after directory inclusions so raw data and generated files stay outside the
+# context even when a parent directory was included above.
+.git
+.reviewp
+**/data
+**/objects
+**/mse_*
+**/*_files
+**/*.mzML
+**/*.mzml
+**/*.mzXML
+**/*.mzxml
+**/*.sqlite*
+**/*.rds
+**/*.RDS
+**/*.RData
+**/*.Rdata
+**/*.html
+**/*.pdf
+**/*.png
+**/*.json
+**/*.zip
+**/*.xlsx
+!**/LipidDatabase_R.xlsx
+!**/seq_*.xlsx
+!**/*lipid_reference_set.xlsx
