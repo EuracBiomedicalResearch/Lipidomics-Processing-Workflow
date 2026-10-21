@@ -272,12 +272,18 @@ produce an error instead of reconstructing annotations with separate settings.
 
 The workbook starts with `Summary`: actual workflow phases, positive then negative
 then merged, with feature counts and removed features.
-Standards remain in intermediate counts and details until
-the explicit final removal phase. The final detail sheet matches the feature rows
-in the annotated-abundances workbook. Column definitions appear beneath headers.
-`Curated_reference_comparison` reports agreement with manually curated assignments
-retained after QC RSD filtering (`qc_rsd_filtered`), excluding internal standards,
-not accuracy against independently established chemical identities.
+Internal standards are excluded from all metrics counts and detail sheets, even
+before the workflow's final standard-removal phase. The final detail sheet
+matches the feature rows in the annotated-abundances workbook. Short column
+definitions appear beneath headers. `Final_reference_comparison` reports
+reference retention, non-reference candidate reduction and within-reference
+candidate discrimination against the post-QC workflow output, not independent
+chemical accuracy. `ambiguity_resolution` replaces the misleading
+`manual_curation` display label. Unadjusted RT matching is a parallel comparison,
+not an extra filter in Summary.
+
+See [Generate annotation metrics](ANNOTATION_METRICS.md) for inputs, commands,
+output locations and metric definitions.
 
 After snapshots exist, refresh reporting without rerunning annotation:
 

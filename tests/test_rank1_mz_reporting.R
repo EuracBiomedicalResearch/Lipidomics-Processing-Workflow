@@ -30,4 +30,21 @@ old <- new_annotation_report("TEST", "positive"); old$phases <- before
 stopifnot(inherits(try(insert_rank1_mz_phase(old, bad), silent = TRUE), "try-error"))
 empty <- match_features_mz_only(res, transform(database, mz = mz + 1000))
 stopifnot(nrow(empty) == 0L)
-cat("PASS: mass-only ignores RT, excludes rank-2 entries, preserves saved phases, and checks candidate containment\n")
+# An unadjusted comparison uses the original database RT, not the adjusted RT
+# used by annotations. Both searches remain subsets of the SAME mass baseline.
+database$rt_sd <- c(200, 10)
+unadjusted_database <- database
+unadjusted_database$rt_adjusted <- unadjusted_database$rt_sd
+unadjusted <- match_features_to_database(res, unadjusted_database,
+  ppm = 20, rt_tol = 20, verbose = FALSE)$mtched_data
+stopifnot(identical(unadjusted$feature_id, "FT2"), identical(database$rt_adjusted, c(10, 10)))
+before <- report$phases
+with_comparison <- insert_rank1_unadjusted_phase(report, unadjusted)
+stopifnot(identical(with_comparison$phases[names(before)], before),
+  identical(names(with_comparison$phases), c("preprocessed_features", "rank1_mz",
+    "rank1_mz_rt_unadjusted", "rank1_mz_rt")),
+  identical(annotation_report_summary(with_comparison), annotation_report_summary(report)),
+  inherits(try(insert_rank1_unadjusted_phase(with_comparison, unadjusted), silent = TRUE), "try-error"),
+  inherits(try(insert_rank1_unadjusted_phase(report,
+    transform(unadjusted, feature_id = "FT3")), silent = TRUE), "try-error"))
+cat("PASS: rank-1 mass and unadjusted RT comparisons, containment, unchanged workflow snapshots and Summary counts.\n")

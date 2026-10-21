@@ -1,4 +1,5 @@
-# Reporting snapshots only: no matching, filtering or abundance transformations.
+# Reporting only: saved annotation/abundance results are never transformed.
+# The two baseline comparisons may be calculated from saved feature metadata.
 annotation_report_frame <- function(x, polarity) {
   if (methods::is(x, "SummarizedExperiment")) {
     d <- as.data.frame(SummarizedExperiment::rowData(x))
@@ -67,6 +68,33 @@ save_annotation_report <- function(report, path) {
   saveRDS(report, path)
 }
 
+# Only assigned standards identify whole features for exclusion. A mass-only
+# standard candidate must not turn an otherwise endogenous feature into an IS.
+annotation_istd_keys <- function(reports) {
+  assigned <- c("manual_curation", "ambiguity_resolution", "normalization",
+                "qc_rsd_filtered", "qc_samples_removed", "within_mode_adduct_resolution",
+                "merge_input", "resolved_annotation_preference", "duplicate_resolution",
+                "internal_standard_removal")
+  unique(unlist(lapply(reports, function(report) {
+    unlist(lapply(report$phases[intersect(assigned, names(report$phases))], function(snapshot) {
+      d <- snapshot$data
+      paste(d$polarity[d$.is_standard], d$feature_id[d$.is_standard], sep = "::")
+    }), use.names = FALSE)
+  }), use.names = FALSE))
+}
+
+exclude_annotation_istds <- function(report, standard_keys = annotation_istd_keys(list(report))) {
+  report$phases <- lapply(report$phases, function(snapshot) {
+    d <- snapshot$data
+    keys <- paste(d$polarity, d$feature_id, sep = "::")
+    # Remove both IS candidate labels and every alternative on an assigned IS
+    # feature, including before annotation and when that standard later fails QC.
+    snapshot$data <- d[!d$.is_standard & !keys %in% standard_keys, , drop = FALSE]
+    snapshot
+  })
+  report
+}
+
 insert_rank1_mz_phase <- function(report, matches) {
   if ("rank1_mz" %in% names(report$phases)) stop("rank1_mz snapshot already exists.")
   if (!all(c("preprocessed_features", "rank1_mz_rt") %in% names(report$phases)))
@@ -84,28 +112,51 @@ insert_rank1_mz_phase <- function(report, matches) {
   report
 }
 
-# Reporting-only refresh for older snapshots. It recalculates only
-# mass candidates from saved preprocessing features and the study database;
-# all original RT, isotope, curation, abundance and merge snapshots survive.
+insert_rank1_unadjusted_phase <- function(report, matches) {
+  phase <- "rank1_mz_rt_unadjusted"
+  if (phase %in% names(report$phases)) stop("Unadjusted RT snapshot already exists.")
+  if (!"rank1_mz" %in% names(report$phases)) stop("Missing rank1_mz baseline.")
+  snapshot <- annotation_report_frame(matches, report$polarity)
+  baseline <- annotation_report_pairs(report$phases$rank1_mz$data)$pair_key
+  if (!all(annotation_report_pairs(snapshot)$pair_key %in% baseline))
+    stop("Unadjusted RT candidates are absent from the mass-only baseline; check inputs and ppm.")
+  report$phases <- append(report$phases,
+    setNames(list(list(data = snapshot, annotations = TRUE)), phase),
+    after = match("rank1_mz", names(report$phases)))
+  report
+}
+
+# Refresh only missing mass-only/unadjusted comparisons. Original workflow
+# snapshots survive unchanged, including their legacy manual_curation key.
 add_rank1_mz_reporting <- function(study_dir, study_id) {
-  if (!requireNamespace("alabaster.se", quietly = TRUE))
-    stop("Reading saved preprocessing features requires alabaster.se.")
-  helpers <- new.env(parent = globalenv())
-  sys.source(file.path(study_dir, "../../R/lipid_helpers.R"), envir = helpers)
+  helpers <- NULL
   for (suffix in c("pos", "neg")) {
     polarity <- if (suffix == "pos") "positive" else "negative"
     directory <- file.path(study_dir, polarity)
     report_path <- file.path(directory, "objects",
                              paste0(study_id, "_annotation_report_", suffix, ".rds"))
+    if (!file.exists(report_path)) stop("Missing workflow snapshot: ", report_path,
+      ". Rerun the corresponding annotation workflow.")
     report <- readRDS(report_path)
-    if ("rank1_mz" %in% names(report$phases)) next
-    # Read the actual workflow's mass tolerance, rather than assuming a default.
+    if (all(c("rank1_mz", "rank1_mz_rt_unadjusted") %in% names(report$phases))) next
+    if (is.null(helpers)) {
+      if (!requireNamespace("alabaster.se", quietly = TRUE))
+        stop("Reading saved preprocessing features requires alabaster.se.")
+      helpers <- new.env(parent = globalenv())
+      sys.source(file.path(study_dir, "../../R/lipid_helpers.R"), envir = helpers)
+    }
+    # Use the workflow's actual tolerances, not reporting-specific defaults.
     lines <- readLines(file.path(directory, paste0("Annotation_", suffix, ".qmd")))
-    ppm_line <- lines[grepl("^MATCH_PPM\\s*<-", lines)]
-    if (length(ppm_line) != 1L) stop("Cannot determine MATCH_PPM for ", directory)
-    ppm <- eval(parse(text = ppm_line)[[1L]][[3L]], envir = baseenv())
-    if (!is.numeric(ppm) || length(ppm) != 1L || !is.finite(ppm) || ppm < 0)
-      stop("Invalid MATCH_PPM for ", directory)
+    tolerance <- function(name) {
+      line <- lines[grepl(paste0("^", name, "\\s*<-"), lines)]
+      if (length(line) != 1L) stop("Cannot determine ", name, " for ", directory)
+      value <- eval(parse(text = line)[[1L]][[3L]], envir = baseenv())
+      if (!is.numeric(value) || length(value) != 1L || !is.finite(value) || value < 0)
+        stop("Invalid ", name, " for ", directory)
+      value
+    }
+    ppm <- tolerance("MATCH_PPM")
+    rt_tol <- tolerance("MATCH_RT_TOL")
     res <- alabaster.base::readObject(file.path(directory, "objects",
       paste0(study_id, "_preprocessed_res_", suffix)))
     if (!identical(rownames(res), report$phases$preprocessed_features$data$feature_id))
@@ -115,17 +166,27 @@ add_rank1_mz_reporting <- function(study_dir, study_id) {
       sheet = if (suffix == "pos") 4L else 5L, polarity = suffix,
       rt_col = if (suffix == "pos") "RT ESI(+) (min)" else "RT ESI(\u2013) (min)"
     )
-    matches <- helpers$match_features_mz_only(res, database, ppm = ppm)
-    report <- insert_rank1_mz_phase(report, matches)
+    if (!"rank1_mz" %in% names(report$phases)) {
+      matches <- helpers$match_features_mz_only(res, database, ppm = ppm)
+      report <- insert_rank1_mz_phase(report, matches)
+    }
+    # Original database RT in seconds; no model fitting or adjusted RT search.
+    database$rt_adjusted <- database$rt_sd
+    matches <- helpers$match_features_to_database(res, database, ppm = ppm,
+      rt_tol = rt_tol, verbose = FALSE)$mtched_data
+    report <- insert_rank1_unadjusted_phase(report, matches)
     save_annotation_report(report, report_path)
-    message(study_id, " ", polarity, ": added rank1_mz reporting snapshot")
+    message(study_id, " ", polarity, ": added reporting comparisons")
   }
   invisible(NULL)
 }
 
 annotation_report_summary <- function(report) {
+  report <- exclude_annotation_istds(report)
   previous <- NULL
-  rows <- lapply(names(report$phases), function(phase) {
+  # Unadjusted RT is an alternative search, not the preceding pipeline stage.
+  phases <- setdiff(names(report$phases), "rank1_mz_rt_unadjusted")
+  rows <- lapply(phases, function(phase) {
     snapshot <- report$phases[[phase]]
     d <- snapshot$data
     features <- unique(paste(d$polarity, d$feature_id, sep = "::"))
@@ -144,42 +205,44 @@ annotation_report_summary <- function(report) {
 }
 
 annotation_reference_comparison <- function(report) {
-  all_truth <- report$phases$qc_rsd_filtered$data
-  if (is.null(all_truth)) stop("Missing post-QC reference snapshot: qc_rsd_filtered.")
-  truth <- all_truth
-  truth <- truth[!truth$.is_standard, , drop = FALSE]
+  report <- exclude_annotation_istds(report)
+  truth <- report$phases$qc_rsd_filtered$data
+  if (is.null(truth)) stop("Missing post-QC reference snapshot: qc_rsd_filtered.")
   truth_pairs <- annotation_report_pairs(truth)
   truth_features <- unique(truth_pairs$feature_key)
-  curated <- report$phases$manual_curation$data
-  # Keep known standard feature IDs excluded even if the standard failed QC.
-  standard_keys <- unique(c(
-    paste(all_truth$polarity[all_truth$.is_standard],
-          all_truth$feature_id[all_truth$.is_standard], sep = "::"),
-    paste(curated$polarity[curated$.is_standard],
-          curated$feature_id[curated$.is_standard], sep = "::")))
-  phases <- intersect(c("rank1_mz", "rank1_mz_rt", "isotope_filter", "adduct_scored",
-                        "ambiguity_auto", "manual_curation"), names(report$phases))
+  baseline <- report$phases$rank1_mz$data
+  if (is.null(baseline)) stop("Missing mass-only reference baseline: rank1_mz.")
+  baseline_pairs <- annotation_report_pairs(baseline)
+  u0 <- sum(!baseline_pairs$feature_key %in% truth_features)
+  phases <- intersect(c("rank1_mz", "rank1_mz_rt_unadjusted", "rank1_mz_rt",
+                        "isotope_filter", "ambiguity_auto", "manual_curation",
+                        "qc_rsd_filtered"), names(report$phases))
   ratio <- function(n, d) if (d) n / d else NA_real_
-  do.call(rbind, lapply(phases, function(phase) {
+  out <- do.call(rbind, lapply(phases, function(phase) {
     d <- report$phases[[phase]]$data
-    # Also exclude alternative candidates on known standard features.
-    keys <- paste(d$polarity, d$feature_id, sep = "::")
-    d <- d[!d$.is_standard & !keys %in% standard_keys, , drop = FALSE]
     pairs <- annotation_report_pairs(d)
-    on_curated <- pairs$feature_key %in% truth_features
+    on_reference <- pairs$feature_key %in% truth_features
     matching_pairs <- pairs$pair_key %in% truth_pairs$pair_key
     matched <- sum(matching_pairs)
-    matched_features <- length(unique(pairs$feature_key[matching_pairs]))
-    alternative <- sum(on_curated & !pairs$pair_key %in% truth_pairs$pair_key)
-    false_positive <- sum(!matching_pairs)
-    missed <- sum(!truth_pairs$pair_key %in% pairs$pair_key)
+    alternative <- sum(on_reference & !matching_pairs)
+    outside <- sum(!on_reference)
+    stopifnot(nrow(pairs) == matched + alternative + outside)
     data.frame(polarity = report$polarity, phase = phase,
-               curated_matches = matched_features, alternative_assignments = alternative,
-               uncurated_assignments = sum(!on_curated), missed_curated_pairs = missed,
-               precision = ratio(matched, matched + false_positive),
-               recall = ratio(matched, nrow(truth_pairs)),
-               f1 = ratio(2 * matched, 2 * matched + false_positive + missed))
+               matching_pairs = matched, alternative_pairs = alternative,
+               outside_reference_pairs = outside,
+               reference_retention = ratio(matched, nrow(truth_pairs)),
+               nonreference_reduction = if (u0) 1 - outside / u0 else NA_real_,
+               within_reference_discrimination = ratio(matched, matched + alternative))
   }))
+  out$phase <- annotation_phase_label(out$phase)
+  attr(out, "reference_pairs") <- nrow(truth_pairs)
+  attr(out, "reference_features") <- length(truth_features)
+  attr(out, "baseline_outside_pairs") <- u0
+  out
+}
+
+annotation_phase_label <- function(phase) {
+  ifelse(phase == "manual_curation", "ambiguity_resolution", phase)
 }
 
 annotation_metrics_tables <- function(positive, negative, merged) {
@@ -188,15 +251,17 @@ annotation_metrics_tables <- function(positive, negative, merged) {
             merged$polarity == "merged",
             identical(positive$study_id, negative$study_id),
             identical(positive$study_id, merged$study_id))
+  standard_keys <- annotation_istd_keys(reports)
+  reports <- lapply(reports, exclude_annotation_istds, standard_keys = standard_keys)
+  positive <- reports[[1]]; negative <- reports[[2]]; merged <- reports[[3]]
+  comparisons <- lapply(list(positive, negative), annotation_reference_comparison)
   tables <- list(Summary = do.call(rbind, lapply(reports, annotation_report_summary)),
-                 Curated_reference_comparison = rbind(
-                   annotation_reference_comparison(positive),
-                   annotation_reference_comparison(negative)))
+                 Final_reference_comparison = do.call(rbind, comparisons))
   tables$Summary <- tables$Summary[, c("polarity", "phase", "features", "removed_features")]
   tables$Summary <- tables$Summary[!tables$Summary$phase %in%
     c("qc_samples_removed", "adduct_scored"), , drop = FALSE]
-  tables$Curated_reference_comparison$alternative_assignments <- NULL
-  detail_phases <- c("rank1_mz", "rank1_mz_rt", "isotope_filter", "adduct_scored",
+  tables$Summary$phase <- annotation_phase_label(tables$Summary$phase)
+  detail_phases <- c("rank1_mz", "rank1_mz_rt_unadjusted", "rank1_mz_rt", "isotope_filter", "adduct_scored",
                      "ambiguity_auto", "manual_curation", "qc_rsd_filtered",
                      "within_mode_adduct_resolution", "resolved_annotation_preference",
                      "duplicate_resolution", "internal_standard_removal")
@@ -212,23 +277,29 @@ annotation_metrics_tables <- function(positive, negative, merged) {
     d <- do.call(rbind, frames)
     d$.is_standard <- NULL
     # Final details are one row per retained feature, matching the results XLSX.
-    sheet <- if (phase == "internal_standard_removal") "final_annotations" else phase
+    sheet <- if (phase == "internal_standard_removal") "final_annotations" else annotation_phase_label(phase)
     tables[[sheet]] <- d
   }
+  attr(tables, "reference_context") <- paste(vapply(seq_along(comparisons), function(i) {
+    comparison <- comparisons[[i]]
+    sprintf("%s: |G| = %d pairs on %d features; U0 = %d mass-only pairs outside reference features.",
+      c("Positive", "Negative")[i], attr(comparison, "reference_pairs"),
+      attr(comparison, "reference_features"), attr(comparison, "baseline_outside_pairs"))
+  }, character(1)), collapse = "\n")
   tables
 }
 
 annotation_metrics_descriptions <- c(
   polarity = "Positive, negative, or merged. Feature IDs are qualified by polarity.",
-  phase = "Actual workflow stage, in execution order; no alternative-method experiments.",
-  features = "Distinct detected features remaining, including standards until their removal phase.",
-  removed_features = "Features from the preceding stage absent here. Blank for the first row of each polarity.",
-  curated_matches = "Distinct features with at least one lipid assignment matching the post-QC curated reference. Ambiguous features count once.",
-  uncurated_assignments = "Feature-lipid pairs on features outside the post-QC reference; counted as false positives.",
-  missed_curated_pairs = "Post-QC curated reference pairs not recovered by this stage.",
-  precision = "TP / (TP + FP), using feature-lipid pairs. FP includes every predicted pair absent from the post-QC reference.",
-  recall = "TP / (TP + FN), using reference pairs. FN is missed reference pairs; false positives do not enter recall.",
-  f1 = "2 TP / (2 TP + FP + FN), using pairs. FP includes all non-reference predictions; FN is missed reference pairs.",
+  phase = "Workflow stage; unadjusted RT is a comparison only. Ambiguity resolution applies automatic defaults, not verified human review.",
+  features = "Distinct features remaining. Assigned ISTD features excluded at every stage, including preprocessing.",
+  removed_features = "Features absent since the preceding workflow stage. ISTDs never count; their final removal therefore reports zero.",
+  matching_pairs = "T_s: distinct feature-lipid pairs also present in the post-QC reference G.",
+  alternative_pairs = "C_s: pairs on reference features whose lipid assignment is absent from G.",
+  outside_reference_pairs = "U_s: pairs on features outside G. Absence from the reference does not prove an incorrect identity.",
+  reference_retention = "T_s / |G|, shown as %. Fraction of the post-QC reference recovered; not independent sensitivity.",
+  nonreference_reduction = "1 - U_s/U0, shown as %. Candidate reduction outside reference features vs rank1_mz.",
+  within_reference_discrimination = "T_s / (T_s + C_s), shown as %. Agreement on reference features, not chemical accuracy.",
   feature_id = "Detected feature identifier; use polarity with this ID to identify a feature.",
   annotation = "Lipid annotation name, including RT-specific suffixes; unresolved alternatives separated by semicolons.",
   adduct = "Assigned adduct, or semicolon-separated alternatives.",
@@ -245,11 +316,10 @@ annotation_metrics_payload <- function(tables) {
     descriptions <- unname(annotation_metrics_descriptions[names(d)])
     descriptions[is.na(descriptions)] <- ""
     list(name = name, columns = names(d), descriptions = descriptions,
-         note = if (name == "Curated_reference_comparison")
-           paste("Agreement with manually curated feature-lipid assignments retained after QC RSD filtering,",
-                 "not independent chemical ground truth or database accuracy.",
-                 "Reference snapshot: qc_rsd_filtered. Internal standards excluded.",
-                 "All predicted pairs absent from this reference count as false positives for these metrics.") else NULL,
+         note = if (name == "Final_reference_comparison")
+           paste("G: post-QC workflow reference (qc_rsd_filtered), per polarity before POS/NEG merging. ISTDs excluded everywhere.",
+                 "Unadjusted RT is a parallel comparison. This is not independent ground truth; retention along the filtering pipeline is expected to be 100%. N/A: zero denominator.",
+                 attr(tables, "reference_context"), sep = "\n") else NULL,
          rows = unname(lapply(seq_len(nrow(d)), function(i) unname(as.list(d[i, ])))))
   })
   list(sheets = sheets)
@@ -308,7 +378,7 @@ write_annotation_metrics_workbook <- function(positive, negative, merged, path) 
       openxlsx::writeData(wb, name, sheet$note, startRow = 1, colNames = FALSE)
       openxlsx::mergeCells(wb, name, cols = seq_len(ncol(d)), rows = 1)
       openxlsx::addStyle(wb, name, description, rows = 1, cols = 1)
-      openxlsx::setRowHeights(wb, name, 1, 60)
+      openxlsx::setRowHeights(wb, name, 1, 80)
     }
     openxlsx::writeData(wb, name, t(sheet$columns), startRow = start, colNames = FALSE)
     openxlsx::writeData(wb, name, t(sheet$descriptions), startRow = start + 1L, colNames = FALSE)
@@ -321,16 +391,18 @@ write_annotation_metrics_workbook <- function(positive, negative, merged, path) 
     openxlsx::addStyle(wb, name, description, rows = start + 1L,
                        cols = seq_len(ncol(d)), gridExpand = TRUE)
     widths <- if (name == "Summary") c(14, 30, 20, 24) else
-      if (name == "Curated_reference_comparison") c(14, 30, rep(22, ncol(d) - 2L)) else
+      if (name == "Final_reference_comparison") c(14, 32, rep(24, ncol(d) - 2L)) else
         c(16, 14, 44, rep(20, ncol(d) - 3L))
     openxlsx::setColWidths(wb, name, seq_len(ncol(d)), widths)
     openxlsx::setRowHeights(wb, name, start, 30)
     openxlsx::setRowHeights(wb, name, start + 1L, 90)
     openxlsx::freezePane(wb, name, firstActiveRow = start + 2L, firstActiveCol = 3)
     if (nrow(d)) {
-      rates <- which(names(d) %in% c("precision", "recall", "f1"))
+      rates <- which(names(d) %in% c("reference_retention", "nonreference_reduction", "within_reference_discrimination"))
       if (length(rates)) openxlsx::addStyle(wb, name, openxlsx::createStyle(numFmt = "0.0%"),
         rows = seq.int(start + 2L, start + 1L + nrow(d)), cols = rates, gridExpand = TRUE)
+      for (col in rates) for (row in which(is.na(d[[col]])))
+        openxlsx::writeData(wb, name, "N/A", startCol = col, startRow = start + 1L + row)
     }
   }
   dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
@@ -352,7 +424,8 @@ regenerate_annotation_metrics <- function(study_dir, study_id) {
                   "qc_samples_removed")
     if (!identical(report$version, 1L) || !identical(report$study_id, study_id) ||
         !identical(report$polarity, polarity) ||
-        !identical(setdiff(names(report$phases), "within_mode_adduct_resolution"), required))
+        !identical(setdiff(names(report$phases),
+          c("within_mode_adduct_resolution", "rank1_mz_rt_unadjusted")), required))
       stop("Incomplete or incompatible annotation snapshot: ", path)
     report
   }
