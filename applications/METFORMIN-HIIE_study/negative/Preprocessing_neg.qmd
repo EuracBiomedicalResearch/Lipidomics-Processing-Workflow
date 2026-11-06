@@ -426,7 +426,12 @@ fData(eic_is) <- fdata
 data.frame(
   sample_name = sampleData(mse)$sample_name,
   peak_count = as.integer(table(chromPeaks(mse)[, "sample"]))
-) |> t() |> kable(format = "pipe")
+) |> kable(
+  format = "pipe",
+  col.names = c("Sample", "Peak count"),
+  align = c("l", "r"),
+  row.names = FALSE
+)
 ```
 
 ::: {.callout-note}
